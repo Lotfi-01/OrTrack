@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"C:/Users/herml/OneDrive - LVMH Fashion Group/Bureau/OrTrack\" && npx expo start 2>&1)",
+      "Bash(cd \"C:/Users/herml/OneDrive - LVMH Fashion Group/Bureau/OrTrack\" && npx expo start --port 8082 2>&1)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(cd \"C:/Users/herml/OneDrive - LVMH Fashion Group/Bureau/OrTrack\" && npx expo start --port 8084 2>&1)",
+      "Bash(cd \"C:/Users/herml/OneDrive - LVMH Fashion Group/Bureau/OrTrack\" && npx expo start --port 8081 2>&1)",
+      "Bash(claude --version)",
+      "Bash(claude update:*)",
+      "WebSearch",
+      "Bash(claude config show:*)",
+      "Bash(node:*)",
+      "Bash(npx expo:*)",
+      "Bash(npx tsc:*)",
+      "Bash(ls:*)",
+      "Bash(npm install:*)"
+    ]
+  }
+}
