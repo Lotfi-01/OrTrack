@@ -19,7 +19,7 @@ import { useSpotPrices } from '@/hooks/use-spot-prices';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type MetalType = 'or' | 'argent';
+type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
 
 export type Position = {
   id: string;
@@ -58,7 +58,29 @@ const PRODUCTS: Record<MetalType, Product[]> = {
     { label: 'Lingot Argent 1kg', weightG: 1000 },
     { label: 'Autre', weightG: null },
   ],
+  platine: [
+    { label: 'Platine 1oz', weightG: 31.10 },
+    { label: 'Lingot Platine 100g', weightG: 100 },
+    { label: 'Autre', weightG: null },
+  ],
+  palladium: [
+    { label: 'Palladium 1oz', weightG: 31.10 },
+    { label: 'Autre', weightG: null },
+  ],
+  cuivre: [
+    { label: 'Lingot Cuivre 1kg', weightG: 1000 },
+    { label: 'Lingot Cuivre 5kg', weightG: 5000 },
+    { label: 'Autre', weightG: null },
+  ],
 };
+
+const METAL_OPTIONS: { key: MetalType; symbol: string; label: string; color: string }[] = [
+  { key: 'or', symbol: 'XAU', label: 'Or', color: OrTrackColors.gold },
+  { key: 'argent', symbol: 'XAG', label: 'Argent', color: '#A8A8B8' },
+  { key: 'platine', symbol: 'XPT', label: 'Platine', color: '#E0E0E0' },
+  { key: 'palladium', symbol: 'XPD', label: 'Palladium', color: '#CBA135' },
+  { key: 'cuivre', symbol: 'XCU', label: 'Cuivre', color: '#B87333' },
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,7 +130,12 @@ export default function AjouterScreen() {
   const effectiveWeightG = product.weightG ?? toNum(customWeight);
   const qty = toNum(quantity);
   const price = toNum(purchasePrice);
-  const spotEur = metal === 'or' ? prices.gold : prices.silver;
+  const spotEur =
+    metal === 'or' ? prices.gold :
+    metal === 'argent' ? prices.silver :
+    metal === 'platine' ? prices.platinum :
+    metal === 'palladium' ? prices.palladium :
+    prices.copper;
 
   const currentValue =
     spotEur !== null && effectiveWeightG > 0 && qty > 0
@@ -183,21 +210,27 @@ export default function AjouterScreen() {
           {/* ── Sélection métal ─────────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Métal</Text>
-            <View style={styles.metalRow}>
-              {(['or', 'argent'] as MetalType[]).map((m) => (
-                <TouchableOpacity
-                  key={m}
-                  onPress={() => handleMetalChange(m)}
-                  activeOpacity={0.75}
-                  style={[styles.metalButton, metal === m && styles.metalButtonActive]}>
-                  <Text style={[styles.metalSymbol, metal === m && styles.metalTextActive]}>
-                    {m === 'or' ? 'XAU' : 'XAG'}
-                  </Text>
-                  <Text style={[styles.metalLabel, metal === m && styles.metalTextActive]}>
-                    {m === 'or' ? 'Or' : 'Argent'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.metalGrid}>
+              {METAL_OPTIONS.map((opt) => {
+                const active = metal === opt.key;
+                return (
+                  <TouchableOpacity
+                    key={opt.key}
+                    onPress={() => handleMetalChange(opt.key)}
+                    activeOpacity={0.75}
+                    style={[
+                      styles.metalButton,
+                      active && { backgroundColor: opt.color, borderColor: opt.color },
+                    ]}>
+                    <Text style={[styles.metalSymbol, active && styles.metalTextActive]}>
+                      {opt.symbol}
+                    </Text>
+                    <Text style={[styles.metalLabel, active && styles.metalTextActive]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           </View>
 
@@ -395,22 +428,20 @@ const styles = StyleSheet.create({
   },
 
   // Metal toggle
-  metalRow: {
+  metalGrid: {
     flexDirection: 'row',
-    gap: 12,
+    flexWrap: 'wrap',
+    gap: 10,
   },
   metalButton: {
-    flex: 1,
+    minWidth: '30%' as unknown as number,
+    flexGrow: 1,
     borderRadius: 12,
-    paddingVertical: 18,
+    paddingVertical: 14,
     alignItems: 'center',
     backgroundColor: OrTrackColors.card,
     borderWidth: 1.5,
     borderColor: OrTrackColors.border,
-  },
-  metalButtonActive: {
-    backgroundColor: OrTrackColors.gold,
-    borderColor: OrTrackColors.gold,
   },
   metalSymbol: {
     fontSize: 11,

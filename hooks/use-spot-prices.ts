@@ -1,56 +1,59 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { savePricePoint } from './use-metal-history';
 
-const API_KEY = '368dab096a3de9e62cef65ce3f797bf5';
-const API_URL = `https://api.metalpriceapi.com/v1/latest?api_key=${API_KEY}&base=USD&currencies=XAU,XAG,EUR`;
+const API_KEY = 'C45MSCCNECVXIFIWN9W7609IWN9W7';
+const API_URL = `https://api.metals.dev/v1/latest?api_key=${API_KEY}&currency=EUR&unit=toz`;
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
 
 export type SpotPrices = {
   gold: number | null;
   silver: number | null;
-  goldChangePercent: number | null;
-  silverChangePercent: number | null;
+  platinum: number | null;
+  palladium: number | null;
+  copper: number | null;
 };
 
 export type UseSpotPricesResult = {
   prices: SpotPrices;
-  eurRate: number | null;
   loading: boolean;
   error: string | null;
   lastUpdated: Date | null;
+  historyReady: boolean;
   refresh: () => void;
 };
 
-type MetalPriceApiRates = {
-  XAU: number; // oz d'or par USD (prix inversé)
-  XAG: number; // oz d'argent par USD (prix inversé)
-  EUR: number; // taux EUR/USD
+type MetalsDevResponse = {
+  status: string;
+  metals: {
+    gold: number;
+    silver: number;
+    platinum: number;
+    palladium: number;
+    copper: number;
+  };
 };
 
-async function fetchSpotData(): Promise<{ gold: number; silver: number; eurRate: number }> {
+async function fetchSpotData(): Promise<SpotPrices> {
   const res = await fetch(API_URL);
-  if (!res.ok) throw new Error(`metalpriceapi.com : erreur ${res.status}`);
+  if (!res.ok) throw new Error(`metals.dev : erreur ${res.status}`);
 
-  const data = await res.json();
+  const data: MetalsDevResponse = await res.json();
 
-  if (!data.success) {
-    const msg = data.error?.info ?? 'Réponse invalide';
-    throw new Error(`metalpriceapi.com : ${msg}`);
+  if (data.status !== 'success') {
+    throw new Error('metals.dev : réponse invalide');
   }
 
-  const rates: MetalPriceApiRates = data.rates;
-
-  if (!rates?.XAU || !rates?.XAG || !rates?.EUR) {
-    throw new Error('metalpriceapi.com : taux XAU/XAG/EUR manquants');
+  const m = data.metals;
+  if (!m?.gold || !m?.silver) {
+    throw new Error('metals.dev : prix manquants');
   }
-
-  // rates.XAU = nb oz d'or pour 1 USD → prix or = 1/XAU USD/oz
-  const goldUsd = 1 / rates.XAU;
-  const silverUsd = 1 / rates.XAG;
 
   return {
-    gold: goldUsd * rates.EUR,
-    silver: silverUsd * rates.EUR,
-    eurRate: rates.EUR,
+    gold: m.gold,
+    silver: m.silver,
+    platinum: m.platinum ?? null,
+    palladium: m.palladium ?? null,
+    copper: m.copper ?? null,
   };
 }
 
@@ -58,13 +61,14 @@ export function useSpotPrices(): UseSpotPricesResult {
   const [prices, setPrices] = useState<SpotPrices>({
     gold: null,
     silver: null,
-    goldChangePercent: null,
-    silverChangePercent: null,
+    platinum: null,
+    palladium: null,
+    copper: null,
   });
-  const [eurRate, setEurRate] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [historyReady, setHistoryReady] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchPrices = useCallback(async () => {
@@ -72,16 +76,13 @@ export function useSpotPrices(): UseSpotPricesResult {
     setLoading(true);
 
     try {
-      const { gold, silver, eurRate: rate } = await fetchSpotData();
+      const fetched = await fetchSpotData();
 
-      setEurRate(rate);
-      setPrices({
-        gold,
-        silver,
-        goldChangePercent: null, // non fourni par metalpriceapi
-        silverChangePercent: null,
-      });
+      setPrices(fetched);
       setLastUpdated(new Date());
+
+      await savePricePoint(fetched);
+      setHistoryReady(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Impossible de récupérer les cours');
     } finally {
@@ -99,5 +100,5 @@ export function useSpotPrices(): UseSpotPricesResult {
     };
   }, [fetchPrices]);
 
-  return { prices, eurRate, loading, error, lastUpdated, refresh: fetchPrices };
+  return { prices, loading, error, lastUpdated, historyReady, refresh: fetchPrices };
 }

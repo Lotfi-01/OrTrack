@@ -12,12 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { PriceChart } from '@/components/price-chart';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 
 // ─── Types (miroir de ajouter.tsx / portefeuille.tsx) ─────────────────────────
 
-type MetalType = 'or' | 'argent';
+type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
 
 type Position = {
   id: string;
@@ -68,20 +69,11 @@ function PriceValue({ value, loading }: { value: number | null; loading: boolean
   return <Text style={styles.cardValue}>{formatEur(value)} €/oz</Text>;
 }
 
-function ChangePercent({ value }: { value: number | null }) {
-  if (value === null) return null;
-  const pos = value >= 0;
-  return (
-    <Text style={[styles.changeText, pos ? styles.changePositive : styles.changeNegative]}>
-      {pos ? '+' : ''}{value.toFixed(2)} %
-    </Text>
-  );
-}
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function TableauDeBordScreen() {
-  const { prices, eurRate, loading, error, lastUpdated, refresh } = useSpotPrices();
+  const { prices, loading, error, lastUpdated, historyReady, refresh } = useSpotPrices();
   const [positions, setPositions] = useState<Position[]>([]);
 
   // Recharge à chaque activation de l'onglet
@@ -115,7 +107,12 @@ export default function TableauDeBordScreen() {
     let totalCost = 0;
 
     for (const p of positions) {
-      const spot = p.metal === 'or' ? prices.gold : prices.silver;
+      const spot =
+        p.metal === 'or' ? prices.gold :
+        p.metal === 'argent' ? prices.silver :
+        p.metal === 'platine' ? prices.platinum :
+        p.metal === 'palladium' ? prices.palladium :
+        prices.copper;
       totalCost += p.quantity * p.purchasePrice;
       if (spot !== null) {
         totalValue += p.quantity * (p.weightG / OZ_TO_G) * spot;
@@ -128,29 +125,9 @@ export default function TableauDeBordScreen() {
         ? (totalGainLoss / totalCost) * 100
         : null;
 
-    // Variation du jour — pondérée par valeur de chaque position
-    let dailyChangeEur = 0;
-    let dailyChangeKnown = positions.length > 0;
-
-    for (const p of positions) {
-      const spot = p.metal === 'or' ? prices.gold : prices.silver;
-      const chp = p.metal === 'or' ? prices.goldChangePercent : prices.silverChangePercent;
-      if (spot !== null && chp !== null) {
-        dailyChangeEur += p.quantity * (p.weightG / OZ_TO_G) * spot * (chp / 100);
-      } else {
-        dailyChangeKnown = false;
-      }
-    }
-
-    const dailyChangePct =
-      dailyChangeKnown && totalValue > 0
-        ? (dailyChangeEur / totalValue) * 100
-        : null;
-
     return {
       goldTotalG, silverTotalG, goldPieces, silverPieces,
       totalValue, totalCost, totalGainLoss, totalGainLossPct,
-      dailyChangeEur, dailyChangePct,
     };
   }, [positions, prices]);
 
@@ -236,33 +213,6 @@ export default function TableauDeBordScreen() {
           </View>
         </View>
 
-        {/* ── Variation du jour ── */}
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Variation du jour</Text>
-          {hasPositions && loading ? (
-            <ActivityIndicator size="small" color={OrTrackColors.gold} style={styles.spinner} />
-          ) : portfolio.dailyChangePct !== null ? (
-            <>
-              <Text style={[
-                styles.cardValue,
-                portfolio.dailyChangePct >= 0 ? styles.changePositive : styles.changeNegative,
-              ]}>
-                {portfolio.dailyChangePct >= 0 ? '+' : ''}
-                {portfolio.dailyChangePct.toFixed(2)} %
-              </Text>
-              <Text style={[
-                styles.cardHint,
-                portfolio.dailyChangeEur >= 0 ? styles.changePositive : styles.changeNegative,
-              ]}>
-                {portfolio.dailyChangeEur >= 0 ? '+' : ''}
-                {formatEur(portfolio.dailyChangeEur)} €
-              </Text>
-            </>
-          ) : (
-            <Text style={styles.cardValueUnavailable}>—</Text>
-          )}
-        </View>
-
         {/* ── Accès rapide alertes ── */}
         <TouchableOpacity style={styles.alertsShortcut} onPress={() => router.push('/alertes')}>
           <Text style={styles.alertsShortcutText}>🔔 Alertes de cours</Text>
@@ -301,7 +251,6 @@ export default function TableauDeBordScreen() {
             <View style={styles.cardContent}>
               <Text style={styles.cardLabel}>Cours de l'or (XAU)</Text>
               <PriceValue value={prices.gold} loading={loading} />
-              <ChangePercent value={prices.goldChangePercent} />
             </View>
             <View style={styles.metalBadge}>
               <Text style={styles.metalBadgeText}>Au</Text>
@@ -315,7 +264,6 @@ export default function TableauDeBordScreen() {
             <View style={styles.cardContent}>
               <Text style={styles.cardLabel}>Cours de l'argent (XAG)</Text>
               <PriceValue value={prices.silver} loading={loading} />
-              <ChangePercent value={prices.silverChangePercent} />
             </View>
             <View style={[styles.metalBadge, styles.metalBadgeSilver]}>
               <Text style={[styles.metalBadgeText, styles.metalBadgeTextSilver]}>Ag</Text>
@@ -323,13 +271,55 @@ export default function TableauDeBordScreen() {
           </View>
         </View>
 
+        {/* ── Cours du platine ── */}
+        <View style={styles.card}>
+          <View style={styles.cardRow}>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardLabel}>Cours du platine (XPT)</Text>
+              <PriceValue value={prices.platinum} loading={loading} />
+            </View>
+            <View style={[styles.metalBadge, { borderColor: '#E0E0E0' }]}>
+              <Text style={[styles.metalBadgeText, { color: '#E0E0E0' }]}>Pt</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Cours du palladium ── */}
+        <View style={styles.card}>
+          <View style={styles.cardRow}>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardLabel}>Cours du palladium (XPD)</Text>
+              <PriceValue value={prices.palladium} loading={loading} />
+            </View>
+            <View style={[styles.metalBadge, { borderColor: '#CBA135' }]}>
+              <Text style={[styles.metalBadgeText, { color: '#CBA135' }]}>Pd</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Cours du cuivre ── */}
+        <View style={styles.card}>
+          <View style={styles.cardRow}>
+            <View style={styles.cardContent}>
+              <Text style={styles.cardLabel}>Cours du cuivre (XCU)</Text>
+              <PriceValue value={prices.copper} loading={loading} />
+            </View>
+            <View style={[styles.metalBadge, { borderColor: '#B87333' }]}>
+              <Text style={[styles.metalBadgeText, { color: '#B87333' }]}>Cu</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Graphiques historique ── */}
+        <PriceChart metal="gold" historyReady={historyReady} />
+        <PriceChart metal="silver" historyReady={historyReady} />
+
         {/* ── Pied de page ── */}
         <View style={styles.footer}>
           {loading && <Text style={styles.footerText}>Récupération des cours…</Text>}
           {!loading && lastUpdated && (
             <Text style={styles.footerText}>
               {'Mis à jour à ' + formatTime(lastUpdated)}
-              {eurRate !== null ? ' · 1 USD = ' + eurRate.toFixed(4) + ' EUR' : ''}
               {'\nRafraîchissement auto toutes les 15 min'}
             </Text>
           )}
@@ -456,12 +446,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Cours change %
-  changeText: {
-    fontSize: 13,
-    fontWeight: '500',
-    marginTop: 4,
-  },
   changePositive: { color: '#4CAF50' },
   changeNegative: { color: '#E07070' },
 

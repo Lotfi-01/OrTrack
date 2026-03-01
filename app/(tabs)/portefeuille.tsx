@@ -17,7 +17,7 @@ import { useSpotPrices } from '@/hooks/use-spot-prices';
 
 // ─── Types (miroir de ajouter.tsx) ────────────────────────────────────────────
 
-type MetalType = 'or' | 'argent';
+type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
 
 type Position = {
   id: string;
@@ -48,6 +48,24 @@ function fmtQty(n: number): string {
   return n % 1 === 0 ? String(n) : n.toFixed(2);
 }
 
+const METAL_CONFIG: Record<MetalType, { symbol: string; chipBg: string; chipBorder: string; chipText: string }> = {
+  or:        { symbol: 'XAU', chipBg: '#1F1B0A', chipBorder: OrTrackColors.gold, chipText: OrTrackColors.gold },
+  argent:    { symbol: 'XAG', chipBg: '#18181F', chipBorder: '#A8A8B8', chipText: '#A8A8B8' },
+  platine:   { symbol: 'XPT', chipBg: '#1C1C1C', chipBorder: '#E0E0E0', chipText: '#E0E0E0' },
+  palladium: { symbol: 'XPD', chipBg: '#1F1B0A', chipBorder: '#CBA135', chipText: '#CBA135' },
+  cuivre:    { symbol: 'XCU', chipBg: '#1E1510', chipBorder: '#B87333', chipText: '#B87333' },
+};
+
+function getSpot(metal: MetalType, prices: { gold: number | null; silver: number | null; platinum: number | null; palladium: number | null; copper: number | null }): number | null {
+  switch (metal) {
+    case 'or': return prices.gold;
+    case 'argent': return prices.silver;
+    case 'platine': return prices.platinum;
+    case 'palladium': return prices.palladium;
+    case 'cuivre': return prices.copper;
+  }
+}
+
 // ─── Sous-composant : carte position ─────────────────────────────────────────
 
 type PositionCardProps = {
@@ -73,15 +91,15 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite }: Po
       ? (gainLoss / totalCost) * 100
       : null;
 
-  const isGold = pos.metal === 'or';
+  const cfg = METAL_CONFIG[pos.metal];
 
   return (
     <View style={styles.posCard}>
       {/* ── Ligne 1 : badge + produit + suppression ── */}
       <View style={styles.posHeader}>
-        <View style={[styles.metalChip, isGold ? styles.metalChipGold : styles.metalChipSilver]}>
-          <Text style={[styles.metalChipText, isGold ? styles.metalChipTextGold : styles.metalChipTextSilver]}>
-            {isGold ? 'XAU' : 'XAG'}
+        <View style={[styles.metalChip, { backgroundColor: cfg.chipBg, borderColor: cfg.chipBorder }]}>
+          <Text style={[styles.metalChipText, { color: cfg.chipText }]}>
+            {cfg.symbol}
           </Text>
         </View>
         <Text style={styles.posProduct} numberOfLines={1}>
@@ -199,7 +217,7 @@ export default function PortefeuilleScreen() {
   let allPricesKnown = !pricesLoading;
 
   for (const p of positions) {
-    const spot = p.metal === 'or' ? prices.gold : prices.silver;
+    const spot = getSpot(p.metal, prices);
     totalCost += p.quantity * p.purchasePrice;
     if (spot !== null) {
       totalValue += p.quantity * (p.weightG / OZ_TO_G) * spot;
@@ -286,7 +304,7 @@ export default function PortefeuilleScreen() {
               <PositionCard
                 key={pos.id}
                 pos={pos}
-                spotEur={pos.metal === 'or' ? prices.gold : prices.silver}
+                spotEur={getSpot(pos.metal, prices)}
                 pricesLoading={pricesLoading}
                 onDelete={handleDelete}
                 onFiscalite={() => router.push({ pathname: '/fiscalite', params: { positionId: pos.id } })}

@@ -23,6 +23,7 @@ import { OrTrackColors } from '@/constants/theme';
 const PROFILE_KEY = '@ortrack:profil';
 const SETTINGS_KEY = '@ortrack:settings';
 const POSITIONS_KEY = '@ortrack:positions';
+const HISTORY_KEY = '@ortrack:price_history';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -476,6 +477,33 @@ export default function ReglagesScreen() {
               <Text style={styles.rowLabel}>Politique de confidentialité</Text>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
+          </View>
+
+          {/* ── DÉVELOPPEMENT ──────────────────────────────────────── */}
+          <SectionTitle title="Développement" />
+          <View style={styles.card}>
+            <ActionRow
+              label="Effacer l'historique des prix"
+              icon="🧹"
+              color="#E07070"
+              onPress={() => {
+                Alert.alert(
+                  'Effacer l\u2019historique',
+                  'L\u2019historique des cours sera définitivement supprimé.',
+                  [
+                    { text: 'Annuler', style: 'cancel' },
+                    {
+                      text: 'Effacer',
+                      style: 'destructive',
+                      onPress: async () => {
+                        await AsyncStorage.removeItem(HISTORY_KEY);
+                        Alert.alert('Historique effacé \u2713');
+                      },
+                    },
+                  ],
+                );
+              }}
+            />
           </View>
 
           <Text style={styles.footer}>OrTrack v1.0.0 · Suivi de métaux précieux</Text>
