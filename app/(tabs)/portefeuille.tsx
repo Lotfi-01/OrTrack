@@ -12,12 +12,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-
-// ─── Types (miroir de ajouter.tsx) ────────────────────────────────────────────
-
-type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
 
 type Position = {
   id: string;
@@ -48,23 +45,6 @@ function fmtQty(n: number): string {
   return n % 1 === 0 ? String(n) : n.toFixed(2);
 }
 
-const METAL_CONFIG: Record<MetalType, { symbol: string; chipBg: string; chipBorder: string; chipText: string }> = {
-  or:        { symbol: 'XAU', chipBg: '#1F1B0A', chipBorder: OrTrackColors.gold, chipText: OrTrackColors.gold },
-  argent:    { symbol: 'XAG', chipBg: '#18181F', chipBorder: '#A8A8B8', chipText: '#A8A8B8' },
-  platine:   { symbol: 'XPT', chipBg: '#1C1C1C', chipBorder: '#E0E0E0', chipText: '#E0E0E0' },
-  palladium: { symbol: 'XPD', chipBg: '#1F1B0A', chipBorder: '#CBA135', chipText: '#CBA135' },
-  cuivre:    { symbol: 'XCU', chipBg: '#1E1510', chipBorder: '#B87333', chipText: '#B87333' },
-};
-
-function getSpot(metal: MetalType, prices: { gold: number | null; silver: number | null; platinum: number | null; palladium: number | null; copper: number | null }): number | null {
-  switch (metal) {
-    case 'or': return prices.gold;
-    case 'argent': return prices.silver;
-    case 'platine': return prices.platinum;
-    case 'palladium': return prices.palladium;
-    case 'cuivre': return prices.copper;
-  }
-}
 
 // ─── Sous-composant : carte position ─────────────────────────────────────────
 
@@ -153,9 +133,12 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite }: Po
         </View>
       )}
 
-      {/* ── Bouton fiscalité ── */}
-      <TouchableOpacity style={styles.fiscalButton} onPress={onFiscalite}>
-        <Text style={styles.fiscalButtonText}>Simuler la fiscalité</Text>
+      <TouchableOpacity
+        onPress={onFiscalite}
+        style={{ alignSelf: 'flex-end', marginTop: 10 }}>
+        <Text style={{ fontSize: 12, color: OrTrackColors.gold, fontWeight: '600' }}>
+          Simuler la fiscalité →
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -204,13 +187,16 @@ export default function PortefeuilleScreen() {
 
   // ── Calculs agrégés ───────────────────────────────────────────────────────
 
-  const goldPositions = positions.filter((p) => p.metal === 'or');
-  const silverPositions = positions.filter((p) => p.metal === 'argent');
-
-  const goldTotalG = goldPositions.reduce((s, p) => s + p.quantity * p.weightG, 0);
-  const silverTotalG = silverPositions.reduce((s, p) => s + p.quantity * p.weightG, 0);
-  const goldPieces = goldPositions.reduce((s, p) => s + p.quantity, 0);
-  const silverPieces = silverPositions.reduce((s, p) => s + p.quantity, 0);
+  const metalSummary = (['or', 'argent', 'platine', 'palladium', 'cuivre'] as const).map((m) => {
+    const filtered = positions.filter((p) => p.metal === m);
+    return {
+      metal: m,
+      cfg: METAL_CONFIG[m],
+      totalG: filtered.reduce((s, p) => s + p.quantity * p.weightG, 0),
+      pieces: filtered.reduce((s, p) => s + p.quantity, 0),
+    };
+  });
+  const visibleMetals = metalSummary.filter((m) => m.totalG > 0);
 
   let totalValue = 0;
   let totalCost = 0;
@@ -241,9 +227,9 @@ export default function PortefeuilleScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* En-tête */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Portefeuille</Text>
-          <Text style={styles.subtitle}>Vos métaux précieux physiques</Text>
+        <View style={styles.headerRow}>
+          <Text style={styles.headerBrand}>ORTRACK</Text>
+          <Text style={styles.headerRight}>Portefeuille</Text>
         </View>
 
         {/* ── Valeur totale (si positions) ── */}
@@ -272,27 +258,37 @@ export default function PortefeuilleScreen() {
           </View>
         )}
 
-        {/* ── Résumé Or / Argent ── */}
-        <View style={styles.summaryRow}>
-          <View style={[styles.card, styles.summaryCard]}>
-            <Text style={styles.cardLabel}>Or</Text>
-            <Text style={styles.cardValue}>
-              {hasPositions ? fmtG(goldTotalG) : '0 g'}
-            </Text>
-            <Text style={styles.cardSub}>
-              {hasPositions ? `${fmtQty(goldPieces)} pièce(s)` : '0 pièce(s)'}
-            </Text>
+        {/* ── Résumé métaux ── */}
+        {hasPositions && visibleMetals.length > 0 && (
+          <View style={styles.summaryCard}>
+            {visibleMetals.map((m, i) => (
+              <View key={m.metal}>
+                {i > 0 && <View style={styles.summarySeparator} />}
+                <View style={styles.summaryMetalRow}>
+                  <View style={styles.summaryLeft}>
+                    <View style={[styles.summaryBadge, { borderColor: m.cfg.chipBorder }]}>
+                      <Text style={[styles.summaryBadgeText, { color: m.cfg.chipText }]}>{m.cfg.symbol}</Text>
+                    </View>
+                    <Text style={styles.summaryName}>{m.cfg.name}</Text>
+                  </View>
+                  <View style={styles.summaryRight}>
+                    <Text style={styles.summaryWeight}>{fmtG(m.totalG)}</Text>
+                    <Text style={styles.summaryPieces}>{fmtQty(m.pieces)} pcs</Text>
+                  </View>
+                </View>
+              </View>
+            ))}
           </View>
-          <View style={[styles.card, styles.summaryCard]}>
-            <Text style={styles.cardLabel}>Argent</Text>
-            <Text style={styles.cardValue}>
-              {hasPositions ? fmtG(silverTotalG) : '0 g'}
-            </Text>
-            <Text style={styles.cardSub}>
-              {hasPositions ? `${fmtQty(silverPieces)} pièce(s)` : '0 pièce(s)'}
-            </Text>
-          </View>
-        </View>
+        )}
+
+        {/* ── Simulation fiscale globale ── */}
+        {hasPositions && (
+          <TouchableOpacity
+            style={styles.globalFiscalButton}
+            onPress={() => router.push('/fiscalite-globale' as never)}>
+            <Text style={styles.globalFiscalText}>Simulation fiscale globale →</Text>
+          </TouchableOpacity>
+        )}
 
         {/* ── Liste des positions ── */}
         {hasPositions ? (
@@ -342,15 +338,20 @@ const styles = StyleSheet.create({
   },
 
   // Header
-  header: { marginBottom: 24 },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: OrTrackColors.white,
-    marginBottom: 4,
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  subtitle: {
-    fontSize: 14,
+  headerBrand: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
+    letterSpacing: 2,
+  },
+  headerRight: {
+    fontSize: 13,
     color: OrTrackColors.subtext,
   },
 
@@ -390,36 +391,76 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
 
-  // Summary row
-  summaryRow: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 28,
-  },
-  summaryCard: { flex: 1 },
-  card: {
+  // Summary card
+  summaryCard: {
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
-    padding: 20,
+    padding: 16,
+    marginBottom: 28,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
   },
-  cardLabel: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginBottom: 8,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
+  summaryMetalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
   },
-  cardValue: {
-    fontSize: 20,
+  summaryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  summaryBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    backgroundColor: OrTrackColors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  summaryName: {
+    fontSize: 14,
+    color: OrTrackColors.white,
+    fontWeight: '500',
+    marginLeft: 10,
+  },
+  summaryRight: {
+    alignItems: 'flex-end',
+  },
+  summaryWeight: {
+    fontSize: 14,
     fontWeight: '700',
     color: OrTrackColors.white,
   },
-  cardSub: {
+  summaryPieces: {
     fontSize: 12,
-    color: OrTrackColors.tabIconDefault,
-    marginTop: 4,
+    color: OrTrackColors.subtext,
+    marginTop: 2,
+  },
+  summarySeparator: {
+    height: 1,
+    backgroundColor: OrTrackColors.border,
+  },
+
+  // Global fiscal button
+  globalFiscalButton: {
+    backgroundColor: '#1F1B0A',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: OrTrackColors.gold,
+    alignItems: 'center',
+  },
+  globalFiscalText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
   },
 
   // Section title
@@ -453,24 +494,10 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderWidth: 1,
   },
-  metalChipGold: {
-    backgroundColor: '#1F1B0A',
-    borderColor: OrTrackColors.gold,
-  },
-  metalChipSilver: {
-    backgroundColor: '#18181F',
-    borderColor: '#A8A8B8',
-  },
   metalChipText: {
     fontSize: 9,
     fontWeight: '800',
     letterSpacing: 1,
-  },
-  metalChipTextGold: {
-    color: OrTrackColors.gold,
-  },
-  metalChipTextSilver: {
-    color: '#A8A8B8',
   },
   posProduct: {
     flex: 1,
@@ -545,23 +572,6 @@ const styles = StyleSheet.create({
   posGainPct: {
     fontSize: 13,
     fontWeight: '500',
-  },
-
-  // Bouton fiscalité
-  fiscalButton: {
-    marginTop: 12,
-    borderRadius: 8,
-    paddingVertical: 9,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: OrTrackColors.gold,
-    backgroundColor: '#1A1600',
-  },
-  fiscalButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-    letterSpacing: 0.3,
   },
 
   // Colors

@@ -4,6 +4,8 @@ import { router } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Dimensions,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -34,6 +36,9 @@ type Position = {
 const STORAGE_KEY = '@ortrack:positions';
 const OZ_TO_G = 31.10435;
 
+const { width } = Dimensions.get('window');
+const cardHalfWidth = (width - 40 - 12) / 2;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatEur(value: number): string {
@@ -57,24 +62,24 @@ function fmtQty(n: number): string {
   return `${n % 1 === 0 ? String(n) : n.toFixed(2)} pcs`;
 }
 
-// ─── Sous-composants cours ────────────────────────────────────────────────────
+// ─── Config cours & graphique ────────────────────────────────────────────────
 
-function PriceValue({ value, loading }: { value: number | null; loading: boolean }) {
-  if (loading) {
-    return <ActivityIndicator size="small" color={OrTrackColors.gold} style={styles.spinner} />;
-  }
-  if (value === null) {
-    return <Text style={styles.cardValueUnavailable}>— €/oz</Text>;
-  }
-  return <Text style={styles.cardValue}>{formatEur(value)} €/oz</Text>;
-}
+type ChartMetal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
 
+const METALS_CONFIG: { metal: ChartMetal; name: string; symbol: string; color: string }[] = [
+  { metal: 'gold', name: 'Or', symbol: 'XAU', color: '#C9A84C' },
+  { metal: 'silver', name: 'Argent', symbol: 'XAG', color: '#A8A8B8' },
+  { metal: 'platinum', name: 'Platine', symbol: 'XPT', color: '#E0E0E0' },
+  { metal: 'palladium', name: 'Palladium', symbol: 'XPD', color: '#CBA135' },
+  { metal: 'copper', name: 'Cuivre', symbol: 'XCU', color: '#B87333' },
+];
 
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function TableauDeBordScreen() {
   const { prices, loading, error, lastUpdated, historyReady, refresh } = useSpotPrices();
   const [positions, setPositions] = useState<Position[]>([]);
+  const [selectedChartMetal, setSelectedChartMetal] = useState<ChartMetal>('gold');
 
   // Recharge à chaque activation de l'onglet
   useFocusEffect(
@@ -85,23 +90,21 @@ export default function TableauDeBordScreen() {
     }, [])
   );
 
-  // ── Condition stable : les deux sources de données sont prêtes ────────────
-  // Les mises à jour setLoading(false) et setPrices({...}) peuvent arriver
-  // dans des passes de rendu distinctes ; on exige explicitement que les deux
-  // soient disponibles avant d'afficher quoi que ce soit.
   const pricesReady = !loading && prices.gold !== null;
   const hasPositions = positions.length > 0;
 
-  // ── Tous les calculs dans un useMemo — se recalcule dès que positions
-  //    OU prices changent, indépendamment du flag loading.
   const portfolio = useMemo(() => {
-    const goldPos = positions.filter((p) => p.metal === 'or');
-    const silverPos = positions.filter((p) => p.metal === 'argent');
+    const goldTotalG = positions.filter((p) => p.metal === 'or').reduce((s, p) => s + p.quantity * p.weightG, 0);
+    const silverTotalG = positions.filter((p) => p.metal === 'argent').reduce((s, p) => s + p.quantity * p.weightG, 0);
+    const platinumTotalG = positions.filter((p) => p.metal === 'platine').reduce((s, p) => s + p.quantity * p.weightG, 0);
+    const palladiumTotalG = positions.filter((p) => p.metal === 'palladium').reduce((s, p) => s + p.quantity * p.weightG, 0);
+    const copperTotalG = positions.filter((p) => p.metal === 'cuivre').reduce((s, p) => s + p.quantity * p.weightG, 0);
 
-    const goldTotalG = goldPos.reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const silverTotalG = silverPos.reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const goldPieces = goldPos.reduce((s, p) => s + p.quantity, 0);
-    const silverPieces = silverPos.reduce((s, p) => s + p.quantity, 0);
+    const goldPieces = positions.filter((p) => p.metal === 'or').reduce((s, p) => s + p.quantity, 0);
+    const silverPieces = positions.filter((p) => p.metal === 'argent').reduce((s, p) => s + p.quantity, 0);
+    const platinumPieces = positions.filter((p) => p.metal === 'platine').reduce((s, p) => s + p.quantity, 0);
+    const palladiumPieces = positions.filter((p) => p.metal === 'palladium').reduce((s, p) => s + p.quantity, 0);
+    const copperPieces = positions.filter((p) => p.metal === 'cuivre').reduce((s, p) => s + p.quantity, 0);
 
     let totalValue = 0;
     let totalCost = 0;
@@ -126,47 +129,57 @@ export default function TableauDeBordScreen() {
         : null;
 
     return {
-      goldTotalG, silverTotalG, goldPieces, silverPieces,
+      goldTotalG, silverTotalG, platinumTotalG, palladiumTotalG, copperTotalG,
+      goldPieces, silverPieces, platinumPieces, palladiumPieces, copperPieces,
       totalValue, totalCost, totalGainLoss, totalGainLossPct,
     };
   }, [positions, prices]);
 
-  // ─────────────────────────────────────────────────────────────────────────
+  const portfolioMetals = [
+    { key: 'or', label: 'Or', symbol: 'XAU', color: '#C9A84C', totalG: portfolio.goldTotalG, pieces: portfolio.goldPieces },
+    { key: 'argent', label: 'Argent', symbol: 'XAG', color: '#A8A8B8', totalG: portfolio.silverTotalG, pieces: portfolio.silverPieces },
+    { key: 'platine', label: 'Platine', symbol: 'XPT', color: '#E0E0E0', totalG: portfolio.platinumTotalG, pieces: portfolio.platinumPieces },
+    { key: 'palladium', label: 'Palladium', symbol: 'XPD', color: '#CBA135', totalG: portfolio.palladiumTotalG, pieces: portfolio.palladiumPieces },
+    { key: 'cuivre', label: 'Cuivre', symbol: 'XCU', color: '#B87333', totalG: portfolio.copperTotalG, pieces: portfolio.copperPieces },
+  ].filter((m) => m.totalG > 0);
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={loading}
+            onRefresh={refresh}
+            tintColor={OrTrackColors.gold}
+            colors={[OrTrackColors.gold]}
+          />
+        }>
 
-        {/* En-tête */}
-        <View style={styles.header}>
-          <Text style={styles.appName}>OrTrack</Text>
-          <Text style={styles.title}>Tableau de bord</Text>
-          <Text style={styles.subtitle}>Vue d'ensemble de votre portefeuille</Text>
+        {/* ── 1. Header compact ── */}
+        <View style={styles.headerRow}>
+          <Text style={styles.headerBrand}>ORTRACK</Text>
+          {loading ? (
+            <ActivityIndicator size="small" color={OrTrackColors.gold} />
+          ) : lastUpdated ? (
+            <Text style={styles.headerTime}>Mis à jour à {formatTime(lastUpdated)}</Text>
+          ) : null}
         </View>
 
-        {/* ── Valeur totale ── */}
-        <View style={[styles.card, hasPositions && styles.cardHighlighted]}>
-          <Text style={styles.cardLabel}>Valeur totale estimée</Text>
+        {/* ── 2. Hero card ── */}
+        <View style={styles.heroCard}>
+          <Text style={styles.heroLabel}>VALEUR TOTALE ESTIMÉE</Text>
 
           {!hasPositions ? (
-            // Aucune position
             <>
-              <Text style={styles.cardValueLarge}>— €</Text>
-              <Text style={styles.cardHint}>Ajoutez des actifs pour commencer</Text>
+              <Text style={styles.heroValue}>— €</Text>
+              <Text style={styles.heroHint}>Ajoutez des actifs pour commencer</Text>
             </>
           ) : loading || !pricesReady ? (
-            // Positions présentes mais cours en cours de chargement
-            <ActivityIndicator
-              size="large"
-              color={OrTrackColors.gold}
-              style={styles.spinnerLarge}
-            />
+            <ActivityIndicator size="large" color={OrTrackColors.gold} style={styles.heroSpinner} />
           ) : (
-            // Positions + cours disponibles
             <>
-              <Text style={styles.cardValueLarge}>
-                {formatEur(portfolio.totalValue)} €
-              </Text>
+              <Text style={styles.heroValue}>{formatEur(portfolio.totalValue)} €</Text>
               {portfolio.totalGainLoss !== null && (
                 <View style={styles.gainRow}>
                   <Text style={[
@@ -191,48 +204,36 @@ export default function TableauDeBordScreen() {
           )}
         </View>
 
-        {/* ── Or / Argent ── */}
-        <View style={styles.row}>
-          <View style={[styles.card, styles.cardHalf]}>
-            <Text style={styles.cardLabel}>Or</Text>
-            <Text style={styles.cardValue}>
-              {hasPositions ? fmtG(portfolio.goldTotalG) : '— g'}
-            </Text>
-            {hasPositions && portfolio.goldPieces > 0 && (
-              <Text style={styles.cardSub}>{fmtQty(portfolio.goldPieces)}</Text>
-            )}
-          </View>
-          <View style={[styles.card, styles.cardHalf]}>
-            <Text style={styles.cardLabel}>Argent</Text>
-            <Text style={styles.cardValue}>
-              {hasPositions ? fmtG(portfolio.silverTotalG) : '— g'}
-            </Text>
-            {hasPositions && portfolio.silverPieces > 0 && (
-              <Text style={styles.cardSub}>{fmtQty(portfolio.silverPieces)}</Text>
-            )}
-          </View>
-        </View>
+        {/* ── 3. Portefeuille résumé ── */}
+        {hasPositions && portfolioMetals.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>MON PORTEFEUILLE</Text>
+            <View style={styles.portfolioCard}>
+              {portfolioMetals.map((m, i) => (
+                <View key={m.key}>
+                  {i > 0 && <View style={styles.separator} />}
+                  <View style={styles.portfolioRow}>
+                    <View style={styles.portfolioLeft}>
+                      <View style={[styles.miniBadge, { borderColor: m.color }]}>
+                        <Text style={[styles.miniBadgeText, { color: m.color }]}>{m.symbol}</Text>
+                      </View>
+                      <Text style={styles.portfolioLabel}>{m.label}</Text>
+                    </View>
+                    <View style={styles.portfolioRight}>
+                      <Text style={styles.portfolioWeight}>{fmtG(m.totalG)}</Text>
+                      <Text style={styles.portfolioPieces}>{fmtQty(m.pieces)}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
-        {/* ── Accès rapide alertes ── */}
-        <TouchableOpacity style={styles.alertsShortcut} onPress={() => router.push('/alertes')}>
-          <Text style={styles.alertsShortcutText}>🔔 Alertes de cours</Text>
-          <Text style={styles.alertsShortcutArrow}>›</Text>
-        </TouchableOpacity>
+        {/* ── 4. Cours en direct ── */}
+        <Text style={styles.sectionTitle}>COURS EN DIRECT</Text>
 
-        {/* ── En-tête section cours ── */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Cours en direct</Text>
-          <TouchableOpacity
-            onPress={refresh}
-            disabled={loading}
-            style={[styles.refreshButton, loading && styles.refreshButtonDisabled]}>
-            <Text style={[styles.refreshText, loading && styles.refreshTextDisabled]}>
-              Actualiser
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Bandeau erreur ── */}
+        {/* Bandeau erreur */}
         {error && !loading && (
           <View style={styles.errorBanner}>
             <View style={styles.errorRow}>
@@ -245,85 +246,90 @@ export default function TableauDeBordScreen() {
           </View>
         )}
 
-        {/* ── Cours de l'or ── */}
-        <View style={styles.card}>
-          <View style={styles.cardRow}>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardLabel}>Cours de l'or (XAU)</Text>
-              <PriceValue value={prices.gold} loading={loading} />
-            </View>
-            <View style={styles.metalBadge}>
-              <Text style={styles.metalBadgeText}>Au</Text>
-            </View>
-          </View>
+        <View style={styles.spotGrid}>
+          {METALS_CONFIG.map((m) => {
+            const spot = prices[m.metal];
+            const isCopper = m.metal === 'copper';
+            const displayPrice = spot !== null
+              ? isCopper ? spot * (1000 / OZ_TO_G) : spot
+              : null;
+            const unitLabel = isCopper ? '€/kg' : '€/oz';
+            return (
+              <View key={m.metal} style={styles.spotCard}>
+                <View style={styles.spotInner}>
+                  <View>
+                    <Text style={styles.spotName}>{m.name}</Text>
+                    <Text style={styles.spotSymbol}>{m.symbol}</Text>
+                    {loading ? (
+                      <ActivityIndicator size="small" color={OrTrackColors.gold} style={styles.spotSpinner} />
+                    ) : displayPrice !== null ? (
+                      <>
+                        <Text style={styles.spotPrice}>{formatEur(displayPrice)}</Text>
+                        <Text style={styles.spotUnit}>{unitLabel}</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.spotUnavailable}>—</Text>
+                    )}
+                  </View>
+                  <View style={[
+                    styles.spotBadge,
+                    { borderColor: m.color },
+                    m.metal === 'platinum' && { backgroundColor: 'rgba(224,224,224,0.15)' },
+                  ]}>
+                    <Text style={[styles.spotBadgeText, { color: m.color }]}>{m.symbol}</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
         </View>
 
-        {/* ── Cours de l'argent ── */}
-        <View style={styles.card}>
-          <View style={styles.cardRow}>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardLabel}>Cours de l'argent (XAG)</Text>
-              <PriceValue value={prices.silver} loading={loading} />
-            </View>
-            <View style={[styles.metalBadge, styles.metalBadgeSilver]}>
-              <Text style={[styles.metalBadgeText, styles.metalBadgeTextSilver]}>Ag</Text>
-            </View>
-          </View>
-        </View>
+        {/* ── 5. Graphique unique ── */}
+        <Text style={styles.sectionTitle}>HISTORIQUE</Text>
 
-        {/* ── Cours du platine ── */}
-        <View style={styles.card}>
-          <View style={styles.cardRow}>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardLabel}>Cours du platine (XPT)</Text>
-              <PriceValue value={prices.platinum} loading={loading} />
-            </View>
-            <View style={[styles.metalBadge, { borderColor: '#E0E0E0' }]}>
-              <Text style={[styles.metalBadgeText, { color: '#E0E0E0' }]}>Pt</Text>
-            </View>
-          </View>
-        </View>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: 8 }}
+          style={styles.chartSelector}>
+          {METALS_CONFIG.map((m) => {
+            const active = selectedChartMetal === m.metal;
+            return (
+              <TouchableOpacity
+                key={m.metal}
+                style={[
+                  styles.chartBtn,
+                  { borderColor: m.color },
+                  active ? { backgroundColor: m.color } : { backgroundColor: OrTrackColors.card },
+                ]}
+                onPress={() => setSelectedChartMetal(m.metal)}>
+                <Text style={[
+                  styles.chartBtnText,
+                  active ? { color: OrTrackColors.background } : { color: m.color },
+                ]}>
+                  {m.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-        {/* ── Cours du palladium ── */}
-        <View style={styles.card}>
-          <View style={styles.cardRow}>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardLabel}>Cours du palladium (XPD)</Text>
-              <PriceValue value={prices.palladium} loading={loading} />
-            </View>
-            <View style={[styles.metalBadge, { borderColor: '#CBA135' }]}>
-              <Text style={[styles.metalBadgeText, { color: '#CBA135' }]}>Pd</Text>
-            </View>
-          </View>
-        </View>
+        <PriceChart metal={selectedChartMetal} historyReady={historyReady} />
 
-        {/* ── Cours du cuivre ── */}
-        <View style={styles.card}>
-          <View style={styles.cardRow}>
-            <View style={styles.cardContent}>
-              <Text style={styles.cardLabel}>Cours du cuivre (XCU)</Text>
-              <PriceValue value={prices.copper} loading={loading} />
-            </View>
-            <View style={[styles.metalBadge, { borderColor: '#B87333' }]}>
-              <Text style={[styles.metalBadgeText, { color: '#B87333' }]}>Cu</Text>
-            </View>
-          </View>
-        </View>
+        {/* ── 6. Accès rapide alertes ── */}
+        <TouchableOpacity style={styles.alertsBtn} onPress={() => router.push('/alertes')}>
+          <Text style={styles.alertsBtnText}>Alertes de cours</Text>
+          <Text style={styles.alertsArrow}>›</Text>
+        </TouchableOpacity>
 
-        {/* ── Graphiques historique ── */}
-        <PriceChart metal="gold" historyReady={historyReady} />
-        <PriceChart metal="silver" historyReady={historyReady} />
-
-        {/* ── Pied de page ── */}
-        <View style={styles.footer}>
-          {loading && <Text style={styles.footerText}>Récupération des cours…</Text>}
-          {!loading && lastUpdated && (
+        {/* ── 9. Footer ── */}
+        {!loading && lastUpdated && (
+          <View style={styles.footer}>
             <Text style={styles.footerText}>
-              {'Mis à jour à ' + formatTime(lastUpdated)}
-              {'\nRafraîchissement auto toutes les 15 min'}
+              Mis à jour à {formatTime(lastUpdated)}
             </Text>
-          )}
-        </View>
+          </View>
+        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -342,96 +348,54 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
 
-  // Header
-  header: { marginBottom: 24 },
-  appName: {
+  // 1. Header
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headerBrand: {
     fontSize: 13,
     fontWeight: '600',
     color: OrTrackColors.gold,
     letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: 8,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: OrTrackColors.white,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
+  headerTime: {
+    fontSize: 11,
     color: OrTrackColors.subtext,
   },
 
-  // Cards
-  card: {
+  // 2. Hero
+  heroCard: {
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
     padding: 20,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  cardHighlighted: {
     borderColor: '#3A2E0A',
   },
-  cardHalf: {
-    flex: 1,
-    marginBottom: 0,
-  },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  cardContent: { flex: 1 },
-  row: {
-    flexDirection: 'row',
-    gap: 16,
-    marginBottom: 16,
-  },
-  cardLabel: {
+  heroLabel: {
     fontSize: 11,
     color: OrTrackColors.subtext,
-    marginBottom: 8,
     textTransform: 'uppercase',
     letterSpacing: 0.8,
+    marginBottom: 8,
   },
-  cardValueLarge: {
-    fontSize: 32,
+  heroValue: {
+    fontSize: 36,
     fontWeight: '700',
     color: OrTrackColors.white,
   },
-  cardValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  cardValueUnavailable: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: OrTrackColors.tabIconDefault,
-  },
-  cardHint: {
+  heroHint: {
     fontSize: 12,
     color: OrTrackColors.tabIconDefault,
     marginTop: 6,
   },
-  cardSub: {
-    fontSize: 12,
-    color: OrTrackColors.tabIconDefault,
-    marginTop: 4,
-  },
-  spinner: {
-    alignSelf: 'flex-start',
-    marginVertical: 4,
-  },
-  spinnerLarge: {
+  heroSpinner: {
     alignSelf: 'flex-start',
     marginVertical: 8,
   },
-
-  // Gain/loss
   gainRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -445,42 +409,175 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-
   changePositive: { color: '#4CAF50' },
   changeNegative: { color: '#E07070' },
 
-  // Section header
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    marginTop: 4,
-  },
+  // 3. Portefeuille résumé
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: '600',
     color: OrTrackColors.gold,
     textTransform: 'uppercase',
     letterSpacing: 1,
+    marginBottom: 12,
+    marginTop: 4,
   },
-  refreshButton: {
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 6,
+  portfolioCard: {
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: OrTrackColors.gold,
-  },
-  refreshButtonDisabled: {
     borderColor: OrTrackColors.border,
   },
-  refreshText: {
+  portfolioRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  portfolioLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  miniBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    backgroundColor: OrTrackColors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  portfolioLabel: {
+    fontSize: 14,
+    color: OrTrackColors.white,
+    fontWeight: '500',
+    marginLeft: 10,
+  },
+  portfolioRight: {
+    alignItems: 'flex-end',
+  },
+  portfolioWeight: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: OrTrackColors.white,
+  },
+  portfolioPieces: {
     fontSize: 12,
-    color: OrTrackColors.gold,
+    color: OrTrackColors.subtext,
+    marginTop: 2,
+  },
+  separator: {
+    height: 1,
+    backgroundColor: OrTrackColors.border,
+  },
+
+  // 4. Cours en direct
+  spotGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+  },
+  spotCard: {
+    width: cardHalfWidth,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: OrTrackColors.card,
+    borderWidth: 1,
+    borderColor: OrTrackColors.border,
+  },
+  spotInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  spotName: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: OrTrackColors.white,
+  },
+  spotSymbol: {
+    fontSize: 10,
+    color: OrTrackColors.subtext,
+    marginBottom: 4,
+  },
+  spotPrice: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: OrTrackColors.white,
+  },
+  spotUnavailable: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: OrTrackColors.subtext,
+  },
+  spotUnit: {
+    fontSize: 10,
+    color: OrTrackColors.subtext,
+    marginTop: 1,
+  },
+  spotSpinner: {
+    alignSelf: 'flex-start',
+    marginVertical: 2,
+  },
+  spotBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    backgroundColor: OrTrackColors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spotBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+
+  // 5. Graphique
+  chartSelector: {
+    marginBottom: 12,
+  },
+  chartBtn: {
+    borderRadius: 20,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+  },
+  chartBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  // 6. Alertes
+  alertsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginBottom: 16,
+    backgroundColor: OrTrackColors.card,
+    borderWidth: 1,
+    borderColor: OrTrackColors.border,
+  },
+  alertsBtnText: {
+    fontSize: 13,
+    color: OrTrackColors.white,
     fontWeight: '500',
   },
-  refreshTextDisabled: {
-    color: OrTrackColors.tabIconDefault,
+  alertsArrow: {
+    fontSize: 20,
+    color: OrTrackColors.gold,
+    fontWeight: '300',
+    lineHeight: 22,
   },
 
   // Error banner
@@ -522,50 +619,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#E07070',
-  },
-
-  // Metal badge
-  metalBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: OrTrackColors.background,
-    borderWidth: 2,
-    borderColor: OrTrackColors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  metalBadgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-  },
-  metalBadgeSilver: { borderColor: '#A8A8B8' },
-  metalBadgeTextSilver: { color: '#A8A8B8' },
-
-  // Alertes shortcut
-  alertsShortcut: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  alertsShortcutText: {
-    fontSize: 14,
-    color: OrTrackColors.white,
-    fontWeight: '500',
-  },
-  alertsShortcutArrow: {
-    fontSize: 20,
-    color: OrTrackColors.gold,
-    fontWeight: '300',
-    lineHeight: 22,
   },
 
   // Footer

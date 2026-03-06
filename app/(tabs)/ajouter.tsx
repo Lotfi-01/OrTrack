@@ -14,12 +14,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
 
 export type Position = {
   id: string;
@@ -74,13 +71,7 @@ const PRODUCTS: Record<MetalType, Product[]> = {
   ],
 };
 
-const METAL_OPTIONS: { key: MetalType; symbol: string; label: string; color: string }[] = [
-  { key: 'or', symbol: 'XAU', label: 'Or', color: OrTrackColors.gold },
-  { key: 'argent', symbol: 'XAG', label: 'Argent', color: '#A8A8B8' },
-  { key: 'platine', symbol: 'XPT', label: 'Platine', color: '#E0E0E0' },
-  { key: 'palladium', symbol: 'XPD', label: 'Palladium', color: '#CBA135' },
-  { key: 'cuivre', symbol: 'XCU', label: 'Cuivre', color: '#B87333' },
-];
+const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CONFIG[MetalType]][];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -130,12 +121,7 @@ export default function AjouterScreen() {
   const effectiveWeightG = product.weightG ?? toNum(customWeight);
   const qty = toNum(quantity);
   const price = toNum(purchasePrice);
-  const spotEur =
-    metal === 'or' ? prices.gold :
-    metal === 'argent' ? prices.silver :
-    metal === 'platine' ? prices.platinum :
-    metal === 'palladium' ? prices.palladium :
-    prices.copper;
+  const spotEur = getSpot(metal, prices);
 
   const currentValue =
     spotEur !== null && effectiveWeightG > 0 && qty > 0
@@ -202,36 +188,43 @@ export default function AjouterScreen() {
           showsVerticalScrollIndicator={false}>
 
           {/* En-tête */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Ajouter une position</Text>
-            <Text style={styles.subtitle}>Enregistrez un achat de métal précieux</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.headerBrand}>ORTRACK</Text>
+            <Text style={styles.headerRight}>Ajouter</Text>
           </View>
 
           {/* ── Sélection métal ─────────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Métal</Text>
-            <View style={styles.metalGrid}>
-              {METAL_OPTIONS.map((opt) => {
-                const active = metal === opt.key;
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 8 }}>
+              {metalEntries.map(([key, cfg]) => {
+                const active = metal === key;
                 return (
                   <TouchableOpacity
-                    key={opt.key}
-                    onPress={() => handleMetalChange(opt.key)}
+                    key={key}
+                    onPress={() => handleMetalChange(key)}
                     activeOpacity={0.75}
                     style={[
-                      styles.metalButton,
-                      active && { backgroundColor: opt.color, borderColor: opt.color },
+                      styles.metalPill,
+                      active
+                        ? { backgroundColor: cfg.chipBorder, borderColor: cfg.chipBorder }
+                        : { backgroundColor: OrTrackColors.card, borderColor: OrTrackColors.border },
                     ]}>
-                    <Text style={[styles.metalSymbol, active && styles.metalTextActive]}>
-                      {opt.symbol}
-                    </Text>
-                    <Text style={[styles.metalLabel, active && styles.metalTextActive]}>
-                      {opt.label}
+                    <Text style={[
+                      styles.metalPillText,
+                      active
+                        ? { color: OrTrackColors.background, fontWeight: '700' }
+                        : { color: OrTrackColors.white, fontWeight: '600' },
+                    ]}>
+                      {cfg.name}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
-            </View>
+            </ScrollView>
           </View>
 
           {/* ── Sélection produit ───────────────────────────────────────── */}
@@ -264,18 +257,16 @@ export default function AjouterScreen() {
           {product.weightG === null && (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Poids unitaire</Text>
-              <View style={styles.inputRow}>
+              <View style={styles.inputWrapper}>
                 <TextInput
-                  style={[styles.input, styles.inputFlex]}
+                  style={styles.input}
                   keyboardType="decimal-pad"
                   placeholder="Ex : 7,78"
                   placeholderTextColor={OrTrackColors.tabIconDefault}
                   value={customWeight}
                   onChangeText={setCustomWeight}
                 />
-                <View style={styles.inputUnit}>
-                  <Text style={styles.inputUnitText}>g</Text>
-                </View>
+                <Text style={styles.inputSuffix}>g</Text>
               </View>
             </View>
           )}
@@ -287,35 +278,31 @@ export default function AjouterScreen() {
 
               <View style={styles.field}>
                 <Text style={styles.fieldLabel}>Quantité</Text>
-                <View style={styles.inputRow}>
+                <View style={styles.inputWrapper}>
                   <TextInput
-                    style={[styles.input, styles.inputFlex]}
+                    style={styles.input}
                     keyboardType="decimal-pad"
                     placeholder="1"
                     placeholderTextColor={OrTrackColors.tabIconDefault}
                     value={quantity}
                     onChangeText={setQuantity}
                   />
-                  <View style={styles.inputUnit}>
-                    <Text style={styles.inputUnitText}>pcs</Text>
-                  </View>
+                  <Text style={styles.inputSuffix}>pcs</Text>
                 </View>
               </View>
 
               <View style={styles.field}>
                 <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
-                <View style={styles.inputRow}>
+                <View style={styles.inputWrapper}>
                   <TextInput
-                    style={[styles.input, styles.inputFlex]}
+                    style={styles.input}
                     keyboardType="decimal-pad"
                     placeholder="0,00"
                     placeholderTextColor={OrTrackColors.tabIconDefault}
                     value={purchasePrice}
                     onChangeText={setPurchasePrice}
                   />
-                  <View style={styles.inputUnit}>
-                    <Text style={styles.inputUnitText}>€</Text>
-                  </View>
+                  <Text style={styles.inputSuffix}>€</Text>
                 </View>
               </View>
 
@@ -404,15 +391,20 @@ const styles = StyleSheet.create({
   },
 
   // Header
-  header: { marginBottom: 28 },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: OrTrackColors.white,
-    marginBottom: 4,
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
-  subtitle: {
-    fontSize: 14,
+  headerBrand: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
+    letterSpacing: 2,
+  },
+  headerRight: {
+    fontSize: 13,
     color: OrTrackColors.subtext,
   },
 
@@ -427,36 +419,15 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // Metal toggle
-  metalGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-  },
-  metalButton: {
-    minWidth: '30%' as unknown as number,
-    flexGrow: 1,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    backgroundColor: OrTrackColors.card,
+  // Metal pills
+  metalPill: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: OrTrackColors.border,
   },
-  metalSymbol: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    color: OrTrackColors.subtext,
-    marginBottom: 4,
-  },
-  metalLabel: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  metalTextActive: {
-    color: OrTrackColors.background,
+  metalPillText: {
+    fontSize: 14,
   },
 
   // Product chips
@@ -505,39 +476,24 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 2,
   },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 0,
+  inputWrapper: {
+    position: 'relative',
+    justifyContent: 'center',
   },
   input: {
-    flex: 1,
     backgroundColor: OrTrackColors.card,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 14,
+    paddingRight: 48,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
     fontSize: 16,
     color: OrTrackColors.white,
   },
-  inputFlex: {
-    borderTopRightRadius: 0,
-    borderBottomRightRadius: 0,
-    borderRightWidth: 0,
-  },
-  inputUnit: {
-    backgroundColor: OrTrackColors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    borderTopRightRadius: 10,
-    borderBottomRightRadius: 10,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-    borderLeftWidth: 0,
-    justifyContent: 'center',
-  },
-  inputUnitText: {
+  inputSuffix: {
+    position: 'absolute',
+    right: 14,
     fontSize: 14,
     fontWeight: '600',
     color: OrTrackColors.subtext,

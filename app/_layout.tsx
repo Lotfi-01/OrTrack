@@ -13,6 +13,7 @@ import 'react-native-reanimated';
 
 import { OrTrackColors } from '@/constants/theme';
 import { checkPriceAlerts } from '@/hooks/use-price-alerts';
+import { registerForPushNotifications } from '../services/notifications';
 
 // Afficher les notifications quand l'app est au premier plan
 setNotificationHandler({
@@ -24,7 +25,7 @@ setNotificationHandler({
   }),
 });
 
-const ONBOARDING_KEY = '@ortrack:onboarding_done';
+const ONBOARDING_KEY = '@ortrack:onboarding_complete';
 
 const OrTrackNavTheme = {
   ...DarkTheme,
@@ -46,6 +47,7 @@ export const unstable_settings = {
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const needsOnboarding = useRef(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   // Vérifier si l'onboarding a déjà été fait
   useEffect(() => {
@@ -82,6 +84,34 @@ export default function RootLayout() {
       clearInterval(interval);
     };
   }, [ready]);
+
+  // Enregistrer le push token auprès de Supabase
+  useEffect(() => {
+    if (!ready) return;
+    registerForPushNotifications();
+  }, [ready]);
+
+  // Vérifier si l'onboarding a été complété
+  useEffect(() => {
+    async function checkOnboarding() {
+      try {
+        const complete = await AsyncStorage.getItem('@ortrack:onboarding_complete');
+        if (!complete) {
+          // setTimeout garantit que le navigator est prêt avant la redirection
+          setTimeout(() => {
+            router.replace('/onboarding');
+          }, 0);
+        }
+      } catch (e) {
+        console.log('Onboarding check error:', e);
+      } finally {
+        setOnboardingChecked(true);
+      }
+    }
+    checkOnboarding();
+  }, []);
+
+  if (!onboardingChecked) return null;
 
   // Écran de chargement : fond uni pendant la vérification AsyncStorage
   if (!ready) {

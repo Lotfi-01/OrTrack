@@ -506,6 +506,23 @@ export default function ReglagesScreen() {
             />
           </View>
 
+          {/* ── INTRODUCTION ──────────────────────────────────────── */}
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.7}
+              onPress={async () => {
+                await AsyncStorage.removeItem('@ortrack:onboarding_complete');
+                setTimeout(() => {
+                  router.replace('/onboarding');
+                }, 0);
+              }}>
+              <Text style={[styles.rowLabel, { color: OrTrackColors.subtext }]}>
+                ℹ️  Revoir l'introduction
+              </Text>
+            </TouchableOpacity>
+          </View>
+
           <Text style={styles.footer}>OrTrack v1.0.0 · Suivi de métaux précieux</Text>
 
         </ScrollView>

@@ -50,6 +50,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="apprendre"
+        options={{
+          title: 'Apprendre',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="book-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="alertes"
+        options={{
+          title: 'Alertes',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="notifications-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="reglages"
         options={{
           title: 'Réglages',

@@ -1,12 +1,12 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Stop, Path, Line as SvgLine, G, Text as SvgText } from 'react-native-svg';
 
 import { OrTrackColors } from '@/constants/theme';
 import { loadPriceHistory, type PricePoint } from '@/hooks/use-metal-history';
 
-type Metal = 'gold' | 'silver';
+type Metal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
 type Period = '1J' | '1S' | '1M' | 'MAX';
 
 const PERIODS: { key: Period; label: string; ms: number | null }[] = [
@@ -19,6 +19,17 @@ const PERIODS: { key: Period; label: string; ms: number | null }[] = [
 const LINE_COLORS: Record<Metal, string> = {
   gold: OrTrackColors.gold,
   silver: '#A8A8B8',
+  platinum: '#E0E0E0',
+  palladium: '#CBA135',
+  copper: '#B87333',
+};
+
+const TITLES: Record<Metal, string> = {
+  gold: 'Historique Or (XAU)',
+  silver: 'Historique Argent (XAG)',
+  platinum: 'Historique Platine (XPT)',
+  palladium: 'Historique Palladium (XPD)',
+  copper: 'Historique Cuivre (XCU)',
 };
 
 const CHART_HEIGHT = 180;
@@ -45,6 +56,8 @@ function niceStep(range: number, targetTicks: number): number {
 }
 
 export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady: boolean }) {
+  const gradIdRef = useRef(`grad-${metal}-${Math.random().toString(36).slice(2, 7)}`);
+  const gradId = gradIdRef.current;
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [period, setPeriod] = useState<Period>('MAX');
 
@@ -68,7 +81,7 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
   }, [history, period]);
 
   const chartData = useMemo(
-    () => filtered.map((pt) => ({ x: pt.timestamp, y: pt[metal] })),
+    () => filtered.filter((pt) => (pt[metal] ?? 0) > 0).map((pt) => ({ x: pt.timestamp, y: pt[metal] ?? 0 })),
     [filtered, metal],
   );
 
@@ -81,7 +94,7 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
   }, [chartData]);
 
   const color = LINE_COLORS[metal];
-  const title = metal === 'gold' ? 'Historique Or (XAU)' : 'Historique Argent (XAG)';
+  const title = TITLES[metal];
 
   // ── SVG layout computation ─────────────────────────────────────────────
   const plotW = 340 - PADDING.left - PADDING.right;
@@ -164,7 +177,7 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
       ) : (
         <Svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 340 ${CHART_HEIGHT}`}>
           <Defs>
-            <LinearGradient id={`grad-${metal}`} x1="0" y1="0" x2="0" y2="1">
+            <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0%" stopColor={color} stopOpacity={0.25} />
               <Stop offset="100%" stopColor={color} stopOpacity={0.02} />
             </LinearGradient>
@@ -198,7 +211,7 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
           </G>
 
           {/* Area fill */}
-          <Path d={areaPath} fill={`url(#grad-${metal})`} />
+          <Path d={areaPath} fill={`url(#${gradId})`} />
 
           {/* Line stroke */}
           <Path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />

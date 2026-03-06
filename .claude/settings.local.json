@@ -15,7 +15,10 @@
       "Bash(npx expo:*)",
       "Bash(npx tsc:*)",
       "Bash(ls:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx supabase@latest:*)",
+      "Bash(eas build:*)",
+      "Bash(eas build:list:*)"
     ]
   }
 }

@@ -1,316 +1,353 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { router } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react'
 import {
-  Dimensions,
-  FlatList,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
   View,
-  ViewToken,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  Dimensions,
+  StatusBar,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+} from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { Ionicons } from '@expo/vector-icons'
+import AsyncStorage from '@react-native-async-storage/async-storage'
+import { router } from 'expo-router'
+import { OrTrackColors } from '@/constants/theme'
 
-import { OrTrackColors } from '@/constants/theme';
+const { width } = Dimensions.get('window')
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
-
-const { width: SCREEN_W } = Dimensions.get('window');
-const ONBOARDING_KEY = '@ortrack:onboarding_done';
-
-type Slide = { emoji: string; title: string; subtitle: string };
+type Slide = {
+  id: number
+  emoji?: string
+  icon?: keyof typeof Ionicons.glyphMap
+  iconColor?: string
+  title: string
+  subtitle: string
+  isFirst: boolean
+  proofCardLabel: string
+  proofCardValue?: string
+  proofCardText?: string
+  isLivePrice?: boolean
+}
 
 const SLIDES: Slide[] = [
   {
-    emoji: '🥇',
-    title: 'Bienvenue sur OrTrack',
-    subtitle:
-      'Le compagnon idéal pour suivre votre patrimoine en métaux précieux physiques',
+    id: 1,
+    emoji: '🏅',
+    title: 'Votre or vaut combien\naujourd\'hui ?',
+    subtitle: 'Suivez la valeur réelle de votre patrimoine\nen métaux précieux, en temps réel',
+    isFirst: true,
+    proofCardLabel: '🥇 Or — cours actuel',
+    isLivePrice: true,
   },
   {
+    id: 2,
     emoji: '📊',
-    title: 'Cours en temps réel',
-    subtitle:
-      "Prix de l'or et de l'argent mis à jour automatiquement. Votre portefeuille valorisé à la seconde près.",
+    title: 'Ne manquez plus jamais\nune opportunité',
+    subtitle: 'Or, Argent, Platine, Palladium — les cours\nen direct, actualisés en permanence',
+    isFirst: false,
+    proofCardLabel: '🔔 Alertes personnalisables',
+    proofCardText: 'Soyez notifié dès que le prix cible est atteint',
   },
   {
-    emoji: '🏛️',
-    title: 'Optimisation fiscale française',
-    subtitle:
-      'Simulez votre imposition avant chaque vente. Choisissez le meilleur régime fiscal automatiquement.',
+    id: 3,
+    emoji: '💰',
+    title: 'Sachez exactement\nce que vous possédez',
+    subtitle: 'Lingots, pièces ou grammes —\nchaque métal valorisé à l\'euro près',
+    isFirst: false,
+    proofCardLabel: '📦 Exemple de suivi',
+    proofCardText: '1 Napoléon · 6,45g · valorisé en temps réel',
   },
-];
+  {
+    id: 4,
+    icon: 'calculator-outline',
+    iconColor: '#C9A84C',
+    title: 'Simulation fiscale\nincluse',
+    subtitle: 'Calculez vos plus-values et anticipez\nvotre imposition en quelques secondes',
+    isFirst: false,
+    proofCardLabel: '✅ Conforme au droit français',
+    proofCardText: 'Régime forfaitaire et abattement inclus',
+  },
+]
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function finishOnboarding() {
-  await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-  router.replace('/(tabs)');
+async function completeOnboarding() {
+  await AsyncStorage.setItem('@ortrack:onboarding_complete', 'true')
+  router.replace('/(tabs)')
 }
 
-// ─── Écran ────────────────────────────────────────────────────────────────────
-
 export default function OnboardingScreen() {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const flatListRef = useRef<FlatList<Slide>>(null);
+  const scrollRef = useRef<ScrollView>(null)
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [goldPrice, setGoldPrice] = useState<number | null>(null)
+  const [goldLoading, setGoldLoading] = useState(true)
 
-  const viewabilityConfig = useRef({ viewAreaCoveragePercentThreshold: 50 }).current;
-
-  const onViewableItemsChanged = useCallback(
-    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-      if (viewableItems.length > 0 && viewableItems[0].index !== null) {
-        setActiveIndex(viewableItems[0].index);
+  useEffect(() => {
+    async function fetchGoldPrice() {
+      try {
+        const res = await fetch(
+          'https://api.metals.dev/v1/latest?api_key=C45MSCCNECVXIFIWN9W7609IWN9W7&currency=EUR&unit=toz'
+        )
+        const data = await res.json()
+        if (data.status === 'success' && data.metals?.gold) {
+          setGoldPrice(data.metals.gold)
+        }
+      } catch {
+        // Fallback silencieux → prix null
+      } finally {
+        setGoldLoading(false)
       }
-    },
-    []
-  );
-
-  const goNext = () => {
-    if (activeIndex < SLIDES.length - 1) {
-      flatListRef.current?.scrollToIndex({ animated: true, index: activeIndex + 1 });
     }
-  };
+    fetchGoldPrice()
+  }, [])
 
-  const isLast = activeIndex === SLIDES.length - 1;
+  function handleScroll(
+    event: NativeSyntheticEvent<NativeScrollEvent>
+  ) {
+    const index = Math.round(
+      event.nativeEvent.contentOffset.x / width
+    )
+    if (index !== currentIndex) {
+      setCurrentIndex(index)
+    }
+  }
 
-  // ─── Rendu ─────────────────────────────────────────────────────────────────
+  function goToNext() {
+    if (currentIndex < SLIDES.length - 1) {
+      const nextIndex = currentIndex + 1
+      scrollRef.current?.scrollTo({
+        x: nextIndex * width,
+        animated: true,
+      })
+      setCurrentIndex(nextIndex)
+    } else {
+      completeOnboarding()
+    }
+  }
+
+  const isLastSlide = currentIndex === SLIDES.length - 1
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Barre supérieure : bouton Passer */}
-      <View style={styles.topBar}>
-        {!isLast ? (
-          <TouchableOpacity
-            onPress={finishOnboarding}
-            hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
-            style={styles.skipBtn}>
+      <StatusBar barStyle="light-content" backgroundColor={OrTrackColors.background} />
+
+      <View style={styles.skipContainer}>
+        {!isLastSlide && (
+          <TouchableOpacity onPress={completeOnboarding}>
             <Text style={styles.skipText}>Passer</Text>
           </TouchableOpacity>
-        ) : (
-          <View />
         )}
       </View>
 
-      {/* Slides */}
-      <FlatList
-        ref={flatListRef}
-        data={SLIDES}
-        keyExtractor={(_, i) => String(i)}
+      <ScrollView
+        ref={scrollRef}
         horizontal
         pagingEnabled
-        bounces={false}
         showsHorizontalScrollIndicator={false}
-        onViewableItemsChanged={onViewableItemsChanged}
-        viewabilityConfig={viewabilityConfig}
-        style={styles.list}
-        renderItem={({ item, index }) => (
-          <View style={styles.slide}>
-            {/* Cercle décoratif de fond */}
-            <View style={styles.bgCircle} />
-
-            {/* Icône */}
-            <View style={styles.emojiCircle}>
-              <Text style={styles.emojiText}>{item.emoji}</Text>
+        onMomentumScrollEnd={handleScroll}
+        scrollEventThrottle={16}
+        style={styles.scrollView}
+      >
+        {SLIDES.map((slide) => (
+          <View key={slide.id} style={styles.slide}>
+            <View style={styles.emojiContainer}>
+              {slide.emoji ? (
+                <Text style={styles.emoji}>{slide.emoji}</Text>
+              ) : (
+                <Ionicons
+                  name={slide.icon!}
+                  size={64}
+                  color={slide.iconColor}
+                />
+              )}
             </View>
 
-            {/* Numéro de slide discret */}
-            <Text style={styles.slideCounter}>{index + 1} / {SLIDES.length}</Text>
+            {slide.isFirst && (
+              <Text style={styles.logo}>ORTRACK</Text>
+            )}
 
-            {/* Textes */}
-            <Text style={styles.slideTitle}>{item.title}</Text>
-            <Text style={styles.slideSubtitle}>{item.subtitle}</Text>
+            <Text style={styles.title}>{slide.title}</Text>
+            <Text style={styles.subtitle}>{slide.subtitle}</Text>
+
+            <View style={styles.proofCard}>
+              <Text style={styles.proofCardLabel}>
+                {slide.proofCardLabel}
+              </Text>
+              {slide.isLivePrice ? (
+                goldLoading ? (
+                  <Text style={styles.proofCardText}>
+                    Chargement du cours...
+                  </Text>
+                ) : goldPrice ? (
+                  <Text style={styles.proofCardValue}>
+                    {goldPrice.toLocaleString('fr-FR', {
+                      maximumFractionDigits: 2,
+                    })} €/oz
+                  </Text>
+                ) : (
+                  <Text style={styles.proofCardText}>
+                    Cours disponible dans l'app
+                  </Text>
+                )
+              ) : slide.proofCardText ? (
+                <Text style={styles.proofCardText}>
+                  {slide.proofCardText}
+                </Text>
+              ) : null}
+            </View>
           </View>
-        )}
-      />
+        ))}
+      </ScrollView>
 
-      {/* Bas : points de pagination + bouton */}
-      <View style={styles.bottom}>
-        {/* Points */}
-        <View style={styles.dotsRow}>
-          {SLIDES.map((_, i) => (
-            <View
-              key={i}
-              style={[styles.dot, i === activeIndex ? styles.dotActive : styles.dotInactive]}
-            />
-          ))}
-        </View>
+      <View style={styles.pagination}>
+        {SLIDES.map((_, index) => (
+          <View
+            key={index}
+            style={[
+              styles.dot,
+              {
+                backgroundColor:
+                  index === currentIndex ? '#C9A84C' : '#2A2A2A',
+                width: index === currentIndex ? 24 : 8,
+              },
+            ]}
+          />
+        ))}
+      </View>
 
-        {/* Bouton Suivant / Commencer */}
+      <View style={styles.ctaContainer}>
         <TouchableOpacity
-          style={[styles.btn, isLast ? styles.btnGold : styles.btnOutline]}
-          onPress={isLast ? finishOnboarding : goNext}
-          activeOpacity={0.82}>
-          <Text style={[styles.btnLabel, isLast ? styles.btnLabelDark : styles.btnLabelLight]}>
-            {isLast ? 'Commencer' : 'Suivant'}
+          style={styles.ctaButton}
+          onPress={goToNext}
+        >
+          <Text style={styles.ctaText}>
+            {isLastSlide ? 'Accéder à OrTrack' : 'Suivant'}
           </Text>
+          {!isLastSlide && (
+            <Ionicons
+              name="arrow-forward"
+              size={20}
+              color="#000000"
+            />
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
-  );
+  )
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const { background, gold, white, card, border, subtext } = OrTrackColors;
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: background,
-  },
-
-  // Top bar
-  topBar: {
-    height: 52,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
+  container: { flex: 1, backgroundColor: OrTrackColors.background },
+  skipContainer: {
+    height: 44,
+    alignItems: 'flex-end',
     paddingHorizontal: 24,
+    justifyContent: 'center',
   },
-  skipBtn: {
-    paddingHorizontal: 4,
-    paddingVertical: 4,
-  },
-  skipText: {
-    fontSize: 15,
-    color: subtext,
-    fontWeight: '500',
-  },
-
-  // FlatList
-  list: { flex: 1 },
-
-  // Slide
+  skipText: { color: '#888888', fontSize: 14 },
+  scrollView: { flex: 1 },
   slide: {
-    width: SCREEN_W,
+    width,
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 36,
-    paddingBottom: 16,
+    paddingHorizontal: 32,
   },
-
-  // Cercle décoratif de fond
-  bgCircle: {
-    position: 'absolute',
-    top: '10%',
-    width: SCREEN_W * 0.85,
-    height: SCREEN_W * 0.85,
-    borderRadius: SCREEN_W * 0.425,
-    backgroundColor: '#14142A',
+  emojiContainer: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(201, 168, 76, 0.12)',
     borderWidth: 1,
-    borderColor: '#1E1E38',
-    opacity: 0.7,
-  },
-
-  // Emoji
-  emojiCircle: {
-    width: 128,
-    height: 128,
-    borderRadius: 64,
-    backgroundColor: '#1F1B0A',
-    borderWidth: 2,
-    borderColor: gold,
+    borderColor: 'rgba(201, 168, 76, 0.3)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    // Halo doré
-    shadowColor: gold,
+    marginBottom: 32,
+    shadowColor: '#C9A84C',
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 24,
-    elevation: 12,
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 8,
   },
-  emojiText: {
-    fontSize: 58,
+  emoji: {
+    fontSize: 64,
   },
-
-  // Compteur de slide
-  slideCounter: {
-    fontSize: 11,
-    color: subtext,
-    letterSpacing: 1.5,
-    marginBottom: 28,
-    fontWeight: '500',
-    opacity: 0.6,
+  logo: {
+    fontSize: 13,
+    color: '#C9A84C',
+    fontWeight: 'bold',
+    letterSpacing: 4,
+    textTransform: 'uppercase',
+    marginBottom: 16,
   },
-
-  // Textes
-  slideTitle: {
+  title: {
     fontSize: 26,
-    fontWeight: '800',
-    color: white,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 16,
     lineHeight: 34,
-    letterSpacing: -0.3,
   },
-  slideSubtitle: {
+  subtitle: {
     fontSize: 16,
-    color: subtext,
+    color: '#888888',
     textAlign: 'center',
-    lineHeight: 26,
-    maxWidth: 320,
+    lineHeight: 24,
   },
-
-  // Bas
-  bottom: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-    paddingTop: 24,
-    gap: 20,
+  proofCard: {
+    marginTop: 24,
+    backgroundColor: 'rgba(201, 168, 76, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(201, 168, 76, 0.2)',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    width: width - 64,
   },
-
-  // Points
-  dotsRow: {
+  proofCardLabel: {
+    fontSize: 13,
+    color: '#C9A84C',
+    fontWeight: '600',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  proofCardValue: {
+    fontSize: 22,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  proofCardText: {
+    fontSize: 13,
+    color: '#888888',
+    textAlign: 'center',
+  },
+  pagination: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 8,
+    paddingVertical: 24,
+    columnGap: 8,
   },
-  dot: {
-    height: 8,
-    borderRadius: 4,
+  dot: { height: 8, borderRadius: 4 },
+  ctaContainer: {
+    paddingHorizontal: 24,
+    paddingBottom: 16,
   },
-  dotActive: {
-    width: 28,
-    backgroundColor: gold,
-  },
-  dotInactive: {
-    width: 8,
-    backgroundColor: border,
-    opacity: 0.55,
-  },
-
-  // Bouton
-  btn: {
-    borderRadius: 14,
-    paddingVertical: 16,
+  ctaButton: {
+    backgroundColor: '#C9A84C',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    columnGap: 8,
   },
-  btnGold: {
-    backgroundColor: gold,
-    shadowColor: gold,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-  btnOutline: {
-    backgroundColor: card,
-    borderWidth: 1,
-    borderColor: border,
-  },
-  btnLabel: {
+  ctaText: {
+    color: '#000000',
     fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+    fontWeight: 'bold',
   },
-  btnLabelDark: {
-    color: '#1A1A2E',
-  },
-  btnLabelLight: {
-    color: white,
-  },
-});
+})

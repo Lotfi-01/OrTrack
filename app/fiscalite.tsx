@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
@@ -13,12 +13,9 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type MetalType = 'or' | 'argent';
 
 type Position = {
   id: string;
@@ -141,8 +138,7 @@ export default function FiscaliteScreen() {
   // Pré-remplir le prix de cession avec la valeur de marché
   useEffect(() => {
     if (!selectedPos) return;
-    const spot = selectedPos.metal === 'or' ? prices.gold : prices.silver;
-    const mv = spotValue(selectedPos, spot);
+    const mv = spotValue(selectedPos, getSpot(selectedPos.metal, prices));
     if (mv !== null) {
       setSalePriceStr(mv.toFixed(2).replace('.', ','));
     }
@@ -183,7 +179,14 @@ export default function FiscaliteScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
-      <Stack.Screen options={{ title: 'Simulation fiscale', headerBackTitle: 'Retour' }} />
+      <Stack.Screen options={{
+        title: 'Simulation fiscale',
+        headerLeft: () => (
+          <TouchableOpacity onPress={() => router.back()} style={{ paddingRight: 12 }}>
+            <Text style={{ color: OrTrackColors.gold, fontSize: 16 }}>← Retour</Text>
+          </TouchableOpacity>
+        ),
+      }} />
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -211,11 +214,13 @@ export default function FiscaliteScreen() {
           {selectedPos && (
             <View style={[styles.card, styles.posInfoCard]}>
               <View style={styles.posInfoRow}>
-                <View style={[styles.metalBadge, selectedPos.metal === 'or' ? styles.badgeGold : styles.badgeSilver]}>
-                  <Text style={[styles.metalBadgeText, selectedPos.metal === 'or' ? styles.badgeTextGold : styles.badgeTextSilver]}>
-                    {selectedPos.metal === 'or' ? 'XAU' : 'XAG'}
+                {(() => { const cfg = METAL_CONFIG[selectedPos.metal]; return (
+                <View style={[styles.metalBadge, { backgroundColor: cfg.chipBg, borderColor: cfg.chipBorder }]}>
+                  <Text style={[styles.metalBadgeText, { color: cfg.chipText }]}>
+                    {cfg.symbol}
                   </Text>
                 </View>
+              ); })()}
                 <Text style={styles.posInfoProduct}>{selectedPos.product}</Text>
               </View>
               <Text style={styles.posInfoDetail}>
@@ -243,8 +248,7 @@ export default function FiscaliteScreen() {
                 <Text style={styles.inputHint}>
                   Valeur marché estimée :&nbsp;
                   {(() => {
-                    const spot = selectedPos.metal === 'or' ? prices.gold : prices.silver;
-                    const mv = spotValue(selectedPos, spot);
+                    const mv = spotValue(selectedPos, getSpot(selectedPos.metal, prices));
                     return mv !== null ? `${fmtEur(mv)} €` : 'cours indisponible';
                   })()}
                 </Text>
@@ -496,11 +500,7 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderWidth: 1,
   },
-  badgeGold: { backgroundColor: '#1F1B0A', borderColor: gold },
-  badgeSilver: { backgroundColor: '#18181F', borderColor: '#A8A8B8' },
   metalBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
-  badgeTextGold: { color: gold },
-  badgeTextSilver: { color: '#A8A8B8' },
 
   // Inputs
   inputGroup: { marginBottom: 14 },
