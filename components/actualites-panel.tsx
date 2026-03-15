@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { OrTrackColors } from '@/constants/theme';
+import { usePremium } from '@/contexts/premium-context';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -155,6 +156,7 @@ export function ActualitesPanel() {
   const [articles, setArticles] = useState<Record<string, Article[]>>({});
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
+  const { isPremium, showPaywall, isSourceLocked } = usePremium();
 
   useEffect(() => {
     let cancelled = false;
@@ -169,9 +171,10 @@ export function ActualitesPanel() {
     setLoading(true);
 
     Promise.allSettled(
-      SOURCES.map((s) =>
-        fetchArticles(s).then((items) => ({ key: s.key, items }))
-      )
+      SOURCES.map((s, i) => {
+        if (isSourceLocked(i)) return Promise.resolve({ key: s.key, items: [] as Article[] });
+        return fetchArticles(s).then((items) => ({ key: s.key, items }));
+      })
     ).then((results) => {
       if (cancelled) return;
       const newArticles: Record<string, Article[]> = {};
@@ -191,7 +194,7 @@ export function ActualitesPanel() {
     });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [isSourceLocked]);
 
   const openArticle = async (url: string) => {
     await WebBrowser.openBrowserAsync(url, {
@@ -210,7 +213,7 @@ export function ActualitesPanel() {
   }
 
   const visibleSources = SOURCES.filter(
-    (s) => !errors[s.key] && (articles[s.key]?.length ?? 0) > 0
+    (s, index) => !isSourceLocked(index) && !errors[s.key] && (articles[s.key]?.length ?? 0) > 0
   );
 
   if (visibleSources.length === 0) {
@@ -265,6 +268,20 @@ export function ActualitesPanel() {
 
         </View>
       ))}
+      {!isPremium && (
+        <TouchableOpacity
+          style={styles.premiumNudge}
+          onPress={showPaywall}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.premiumNudgeTitle}>
+            4+ sources disponibles en Premium
+          </Text>
+          <Text style={styles.premiumNudgeSubtitle}>
+            Accédez à des sources FR et internationales
+          </Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -362,5 +379,26 @@ const styles = StyleSheet.create({
     color: OrTrackColors.tabIconDefault,
     fontWeight: '300',
     lineHeight: 22,
+  },
+
+  // Premium nudge
+  premiumNudge: {
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.3)',
+    padding: 16,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  premiumNudgeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: OrTrackColors.gold,
+    marginBottom: 4,
+  },
+  premiumNudgeSubtitle: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
   },
 });

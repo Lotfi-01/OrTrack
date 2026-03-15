@@ -13,6 +13,7 @@ import { useFocusEffect } from '@react-navigation/native';
 
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
+import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ function fmtG(g: number): string {
 export default function StatistiquesScreen() {
   const [positions, setPositions] = useState<Position[]>([]);
   const { prices, currencySymbol } = useSpotPrices();
+  const { isPremium, showPaywall } = usePremium();
 
   useFocusEffect(
     useCallback(() => {
@@ -287,159 +289,181 @@ export default function StatistiquesScreen() {
               })}
             </View>
 
-            {/* ── 3. Podium positions ── */}
-            {positionsWithPerf.length > 0 && (
+            {isPremium ? (
               <>
-                <Text style={styles.sectionTitle}>VOS POSITIONS</Text>
-                <View style={styles.card}>
-                  {best && (
-                    <View style={styles.podiumRow}>
-                      <View style={styles.rankBadge}>
-                        <Text style={styles.rankBadgeText}>1</Text>
-                      </View>
-                      <View style={styles.podiumInfo}>
-                        <Text style={styles.podiumProduct}>{best.product}</Text>
-                        <Text style={styles.podiumMetal}>
-                          {METAL_CONFIG[best.metal].name}
-                        </Text>
-                      </View>
-                      <Text style={styles.positive}>
-                        +{fmtPct(best.gainPct ?? 0)} %
-                      </Text>
+                {/* ── 3. Podium positions ── */}
+                {positionsWithPerf.length > 1 && (
+                  <>
+                    <Text style={styles.sectionTitle}>VOS POSITIONS</Text>
+                    <View style={styles.card}>
+                      {best && (
+                        <View style={styles.podiumRow}>
+                          <View style={styles.rankBadge}>
+                            <Text style={styles.rankBadgeText}>1</Text>
+                          </View>
+                          <View style={styles.podiumInfo}>
+                            <Text style={styles.podiumProduct}>{best.product}</Text>
+                            <Text style={styles.podiumMetal}>
+                              {METAL_CONFIG[best.metal].name}
+                            </Text>
+                          </View>
+                          <Text style={styles.positive}>
+                            +{fmtPct(best.gainPct ?? 0)} %
+                          </Text>
+                        </View>
+                      )}
+                      {sorted.length > 2 && sorted[1] && (
+                        <>
+                          <View style={styles.divider} />
+                          <View style={styles.podiumRow}>
+                            <View style={[styles.rankBadge, styles.rankBadgeSilver]}>
+                              <Text style={[styles.rankBadgeText, styles.rankBadgeTextSilver]}>2</Text>
+                            </View>
+                            <View style={styles.podiumInfo}>
+                              <Text style={styles.podiumProduct}>{sorted[1].product}</Text>
+                              <Text style={styles.podiumMetal}>
+                                {METAL_CONFIG[sorted[1].metal].name}
+                              </Text>
+                            </View>
+                            <Text style={
+                              (sorted[1].gainPct ?? 0) >= 0
+                                ? styles.positive : styles.negative
+                            }>
+                              {(sorted[1].gainPct ?? 0) >= 0 ? '+' : ''}
+                              {fmtPct(sorted[1].gainPct ?? 0)} %
+                            </Text>
+                          </View>
+                        </>
+                      )}
+                      {worst && worst.id !== best?.id &&
+                        (worst.gainPct ?? 0) < (best?.gainPct ?? 0) &&
+                        (sorted.length < 3 || (worst.gainPct ?? 0) < (sorted[1]?.gainPct ?? 0)) && (
+                        <>
+                          <View style={styles.divider} />
+                          <View style={styles.podiumRow}>
+                            <View style={[styles.rankBadge, styles.rankBadgeLast]}>
+                              <Text style={[styles.rankBadgeText, styles.rankBadgeTextLast]}>
+                                {sorted.length}
+                              </Text>
+                            </View>
+                            <View style={styles.podiumInfo}>
+                              <Text style={styles.podiumProduct}>{worst.product}</Text>
+                              <Text style={styles.podiumMetal}>
+                                {METAL_CONFIG[worst.metal].name}
+                              </Text>
+                            </View>
+                            <Text style={
+                              (worst.gainPct ?? 0) >= 0
+                                ? styles.positive : styles.negative
+                            }>
+                              {(worst.gainPct ?? 0) >= 0 ? '+' : ''}
+                              {fmtPct(worst.gainPct ?? 0)} %
+                            </Text>
+                          </View>
+                        </>
+                      )}
                     </View>
-                  )}
-                  {sorted.length > 2 && sorted[1] && (
-                    <>
-                      <View style={styles.divider} />
-                      <View style={styles.podiumRow}>
-                        <View style={[styles.rankBadge, styles.rankBadgeSilver]}>
-                          <Text style={[styles.rankBadgeText, styles.rankBadgeTextSilver]}>2</Text>
-                        </View>
-                        <View style={styles.podiumInfo}>
-                          <Text style={styles.podiumProduct}>{sorted[1].product}</Text>
-                          <Text style={styles.podiumMetal}>
-                            {METAL_CONFIG[sorted[1].metal].name}
-                          </Text>
-                        </View>
-                        <Text style={
-                          (sorted[1].gainPct ?? 0) >= 0
-                            ? styles.positive : styles.negative
-                        }>
-                          {(sorted[1].gainPct ?? 0) >= 0 ? '+' : ''}
-                          {fmtPct(sorted[1].gainPct ?? 0)} %
+                  </>
+                )}
+
+                {/* ── 4. Grid 2x2 métriques ── */}
+                <Text style={styles.sectionTitle}>MÉTRIQUES CLÉS</Text>
+                <View style={styles.grid}>
+
+                  <View style={styles.gridCard}>
+                    <Text style={styles.gridLabel}>PRIX DE REVIENT</Text>
+                    {metalMetrics.map((m) => (
+                      <Text key={m.metal} style={styles.gridValue}>
+                        {METAL_CONFIG[m.metal].name} — {fmtEur(m.avgPrice)} {currencySymbol}
+                      </Text>
+                    ))}
+                  </View>
+
+                  <View style={styles.gridCard}>
+                    <Text style={styles.gridLabel}>POIDS TOTAL</Text>
+                    {metalMetrics.map((m) => (
+                      <Text key={m.metal} style={styles.gridValue}>
+                        {METAL_CONFIG[m.metal].name} — {fmtG(m.totalG)}
+                      </Text>
+                    ))}
+                  </View>
+
+                  <View style={styles.gridCard}>
+                    <Text style={styles.gridLabel}>DÉTENTION MOYENNE</Text>
+                    <Text style={[styles.gridValue, styles.gridValueLarge]}>
+                      {fmtMonths(globalAvgMonths)}
+                    </Text>
+                    {metalMetrics.map((m) => (
+                      <Text key={m.metal} style={styles.gridSub}>
+                        {METAL_CONFIG[m.metal].name} — {fmtMonths(Math.round(m.avgMonths))}
+                      </Text>
+                    ))}
+                  </View>
+
+                  <View style={styles.gridCard}>
+                    <Text style={styles.gridLabel}>ALLOCATION OR / ARGENT</Text>
+                    {hasRatio ? (
+                      <>
+                        <Text style={[styles.gridValue, styles.gridValueLarge]}>
+                          1 : {ratio}
                         </Text>
-                      </View>
-                    </>
-                  )}
-                  {worst && worst.id !== best?.id &&
-                    (worst.gainPct ?? 0) < (best?.gainPct ?? 0) &&
-                    (sorted.length < 3 || (worst.gainPct ?? 0) < (sorted[1]?.gainPct ?? 0)) && (
-                    <>
-                      <View style={styles.divider} />
-                      <View style={styles.podiumRow}>
-                        <View style={[styles.rankBadge, styles.rankBadgeLast]}>
-                          <Text style={[styles.rankBadgeText, styles.rankBadgeTextLast]}>
-                            {sorted.length}
-                          </Text>
-                        </View>
-                        <View style={styles.podiumInfo}>
-                          <Text style={styles.podiumProduct}>{worst.product}</Text>
-                          <Text style={styles.podiumMetal}>
-                            {METAL_CONFIG[worst.metal].name}
-                          </Text>
-                        </View>
-                        <Text style={
-                          (worst.gainPct ?? 0) >= 0
-                            ? styles.positive : styles.negative
-                        }>
-                          {(worst.gainPct ?? 0) >= 0 ? '+' : ''}
-                          {fmtPct(worst.gainPct ?? 0)} %
-                        </Text>
-                      </View>
-                    </>
-                  )}
+                        <Text style={styles.gridSub}>Poids argent / poids or</Text>
+                      </>
+                    ) : (
+                      <Text style={styles.gridSub}>
+                        {goldG > 0
+                          ? "Pas d'argent en portefeuille"
+                          : "Pas d'or en portefeuille"}
+                      </Text>
+                    )}
+                  </View>
+
+                </View>
+
+                {/* ── 5. Conseil intelligent ── */}
+                <Text style={styles.sectionTitle}>ANALYSE ORTRACK</Text>
+                <View style={[
+                  styles.adviceCard,
+                  advice.type === 'warning' && styles.adviceWarning,
+                  advice.type === 'good' && styles.adviceGood,
+                  advice.type === 'info' && styles.adviceInfo,
+                ]}>
+                  <Text style={styles.adviceIcon}>
+                    {advice.type === 'warning' ? '⚠️' : advice.type === 'good' ? '✅' : '💡'}
+                  </Text>
+                  <View style={styles.adviceContent}>
+                    <Text style={styles.adviceText}>{advice.text}</Text>
+                    {advice.type === 'good' && totalGainLossPct !== null && totalGainLossPct > 50 && (
+                      <TouchableOpacity
+                        onPress={() => router.push('/fiscalite-globale' as never)}
+                        style={styles.adviceLink}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.adviceLinkText}>Simuler ma fiscalité →</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                 </View>
               </>
-            )}
-
-            {/* ── 4. Grid 2x2 métriques ── */}
-            <Text style={styles.sectionTitle}>MÉTRIQUES CLÉS</Text>
-            <View style={styles.grid}>
-
-              <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>PRIX DE REVIENT</Text>
-                {metalMetrics.map((m) => (
-                  <Text key={m.metal} style={styles.gridValue}>
-                    {METAL_CONFIG[m.metal].name} — {fmtEur(m.avgPrice)} {currencySymbol}
-                  </Text>
-                ))}
-              </View>
-
-              <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>POIDS TOTAL</Text>
-                {metalMetrics.map((m) => (
-                  <Text key={m.metal} style={styles.gridValue}>
-                    {METAL_CONFIG[m.metal].name} — {fmtG(m.totalG)}
-                  </Text>
-                ))}
-              </View>
-
-              <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>DÉTENTION MOYENNE</Text>
-                <Text style={[styles.gridValue, styles.gridValueLarge]}>
-                  {fmtMonths(globalAvgMonths)}
+            ) : (
+              <TouchableOpacity
+                style={styles.premiumStatsCard}
+                onPress={showPaywall}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.premiumStatsTitle}>
+                  Statistiques détaillées
                 </Text>
-                {metalMetrics.map((m) => (
-                  <Text key={m.metal} style={styles.gridSub}>
-                    {METAL_CONFIG[m.metal].name} — {fmtMonths(Math.round(m.avgMonths))}
+                <Text style={styles.premiumStatsSubtitle}>
+                  Classement des positions, métriques clés et analyse personnalisée disponibles en Premium.
+                </Text>
+                <View style={styles.premiumStatsBadge}>
+                  <Text style={styles.premiumStatsBadgeText}>
+                    Découvrir Premium
                   </Text>
-                ))}
-              </View>
-
-              <View style={styles.gridCard}>
-                <Text style={styles.gridLabel}>ALLOCATION OR / ARGENT</Text>
-                {hasRatio ? (
-                  <>
-                    <Text style={[styles.gridValue, styles.gridValueLarge]}>
-                      1 : {ratio}
-                    </Text>
-                    <Text style={styles.gridSub}>Poids argent / poids or</Text>
-                  </>
-                ) : (
-                  <Text style={styles.gridSub}>
-                    {goldG > 0
-                      ? "Pas d'argent en portefeuille"
-                      : "Pas d'or en portefeuille"}
-                  </Text>
-                )}
-              </View>
-
-            </View>
-
-            {/* ── 5. Conseil intelligent ── */}
-            <Text style={styles.sectionTitle}>ANALYSE ORTRACK</Text>
-            <View style={[
-              styles.adviceCard,
-              advice.type === 'warning' && styles.adviceWarning,
-              advice.type === 'good' && styles.adviceGood,
-              advice.type === 'info' && styles.adviceInfo,
-            ]}>
-              <Text style={styles.adviceIcon}>
-                {advice.type === 'warning' ? '⚠️' : advice.type === 'good' ? '✅' : '💡'}
-              </Text>
-              <View style={styles.adviceContent}>
-                <Text style={styles.adviceText}>{advice.text}</Text>
-                {advice.type === 'good' && totalGainLossPct !== null && totalGainLossPct > 50 && (
-                  <TouchableOpacity
-                    onPress={() => router.push('/fiscalite-globale' as never)}
-                    style={styles.adviceLink}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.adviceLinkText}>Simuler ma fiscalité →</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
+                </View>
+              </TouchableOpacity>
+            )}
 
           </>
         )}
@@ -749,6 +773,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: OrTrackColors.gold,
     fontWeight: '600',
+  },
+
+  // Premium stats card
+  premiumStatsCard: {
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.3)',
+    padding: 20,
+    marginTop: 8,
+    alignItems: 'center',
+  },
+  premiumStatsTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: OrTrackColors.gold,
+    marginBottom: 8,
+  },
+  premiumStatsSubtitle: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  premiumStatsBadge: {
+    backgroundColor: 'rgba(201,168,76,0.15)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.4)',
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  premiumStatsBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: OrTrackColors.gold,
   },
 
   // Colors
