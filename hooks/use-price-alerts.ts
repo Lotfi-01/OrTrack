@@ -1,9 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
-// Imports directs sur les sous-modules pour éviter que Metro charge index.js
-// (qui re-exporte getExpoPushTokenAsync — incompatible Expo Go SDK 54)
-import { getPermissionsAsync, requestPermissionsAsync } from 'expo-notifications/build/NotificationPermissions';
-import scheduleNotificationAsync from 'expo-notifications/build/scheduleNotificationAsync';
+import * as Notifications from 'expo-notifications';
 import { useCallback, useEffect, useState } from 'react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,7 +48,7 @@ async function sendPriceNotification(alert: PriceAlert, currentPrice: number): P
   const thresholdStr = alert.threshold.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
   const priceStr = Math.round(currentPrice).toLocaleString('fr-FR');
 
-  await scheduleNotificationAsync({
+  await Notifications.scheduleNotificationAsync({
     content: {
       title: `${icon} OrTrack — Alerte ${metalLabel}`,
       body: `L'${alert.metal} vient de ${direction} ${thresholdStr} €/oz (cours actuel : ${priceStr} €/oz)`,
@@ -65,9 +62,9 @@ async function sendPriceNotification(alert: PriceAlert, currentPrice: number): P
 
 export async function requestNotifPermission(): Promise<boolean> {
   if (!Device.isDevice) return false; // Les simulateurs ne supportent pas les notifs
-  const { status: existing } = await getPermissionsAsync();
+  const { status: existing } = await Notifications.getPermissionsAsync();
   if (existing === 'granted') return true;
-  const { status } = await requestPermissionsAsync();
+  const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
 }
 
@@ -75,7 +72,7 @@ export async function requestNotifPermission(): Promise<boolean> {
 // Lit toujours depuis AsyncStorage pour refléter les alertes les plus récentes.
 
 export async function checkPriceAlerts(): Promise<void> {
-  const { status } = await getPermissionsAsync();
+  const { status } = await Notifications.getPermissionsAsync();
   if (status !== 'granted') return;
 
   const raw = await AsyncStorage.getItem(PRICE_ALERTS_KEY);

@@ -202,7 +202,7 @@ export default function FiscaliteScreen() {
                     style={[styles.posChip, p.id === selectedId && styles.posChipSelected]}
                     onPress={() => setSelectedId(p.id)}>
                     <Text style={[styles.posChipText, p.id === selectedId && styles.posChipTextSelected]}>
-                      {p.product} · {p.quantity} pcs
+                      {p.product} · {p.quantity} pièce{p.quantity > 1 ? 's' : ''}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -224,7 +224,7 @@ export default function FiscaliteScreen() {
                 <Text style={styles.posInfoProduct}>{selectedPos.product}</Text>
               </View>
               <Text style={styles.posInfoDetail}>
-                {selectedPos.quantity} pcs · Acquis le {selectedPos.purchaseDate} · Prix de revient : {fmtEur(selectedPos.quantity * selectedPos.purchasePrice)} €
+                {selectedPos.quantity} pièce{selectedPos.quantity > 1 ? 's' : ''} · Acquis le {selectedPos.purchaseDate} · Prix de revient : {fmtEur(selectedPos.quantity * selectedPos.purchasePrice)} €
               </Text>
             </View>
           )}
@@ -288,7 +288,7 @@ export default function FiscaliteScreen() {
                   <Text style={styles.regimeName}>Taxe forfaitaire</Text>
                   {bestRegime === 'forfaitaire' && (
                     <View style={styles.recommendBadge}>
-                      <Text style={styles.recommendBadgeText}>Recommandé</Text>
+                      <Text style={styles.recommendBadgeText}>Le moins taxé</Text>
                     </View>
                   )}
                 </View>
@@ -306,7 +306,7 @@ export default function FiscaliteScreen() {
                   {bestRegime === 'plusvalues' && (
                     <View style={styles.recommendBadge}>
                       <Text style={styles.recommendBadgeText}>
-                        {taxResult.isExempt ? 'Exonéré' : 'Recommandé'}
+                        {taxResult.isExempt ? 'Exonéré' : 'Le moins taxé'}
                       </Text>
                     </View>
                   )}
@@ -397,7 +397,7 @@ export default function FiscaliteScreen() {
                   {!taxResult.isExempt && taxResult.plusValue > 0 && (
                     <>
                       <View style={styles.detailRow}>
-                        <Text style={styles.detailKey}>PV imposable</Text>
+                        <Text style={styles.detailKey}>Plus-value imposable</Text>
                         <Text style={styles.detailVal}>{fmtEur(taxResult.taxablePV)} €</Text>
                       </View>
                       <View style={styles.detailRow}>
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
 
   // Durée de détention
   holdingBanner: {
-    backgroundColor: '#1A1E2A',
+    backgroundColor: card,
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 14,
@@ -633,14 +633,14 @@ const styles = StyleSheet.create({
 
   // Avertissement légal
   legalCard: {
-    backgroundColor: '#111118',
+    backgroundColor: card,
     borderRadius: 10,
     padding: 14,
     borderWidth: 1,
     borderColor: border,
     marginTop: 4,
   },
-  legalText: { fontSize: 11, color: tabIconDefault, lineHeight: 18 },
+  legalText: { fontSize: 11, color: subtext, lineHeight: 18 },
 
   positive: { color: '#4CAF50' },
   negative: { color: '#E07070' },

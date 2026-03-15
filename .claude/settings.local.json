@@ -18,7 +18,11 @@
       "Bash(npm install:*)",
       "Bash(npx supabase@latest:*)",
       "Bash(eas build:*)",
-      "Bash(eas build:list:*)"
+      "Bash(eas build:list:*)",
+      "Bash(eas submit:*)",
+      "Bash(eas build:version:set:*)",
+      "Bash(curl:*)",
+      "Bash(npm uninstall:*)"
     ]
   }
 }

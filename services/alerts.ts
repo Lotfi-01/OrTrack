@@ -15,6 +15,7 @@ export interface Alert {
 }
 
 export async function getAlerts(pushToken: string): Promise<Alert[]> {
+  if (!supabase) return []
   const { data, error } = await supabase
     .from('alerts')
     .select('*')
@@ -34,6 +35,7 @@ export async function createAlert(
   condition: Condition,
   targetPrice: number
 ): Promise<boolean> {
+  if (!supabase) return false
   const { error } = await supabase.from('alerts').insert({
     push_token: pushToken,
     metal,
@@ -50,6 +52,7 @@ export async function createAlert(
 }
 
 export async function deleteAlert(alertId: string): Promise<boolean> {
+  if (!supabase) return false
   const { error } = await supabase
     .from('alerts')
     .update({ is_active: false })

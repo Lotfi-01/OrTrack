@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
+import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 
 export type Position = {
@@ -33,41 +36,59 @@ export type Position = {
 
 export const STORAGE_KEY = '@ortrack:positions';
 const OZ_TO_G = 31.10435;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CHIP_WIDTH = (SCREEN_WIDTH - 40 - 8) / 2;
+// 40 = padding total (20 gauche + 20 droite)
+// 8 = gap entre les 2 colonnes
 
-type Product = { label: string; weightG: number | null };
+type Product = {
+  label: string;
+  weightG: number | null;
+  popular?: boolean;
+  category: 'piece' | 'lingot' | 'autre';
+};
 
 const PRODUCTS: Record<MetalType, Product[]> = {
   or: [
-    { label: 'Napoléon 20F', weightG: 5.81 },
-    { label: 'Souverain', weightG: 7.32 },
-    { label: 'Krugerrand 1oz', weightG: 31.10 },
-    { label: 'Maple Leaf 1oz', weightG: 31.10 },
-    { label: 'Philharmonique 1oz', weightG: 31.10 },
-    { label: 'Lingot 10g', weightG: 10 },
-    { label: 'Lingot 100g', weightG: 100 },
-    { label: 'Lingot 1kg', weightG: 1000 },
-    { label: 'Autre', weightG: null },
+    { label: 'Napoléon 20F', weightG: 5.81, popular: true, category: 'piece' },
+    { label: 'Souverain', weightG: 7.32, category: 'piece' },
+    { label: 'Krugerrand 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Maple Leaf 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Philharmonique 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Buffalo Américain 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Panda de Chine 30g', weightG: 30, category: 'piece' },
+    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Lingot 10g', weightG: 10, category: 'lingot' },
+    { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
+    { label: 'Lingot 1kg', weightG: 1000, category: 'lingot' },
+    { label: 'Autre', weightG: null, category: 'autre' },
   ],
   argent: [
-    { label: 'Maple Leaf Argent 1oz', weightG: 31.10 },
-    { label: 'Philharmonique Argent 1oz', weightG: 31.10 },
-    { label: 'Lingot Argent 100g', weightG: 100 },
-    { label: 'Lingot Argent 1kg', weightG: 1000 },
-    { label: 'Autre', weightG: null },
+    { label: 'Maple Leaf Argent 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Philharmonique Argent 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'American Eagle 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Britannia Argent 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Panda Argent 30g', weightG: 30, category: 'piece' },
+    { label: 'Kangourou Argent 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Krugerrand Argent 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Lingot Argent 100g', weightG: 100, category: 'lingot' },
+    { label: 'Lingot Argent 1kg', weightG: 1000, category: 'lingot' },
+    { label: 'Autre', weightG: null, category: 'autre' },
   ],
   platine: [
-    { label: 'Platine 1oz', weightG: 31.10 },
-    { label: 'Lingot Platine 100g', weightG: 100 },
-    { label: 'Autre', weightG: null },
+    { label: 'Platine 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Lingot Platine 100g', weightG: 100, category: 'lingot' },
+    { label: 'Autre', weightG: null, category: 'autre' },
   ],
   palladium: [
-    { label: 'Palladium 1oz', weightG: 31.10 },
-    { label: 'Autre', weightG: null },
+    { label: 'Palladium 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Autre', weightG: null, category: 'autre' },
   ],
   cuivre: [
-    { label: 'Lingot Cuivre 1kg', weightG: 1000 },
-    { label: 'Lingot Cuivre 5kg', weightG: 5000 },
-    { label: 'Autre', weightG: null },
+    { label: 'Lingot Cuivre 1kg', weightG: 1000, category: 'lingot' },
+    { label: 'Lingot Cuivre 5kg', weightG: 5000, category: 'lingot' },
+    { label: 'Autre', weightG: null, category: 'autre' },
   ],
 };
 
@@ -77,6 +98,11 @@ const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CO
 
 function fmtEur(n: number): string {
   return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function fmtG(g: number): string {
+  if (g >= 1000) return `${(g / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 })} kg`;
+  return `${g % 1 === 0 ? g : g.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} g`;
 }
 
 function toNum(s: string): number {
@@ -97,7 +123,28 @@ function autoFormatDate(raw: string): string {
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function AjouterScreen() {
-  const { prices } = useSpotPrices();
+  const { prices, currencySymbol, refresh } = useSpotPrices();
+  const { canAddPosition, showPaywall } = usePremium();
+
+  useFocusEffect(
+    useCallback(() => {
+      refresh();
+    }, [refresh])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+        const list: Position[] = raw ? JSON.parse(raw) : [];
+        if (!canAddPosition(list.length)) {
+          showPaywall();
+        }
+      });
+    }, [canAddPosition, showPaywall])
+  );
+
+  const scrollRef = useRef<ScrollView>(null);
+  const formYRef = useRef<number>(0);
 
   const [metal, setMetal] = useState<MetalType>('or');
   const [product, setProduct] = useState<Product>(PRODUCTS.or[0]);
@@ -105,6 +152,7 @@ export default function AjouterScreen() {
   const [quantity, setQuantity] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
   const [purchaseDate, setPurchaseDate] = useState('');
+  const [showAllPieces, setShowAllPieces] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
@@ -114,6 +162,7 @@ export default function AjouterScreen() {
     setMetal(m);
     setProduct(PRODUCTS[m][0]);
     setCustomWeight('');
+    setShowAllPieces(false);
   };
 
   // ── Calculs temps réel ────────────────────────────────────────────────────
@@ -150,6 +199,11 @@ export default function AjouterScreen() {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       const positions: Position[] = raw ? JSON.parse(raw) : [];
 
+      if (!canAddPosition(positions.length)) {
+        showPaywall();
+        return;
+      }
+
       positions.push({
         id: Date.now().toString(),
         metal,
@@ -175,6 +229,60 @@ export default function AjouterScreen() {
     }
   };
 
+  // ── Render chip helper ───────────────────────────────────────────────────
+
+  const renderChip = (p: Product, fullWidth = false) => {
+    const active = product.label === p.label;
+    return (
+      <TouchableOpacity
+        key={p.label}
+        onPress={() => {
+          setProduct(p);
+          setCustomWeight('');
+          setTimeout(() => {
+            if (formYRef.current > 0) {
+              scrollRef.current?.scrollTo({
+                y: formYRef.current - 20,
+                animated: true,
+              });
+            }
+          }, 100);
+        }}
+        activeOpacity={0.75}
+        style={[
+          styles.productChip,
+          active && styles.productChipActive,
+          fullWidth && { width: '100%' as const },
+        ]}>
+        {p.popular && (
+          <View style={styles.popularBadge}>
+            <Text style={styles.popularBadgeText}>
+              ⭐ Populaire
+            </Text>
+          </View>
+        )}
+        <Text style={[
+          styles.productChipLabel,
+          active && styles.productChipLabelActive,
+        ]}>
+          {p.label}
+        </Text>
+        {p.weightG !== null && (
+          <Text style={[
+            styles.productChipWeight,
+            active && styles.productChipWeightActive,
+          ]}>
+            {p.weightG >= 1000
+              ? `${p.weightG / 1000} kg`
+              : p.weightG % 1 === 0
+              ? `${p.weightG} g`
+              : `${p.weightG.toFixed(2).replace('.', ',')} g`}
+          </Text>
+        )}
+      </TouchableOpacity>
+    );
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
@@ -183,6 +291,7 @@ export default function AjouterScreen() {
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
@@ -230,27 +339,56 @@ export default function AjouterScreen() {
           {/* ── Sélection produit ───────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Produit</Text>
-            <View style={styles.productGrid}>
-              {PRODUCTS[metal].map((p) => {
-                const active = product.label === p.label;
-                return (
-                  <TouchableOpacity
-                    key={p.label}
-                    onPress={() => { setProduct(p); setCustomWeight(''); }}
-                    activeOpacity={0.75}
-                    style={[styles.productChip, active && styles.productChipActive]}>
-                    <Text style={[styles.productChipLabel, active && styles.productChipLabelActive]}>
-                      {p.label}
-                    </Text>
-                    {p.weightG !== null && (
-                      <Text style={[styles.productChipWeight, active && styles.productChipWeightActive]}>
-                        {p.weightG >= 1000 ? `${p.weightG / 1000} kg` : `${p.weightG} g`}
+
+            {/* Pièces */}
+            {PRODUCTS[metal].some(p => p.category === 'piece') && (
+              <>
+                <View style={styles.categoryHeader}>
+                  <Text style={[styles.categoryLabel, { marginBottom: 0 }]}>
+                    Pièces
+                  </Text>
+                  {PRODUCTS[metal].filter(p => p.category === 'piece').length > 4 && (
+                    <TouchableOpacity
+                      onPress={() => setShowAllPieces(!showAllPieces)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.categoryToggle}>
+                        {showAllPieces ? 'Voir moins' : 'Voir tout'}
                       </Text>
-                    )}
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+                    </TouchableOpacity>
+                  )}
+                </View>
+                <View style={styles.productGrid}>
+                  {PRODUCTS[metal]
+                    .filter(p => p.category === 'piece')
+                    .filter((p, i) => showAllPieces || p.popular || i < 4 || p.label === product.label)
+                    .map(p => renderChip(p))}
+                </View>
+              </>
+            )}
+
+            {/* Lingots */}
+            {PRODUCTS[metal].some(p => p.category === 'lingot') && (
+              <>
+                <Text style={[styles.categoryLabel, { marginTop: 12 }]}>
+                  Lingots
+                </Text>
+                <View style={styles.productGrid}>
+                  {PRODUCTS[metal]
+                    .filter(p => p.category === 'lingot')
+                    .map(p => renderChip(p))}
+                </View>
+              </>
+            )}
+
+            {/* Autre — pleine largeur */}
+            {PRODUCTS[metal].some(p => p.category === 'autre') && (
+              <View style={{ marginTop: 8 }}>
+                {PRODUCTS[metal]
+                  .filter(p => p.category === 'autre')
+                  .map(p => renderChip(p))}
+              </View>
+            )}
           </View>
 
           {/* ── Poids personnalisé (Autre) ──────────────────────────────── */}
@@ -271,8 +409,35 @@ export default function AjouterScreen() {
             </View>
           )}
 
+          {/* ── Cours actuel du produit ──────────────────────────────── */}
+          {spotEur !== null && effectiveWeightG > 0 && (
+            <View style={styles.spotInfoCard}>
+              <View style={styles.spotInfoRow}>
+                <Text style={styles.spotInfoLabel}>Cours actuel</Text>
+                <Text style={styles.spotInfoValue}>
+                  {fmtEur(spotEur)} {currencySymbol}/oz
+                </Text>
+              </View>
+              <View>
+                <Text style={styles.spotInfoLabel}>Produit sélectionné</Text>
+                <Text style={[styles.spotInfoValue, { marginTop: 2 }]}>
+                  {product.label} · {fmtG(effectiveWeightG)}
+                </Text>
+              </View>
+              <View style={styles.spotInfoRow}>
+                <Text style={styles.spotInfoLabel}>Valeur unitaire estimée</Text>
+                <Text style={[styles.spotInfoValue, { color: OrTrackColors.gold }]}>
+                  {fmtEur((effectiveWeightG / OZ_TO_G) * spotEur)} {currencySymbol}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* ── Formulaire ──────────────────────────────────────────────── */}
-          <View style={styles.section}>
+          <View
+            style={styles.section}
+            onLayout={(e) => { formYRef.current = e.nativeEvent.layout.y; }}
+          >
             <Text style={styles.sectionTitle}>Détails de l'achat</Text>
             <View style={styles.fieldGroup}>
 
@@ -287,27 +452,54 @@ export default function AjouterScreen() {
                     value={quantity}
                     onChangeText={setQuantity}
                   />
-                  <Text style={styles.inputSuffix}>pcs</Text>
+                  <Text style={styles.inputSuffix}>pièce(s)</Text>
                 </View>
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
+                <View style={styles.fieldLabelRow}>
+                  <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
+                  {spotEur !== null && effectiveWeightG > 0 && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        const unitValue = (effectiveWeightG / OZ_TO_G) * spotEur;
+                        setPurchasePrice(Math.round(unitValue).toString());
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={styles.quickFillBtn}>Cours du jour</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
                 <View style={styles.inputWrapper}>
                   <TextInput
                     style={styles.input}
                     keyboardType="decimal-pad"
-                    placeholder="0,00"
+                    placeholder="Ex : 1 700"
                     placeholderTextColor={OrTrackColors.tabIconDefault}
                     value={purchasePrice}
                     onChangeText={setPurchasePrice}
                   />
-                  <Text style={styles.inputSuffix}>€</Text>
+                  <Text style={styles.inputSuffix}>{currencySymbol}</Text>
                 </View>
               </View>
 
               <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Date d'achat</Text>
+                <View style={styles.fieldLabelRow}>
+                  <Text style={styles.fieldLabel}>Date d'achat</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      const now = new Date();
+                      const dd = String(now.getDate()).padStart(2, '0');
+                      const mm = String(now.getMonth() + 1).padStart(2, '0');
+                      const yyyy = now.getFullYear();
+                      setPurchaseDate(`${dd}/${mm}/${yyyy}`);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.quickFillBtn}>Aujourd'hui</Text>
+                  </TouchableOpacity>
+                </View>
                 <TextInput
                   style={styles.input}
                   keyboardType="numeric"
@@ -438,12 +630,14 @@ const styles = StyleSheet.create({
   },
   productChip: {
     borderRadius: 8,
-    paddingVertical: 8,
+    paddingVertical: 10,
     paddingHorizontal: 14,
     backgroundColor: OrTrackColors.card,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
     alignItems: 'center',
+    width: CHIP_WIDTH,
+    minHeight: 72,
   },
   productChipActive: {
     borderColor: OrTrackColors.gold,
@@ -464,12 +658,53 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   productChipWeightActive: {
-    color: '#8A6E30',
+    color: 'rgba(201,168,76,0.5)',
+  },
+  categoryLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: OrTrackColors.subtext,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  categoryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  categoryToggle: {
+    fontSize: 12,
+    color: OrTrackColors.gold,
+    fontWeight: '600',
+  },
+  popularBadge: {
+    backgroundColor: 'rgba(201, 168, 76, 0.15)',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginBottom: 4,
+  },
+  popularBadgeText: {
+    fontSize: 9,
+    color: OrTrackColors.gold,
+    fontWeight: '600',
   },
 
   // Inputs
   fieldGroup: { gap: 14 },
   field: { gap: 6 },
+  fieldLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  quickFillBtn: {
+    fontSize: 12,
+    color: OrTrackColors.gold,
+    fontWeight: '600',
+  },
   fieldLabel: {
     fontSize: 13,
     color: OrTrackColors.subtext,
@@ -499,12 +734,37 @@ const styles = StyleSheet.create({
     color: OrTrackColors.subtext,
   },
 
+  // Spot info card
+  spotInfoCard: {
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.15)',
+    padding: 14,
+    marginBottom: 24,
+    gap: 8,
+  },
+  spotInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  spotInfoLabel: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+  },
+  spotInfoValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.white,
+  },
+
   // Estimation card
   estimationCard: {
-    backgroundColor: '#12122A',
+    backgroundColor: OrTrackColors.card,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#3A2E0A',
+    borderColor: 'rgba(201,168,76,0.2)',
     padding: 16,
     marginBottom: 24,
     gap: 10,

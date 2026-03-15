@@ -13,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OrTrackColors } from '@/constants/theme';
+import { usePremium } from '@/contexts/premium-context';
 import { type AlertCondition, type AlertMetal, type PriceAlert, usePriceAlerts } from '@/hooks/use-price-alerts';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 
@@ -114,6 +115,7 @@ function AlertCard({
 export default function AlertesScreen() {
   const { alerts, hasPermission, loading, addAlert, deleteAlert, toggleAlert } = usePriceAlerts();
   const { prices } = useSpotPrices();
+  const { canAddAlert, showPaywall } = usePremium();
 
   // ── État du formulaire ────────────────────────────────────────────────────
   const [showForm, setShowForm] = useState(false);
@@ -130,6 +132,10 @@ export default function AlertesScreen() {
   }, [formMetal, prices]);
 
   const handleOpenForm = () => {
+    if (!canAddAlert(alerts.length)) {
+      showPaywall();
+      return;
+    }
     // Pré-remplir immédiatement à l'ouverture
     const price = formMetal === 'or' ? prices.gold : prices.silver;
     if (price !== null) setFormThreshold(Math.round(price).toString());
@@ -139,6 +145,11 @@ export default function AlertesScreen() {
   const handleSubmit = async () => {
     const threshold = parseFloat(formThreshold.replace(',', '.').replace(/\s/g, ''));
     if (isNaN(threshold) || threshold <= 0) return;
+    if (!canAddAlert(alerts.length)) {
+      setShowForm(false);
+      showPaywall();
+      return;
+    }
     await addAlert({ metal: formMetal, condition: formCondition, threshold, active: true });
     setShowForm(false);
   };
@@ -155,6 +166,10 @@ export default function AlertesScreen() {
   };
 
   const applySuggestion = (s: Suggestion) => {
+    if (!canAddAlert(alerts.length)) {
+      showPaywall();
+      return;
+    }
     setFormMetal(s.metal);
     setFormCondition(s.condition);
     setFormThreshold(s.threshold.toString());

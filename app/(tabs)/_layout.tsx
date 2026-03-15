@@ -16,7 +16,7 @@ export default function TabLayout() {
           borderTopWidth: 1,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 10,
           fontWeight: '500',
         },
         headerShown: false,
@@ -25,7 +25,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tableau de bord',
+          title: 'Accueil',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" size={size} color={color} />
           ),
@@ -34,9 +34,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="portefeuille"
         options={{
-          title: 'Portefeuille',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="list" size={size} color={color} />
+          title: 'Portfolio',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={size} color={color} />
           ),
         }}
       />

@@ -1,32 +1,33 @@
 import { Platform } from 'react-native';
 
 export const OrTrackColors = {
-  background: '#1A1A2E',
+  background: '#12110F',
   gold: '#C9A84C',
-  white: '#FFFFFF',
+  white: '#F5F0E8',
   accent: '#F5E6A3',
-  tabBar: '#12122A',
-  tabIconDefault: '#6B6B8A',
-  card: '#252540',
-  border: '#2E2E4A',
-  subtext: '#8888A0',
+  tabBar: '#161410',
+  tabIconDefault: '#6B6060',
+  card: '#1C1A17',
+  border: '#2A2620',
+  subtext: '#7A7060',
+  goldBadge: 'rgba(201,168,76,0.12)',
 };
 
 export const Colors = {
   light: {
     text: '#FFFFFF',
-    background: '#1A1A2E',
+    background: '#12110F',
     tint: '#C9A84C',
     icon: '#C9A84C',
-    tabIconDefault: '#6B6B8A',
+    tabIconDefault: '#6B6060',
     tabIconSelected: '#C9A84C',
   },
   dark: {
     text: '#FFFFFF',
-    background: '#1A1A2E',
+    background: '#12110F',
     tint: '#C9A84C',
     icon: '#C9A84C',
-    tabIconDefault: '#6B6B8A',
+    tabIconDefault: '#6B6060',
     tabIconSelected: '#C9A84C',
   },
 };

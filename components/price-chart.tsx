@@ -1,19 +1,23 @@
-import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Svg, { Defs, LinearGradient, Stop, Path, Line as SvgLine, G, Text as SvgText } from 'react-native-svg';
+import { ActivityIndicator, PanResponder, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Svg, { Circle, Defs, LinearGradient, Stop, Path, Line as SvgLine, G, Text as SvgText } from 'react-native-svg';
 
+import { Ionicons } from '@expo/vector-icons';
 import { OrTrackColors } from '@/constants/theme';
-import { loadPriceHistory, type PricePoint } from '@/hooks/use-metal-history';
+import { usePremium } from '@/contexts/premium-context';
+import { loadPriceHistory, type PricePoint, type HistoryPeriod, LONG_TERM_PERIODS } from '@/hooks/use-metal-history';
 
 type Metal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
-type Period = '1J' | '1S' | '1M' | 'MAX';
+type Period = HistoryPeriod;
 
-const PERIODS: { key: Period; label: string; ms: number | null }[] = [
-  { key: '1J', label: '1J', ms: 24 * 60 * 60 * 1000 },
-  { key: '1S', label: '1S', ms: 7 * 24 * 60 * 60 * 1000 },
-  { key: '1M', label: '1M', ms: 30 * 24 * 60 * 60 * 1000 },
-  { key: 'MAX', label: 'MAX', ms: null },
+const PERIODS: { key: HistoryPeriod; label: string }[] = [
+  { key: '1J', label: '1J' },
+  { key: '1M', label: '1M' },
+  { key: '3M', label: '3M' },
+  { key: '1A', label: '1A' },
+  { key: '5A', label: '5A' },
+  { key: '10A', label: '10A' },
+  { key: '20A', label: '20A' },
 ];
 
 const LINE_COLORS: Record<Metal, string> = {
@@ -32,7 +36,7 @@ const TITLES: Record<Metal, string> = {
   copper: 'Historique Cuivre (XCU)',
 };
 
-const CHART_HEIGHT = 180;
+const CHART_HEIGHT = 220;
 const PADDING = { top: 10, bottom: 30, left: 55, right: 12 };
 
 function formatLabel(ts: number, period: Period): string {
@@ -40,7 +44,14 @@ function formatLabel(ts: number, period: Period): string {
   if (period === '1J') {
     return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   }
-  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  if (period === '1M' || period === '3M') {
+    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+  }
+  if (period === '1A') {
+    return d.toLocaleDateString('fr-FR', { month: 'short' });
+  }
+  // 5A, 10A, 20A → année uniquement
+  return d.getFullYear().toString();
 }
 
 function niceStep(range: number, targetTicks: number): number {
@@ -55,35 +66,77 @@ function niceStep(range: number, targetTicks: number): number {
   return step * mag;
 }
 
-export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady: boolean }) {
+function formatDateFR(timestamp: number): string {
+  const date = new Date(timestamp);
+  const jour = date.getDate();
+  const mois = [
+    'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+    'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+  ][date.getMonth()];
+  const annee = date.getFullYear();
+  return `${jour} ${mois} ${annee}`;
+}
+
+export function PriceChart({ metal, currency = 'EUR', compact = false, height, onFullScreen }: { metal: Metal; currency?: string; compact?: boolean; height?: number; onFullScreen?: () => void }) {
   const gradIdRef = useRef(`grad-${metal}-${Math.random().toString(36).slice(2, 7)}`);
   const gradId = gradIdRef.current;
   const [history, setHistory] = useState<PricePoint[]>([]);
-  const [period, setPeriod] = useState<Period>('MAX');
+  const [chartLoading, setChartLoading] = useState(false);
+  const { isPeriodLocked, showPaywall } = usePremium();
+  const [period, setPeriod] = useState<Period>('1M');
+  const [touchIndex, setTouchIndex] = useState<number | null>(null);
+  const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
+  const touchIndexRef = useRef<number | null>(null);
+  const chartDataRef = useRef<{ x: number; y: number }[]>([]);
+  const chartWidthRef = useRef<number>(340);
+  const handleTouchRef = useRef<((x: number) => void) | null>(null);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: (evt) => {
+        setPinnedIndex(null);
+        handleTouchRef.current?.(evt.nativeEvent.locationX);
+      },
+      onPanResponderMove: (evt) =>
+        handleTouchRef.current?.(evt.nativeEvent.locationX),
+      onPanResponderRelease: () => {
+        setPinnedIndex(touchIndexRef.current);
+        setTouchIndex(null);
+        touchIndexRef.current = null;
+      },
+      onPanResponderTerminate: () => {
+        setPinnedIndex(touchIndexRef.current);
+        setTouchIndex(null);
+        touchIndexRef.current = null;
+      },
+
+    })
+  ).current;
 
   useEffect(() => {
-    if (historyReady) {
-      loadPriceHistory().then(setHistory);
-    }
-  }, [historyReady]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadPriceHistory().then(setHistory);
-    }, []),
-  );
-
-  const filtered = useMemo(() => {
-    const p = PERIODS.find((pp) => pp.key === period)!;
-    if (p.ms === null) return history;
-    const cutoff = Date.now() - p.ms;
-    return history.filter((pt) => pt.timestamp >= cutoff);
-  }, [history, period]);
+    let cancelled = false;
+    setChartLoading(true);
+    setPinnedIndex(null);
+    touchIndexRef.current = null;
+    loadPriceHistory(period, currency, metal).then(data => {
+      if (!cancelled) {
+        setHistory(data);
+        setChartLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [period, currency, metal]);
 
   const chartData = useMemo(
-    () => filtered.filter((pt) => (pt[metal] ?? 0) > 0).map((pt) => ({ x: pt.timestamp, y: pt[metal] ?? 0 })),
-    [filtered, metal],
+    () => history.filter((pt) => (pt[metal] ?? 0) > 0).map((pt) => ({ x: pt.timestamp, y: pt[metal] ?? 0 })),
+    [history, metal],
   );
+
+  useEffect(() => {
+    chartDataRef.current = chartData;
+  }, [chartData]);
 
   const variation = useMemo(() => {
     if (chartData.length < 2) return null;
@@ -97,8 +150,22 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
   const title = TITLES[metal];
 
   // ── SVG layout computation ─────────────────────────────────────────────
+  const chartHeight = height ?? (compact ? 220 : 380);
   const plotW = 340 - PADDING.left - PADDING.right;
-  const plotH = CHART_HEIGHT - PADDING.top - PADDING.bottom;
+  const plotH = chartHeight - PADDING.top - PADDING.bottom;
+
+  const handleTouch = useCallback((screenX: number) => {
+    const data = chartDataRef.current;
+    if (data.length < 2) return;
+    const vbX = (screenX / chartWidthRef.current) * 340;
+    const plotX = vbX - PADDING.left;
+    const ratio = Math.max(0, Math.min(1, plotX / plotW));
+    const idx = Math.round(ratio * (data.length - 1));
+    setTouchIndex(idx);
+    touchIndexRef.current = idx;
+  }, [plotW]);
+
+  handleTouchRef.current = handleTouch;
 
   const { linePath, areaPath, xTicks, yTicks, yMin, yMax, xMin, xMax } = useMemo(() => {
     if (chartData.length < 2) {
@@ -107,10 +174,10 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
 
     const xs = chartData.map((d) => d.x);
     const ys = chartData.map((d) => d.y);
-    const xMinVal = Math.min(...xs);
-    const xMaxVal = Math.max(...xs);
-    const yMinRaw = Math.min(...ys);
-    const yMaxRaw = Math.max(...ys);
+    const xMinVal = xs.reduce((a, b) => a < b ? a : b);
+    const xMaxVal = xs.reduce((a, b) => a > b ? a : b);
+    const yMinRaw = ys.reduce((a, b) => a < b ? a : b);
+    const yMaxRaw = ys.reduce((a, b) => a > b ? a : b);
     const yPad = (yMaxRaw - yMinRaw) * 0.1 || 1;
     const yMinVal = yMinRaw - yPad;
     const yMaxVal = yMaxRaw + yPad;
@@ -123,14 +190,15 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
     const lineD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.px.toFixed(2)},${p.py.toFixed(2)}`).join(' ');
     const areaD = lineD + ` L${pts[pts.length - 1]!.px.toFixed(2)},${(PADDING.top + plotH).toFixed(2)} L${pts[0]!.px.toFixed(2)},${(PADDING.top + plotH).toFixed(2)} Z`;
 
-    // X ticks (4 evenly spaced)
-    const xTickArr: number[] = [];
-    for (let i = 0; i < 4; i++) {
-      xTickArr.push(xMinVal + (i / 3) * (xMaxVal - xMinVal));
-    }
+    // X ticks (3 evenly spaced)
+    const xTickArr = [
+      xMinVal,
+      (xMinVal + xMaxVal) / 2,
+      xMaxVal,
+    ];
 
     // Y ticks (nice rounded)
-    const step = niceStep(yMaxVal - yMinVal, 4);
+    const step = niceStep(yMaxVal - yMinVal, 3);
     const yStart = Math.ceil(yMinVal / step) * step;
     const yTickArr: number[] = [];
     for (let v = yStart; v <= yMaxVal; v += step) {
@@ -138,84 +206,235 @@ export function PriceChart({ metal, historyReady }: { metal: Metal; historyReady
     }
 
     return { linePath: lineD, areaPath: areaD, xTicks: xTickArr, yTicks: yTickArr, yMin: yMinVal, yMax: yMaxVal, xMin: xMinVal, xMax: xMaxVal };
-  }, [chartData, plotW, plotH]);
+  }, [chartData, plotW, plotH, compact]);
 
   const scaleX = (v: number) => PADDING.left + ((v - xMin) / (xMax - xMin || 1)) * plotW;
   const scaleY = (v: number) => PADDING.top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;
+
+  const activeIdx = touchIndex ?? pinnedIndex;
+  const safeIdx = (activeIdx !== null && activeIdx >= 0 && activeIdx < chartData.length)
+    ? activeIdx : null;
+  const displayPoint = safeIdx !== null ? chartData[safeIdx] : null;
+
+  const prixActuel = chartData.length >= 2 ? chartData[chartData.length - 1]!.y : null;
+
+  const variationInfo = displayPoint && prixActuel !== null ? (() => {
+    const prixPoint = displayPoint.y;
+    if (prixPoint === prixActuel) return null;
+    const delta = prixActuel - prixPoint;
+    const deltaPct = prixPoint !== 0 ? (delta / prixPoint) * 100 : 0;
+    const signe = delta >= 0 ? '+' : '';
+    const label = signe +
+      delta.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+      ' \u20AC (' + signe + deltaPct.toFixed(2).replace('.', ',') + ' %)';
+    return { label, couleur: delta >= 0 ? '#4CAF50' : '#F44336' };
+  })() : null;
+
+  const yActuel = prixActuel !== null ? scaleY(prixActuel) : null;
 
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
         <Text style={styles.cardLabel}>{title}</Text>
-        {variation !== null && (
-          <Text style={[styles.variation, variation >= 0 ? styles.positive : styles.negative]}>
-            {variation >= 0 ? '+' : ''}{variation.toFixed(2)} %
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          {variation !== null && (
+            <Text style={[styles.variation, variation >= 0 ? styles.positive : styles.negative]}>
+              {variation >= 0 ? '+' : ''}{variation.toFixed(2).replace('.', ',')} %
+            </Text>
+          )}
+          {onFullScreen && (
+            <TouchableOpacity
+              onPress={onFullScreen}
+              style={{ padding: 8, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="expand-outline" size={22} color="#C8A94E" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {LONG_TERM_PERIODS.includes(period) && (
+        <Text style={{ color: '#888', fontSize: 10, marginBottom: 4, textAlign: 'right' }}>
+          Données affichées en USD
+        </Text>
+      )}
+
+      {/* Period selector */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.periodRow, { marginHorizontal: -16 }]} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
+        {PERIODS.map((p) => (
+          <TouchableOpacity
+            key={p.key}
+            style={[
+              styles.periodBtn,
+              period === p.key && styles.periodBtnActive,
+              isPeriodLocked(p.key) && styles.periodBtnLocked,
+            ]}
+            onPress={() => {
+              if (isPeriodLocked(p.key)) {
+                showPaywall();
+                return;
+              }
+              setPeriod(p.key);
+            }}>
+            <View style={styles.periodBtnContent}>
+              <Text style={[
+                styles.periodText,
+                period === p.key && styles.periodTextActive,
+                isPeriodLocked(p.key) && styles.periodTextLocked,
+              ]}>
+                {p.label}
+              </Text>
+              {isPeriodLocked(p.key) && (
+                <Text style={styles.lockIcon}>🔒</Text>
+              )}
+            </View>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Tooltip display */}
+      <View style={styles.tooltipArea}>
+        {displayPoint ? (
+          <View style={styles.tooltipCompact}>
+            <View style={styles.tooltipLine1}>
+              <Text style={styles.tooltipCompactPrice}>
+                {displayPoint.y.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {'€'}
+              </Text>
+              {touchIndex === null && pinnedIndex !== null && (
+                <TouchableOpacity onPress={() => setPinnedIndex(null)} style={styles.tooltipClose}>
+                  <Text style={styles.tooltipCloseText}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+            <View style={styles.tooltipLine2}>
+              <Text style={styles.tooltipCompactDate}>
+                {formatDateFR(displayPoint.x)}
+              </Text>
+              {variationInfo && (
+                <Text style={[styles.tooltipCompactVariation, { color: variationInfo.couleur }]}>
+                  {variationInfo.label}
+                </Text>
+              )}
+            </View>
+          </View>
+        ) : (
+          <Text style={styles.tooltipHint}>
+            Touchez le graphique pour voir le prix
           </Text>
         )}
       </View>
 
-      {/* Period selector */}
-      <View style={styles.periodRow}>
-        {PERIODS.map((p) => (
-          <TouchableOpacity
-            key={p.key}
-            style={[styles.periodBtn, period === p.key && styles.periodBtnActive]}
-            onPress={() => setPeriod(p.key)}>
-            <Text style={[styles.periodText, period === p.key && styles.periodTextActive]}>
-              {p.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       {/* Chart or empty state */}
-      {chartData.length < 2 ? (
-        <View style={styles.emptyState}>
+      {chartLoading ? (
+        <View style={{ height: chartHeight, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="small" color={OrTrackColors.gold} />
+        </View>
+      ) : chartData.length < 2 ? (
+        <View style={[styles.emptyState, { height: chartHeight }]}>
           <Text style={styles.emptyText}>Pas encore assez de données</Text>
           <Text style={styles.emptyHint}>Les cours seront enregistrés automatiquement</Text>
         </View>
       ) : (
-        <Svg width="100%" height={CHART_HEIGHT} viewBox={`0 0 340 ${CHART_HEIGHT}`}>
-          <Defs>
-            <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0%" stopColor={color} stopOpacity={0.25} />
-              <Stop offset="100%" stopColor={color} stopOpacity={0.02} />
-            </LinearGradient>
-          </Defs>
+        <>
+          <View
+            onLayout={(e) => {
+              chartWidthRef.current = e.nativeEvent.layout.width;
+            }}
+            {...panResponder.panHandlers}
+          >
+            <Svg width="100%" height={chartHeight} viewBox={`0 0 340 ${chartHeight}`}>
+              <Defs>
+                <LinearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+                  <Stop offset="0%" stopColor={color} stopOpacity={0.15} />
+                  <Stop offset="100%" stopColor={color} stopOpacity={0} />
+                </LinearGradient>
+              </Defs>
 
-          {/* Y grid lines + labels */}
-          <G>
-            {yTicks.map((t) => {
-              const y = scaleY(t);
-              return (
-                <G key={`y-${t}`}>
-                  <SvgLine x1={PADDING.left} y1={y} x2={340 - PADDING.right} y2={y} stroke={OrTrackColors.border} strokeDasharray="4" strokeWidth={1} />
-                  <SvgText x={PADDING.left - 6} y={y + 3} textAnchor="end" fontSize={9} fill={OrTrackColors.subtext}>
-                    {`${Math.round(t)}€`}
+              {/* Y grid lines + labels */}
+              <G>
+                {yTicks.map((t) => {
+                  const y = scaleY(t);
+                  return (
+                    <G key={`y-${t}`}>
+                      <SvgLine x1={PADDING.left} y1={y} x2={340 - PADDING.right} y2={y} stroke={OrTrackColors.border} strokeDasharray="4" strokeWidth={1} />
+                      <SvgText x={PADDING.left - 6} y={y + 3} textAnchor="end" fontSize={11} fill={OrTrackColors.subtext}>
+                        {`${Math.round(t)}\u20AC`}
+                      </SvgText>
+                    </G>
+                  );
+                })}
+              </G>
+
+              {/* X axis line */}
+              <SvgLine x1={PADDING.left} y1={PADDING.top + plotH} x2={340 - PADDING.right} y2={PADDING.top + plotH} stroke={OrTrackColors.border} strokeWidth={1} />
+
+              {/* X tick labels */}
+              <G>
+                {xTicks.map((t) => (
+                  <SvgText key={`x-${t}`} x={scaleX(t)} y={PADDING.top + plotH + 16} textAnchor="middle" fontSize={11} fill={OrTrackColors.subtext}>
+                    {formatLabel(t, period)}
                   </SvgText>
-                </G>
-              );
-            })}
-          </G>
+                ))}
+              </G>
 
-          {/* X axis line */}
-          <SvgLine x1={PADDING.left} y1={PADDING.top + plotH} x2={340 - PADDING.right} y2={PADDING.top + plotH} stroke={OrTrackColors.border} strokeWidth={1} />
+              {/* Area fill */}
+              <Path d={areaPath} fill={`url(#${gradId})`} />
 
-          {/* X tick labels */}
-          <G>
-            {xTicks.map((t) => (
-              <SvgText key={`x-${t}`} x={scaleX(t)} y={PADDING.top + plotH + 16} textAnchor="middle" fontSize={9} fill={OrTrackColors.subtext}>
-                {formatLabel(t, period)}
-              </SvgText>
-            ))}
-          </G>
+              {/* Line stroke */}
+              <Path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
 
-          {/* Area fill */}
-          <Path d={areaPath} fill={`url(#${gradId})`} />
+              {/* Current price horizontal line */}
+              {yActuel !== null && (
+                <SvgLine
+                  x1={0}
+                  x2={340}
+                  y1={yActuel}
+                  y2={yActuel}
+                  stroke="rgba(255,255,255,0.15)"
+                  strokeWidth={1}
+                  strokeDasharray={[4, 4]}
+                />
+              )}
 
-          {/* Line stroke */}
-          <Path d={linePath} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" />
-        </Svg>
+              {/* Touch crosshair + dot */}
+              {safeIdx !== null && (() => {
+                const pt = chartData[safeIdx]!;
+                const px = scaleX(pt.x);
+                const py = scaleY(pt.y);
+                return (
+                  <G>
+                    <SvgLine
+                      x1={px} y1={PADDING.top}
+                      x2={px} y2={PADDING.top + plotH}
+                      stroke={color} strokeWidth={1}
+                      strokeDasharray="4" opacity={0.5}
+                    />
+                    <Circle cx={px} cy={py} r={7}
+                      fill={color} opacity={0.2} />
+                    <Circle cx={px} cy={py} r={3.5}
+                      fill={color} />
+                  </G>
+                );
+              })()}
+            </Svg>
+          </View>
+
+          {/* Min / Max */}
+          {chartData.length >= 2 && (() => {
+            const dataMin = chartData.reduce((a, b) => a.y < b.y ? a : b).y;
+            const dataMax = chartData.reduce((a, b) => a.y > b.y ? a : b).y;
+            return (
+              <View style={styles.minMaxRow}>
+                <Text style={styles.minMaxMin}>
+                  MIN {dataMin.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {'€'}
+                </Text>
+                <Text style={styles.minMaxMax}>
+                  MAX {dataMax.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {'€'}
+                </Text>
+              </View>
+            );
+          })()}
+        </>
       )}
     </View>
   );
@@ -225,7 +444,9 @@ const styles = StyleSheet.create({
   card: {
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
-    padding: 20,
+    paddingTop: 10,
+    paddingBottom: 20,
+    paddingHorizontal: 20,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
@@ -234,7 +455,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 6,
   },
   cardLabel: {
     fontSize: 11,
@@ -250,7 +471,6 @@ const styles = StyleSheet.create({
   negative: { color: '#E07070' },
   periodRow: {
     flexDirection: 'row',
-    gap: 8,
     marginBottom: 16,
   },
   periodBtn: {
@@ -272,6 +492,22 @@ const styles = StyleSheet.create({
   periodTextActive: {
     color: OrTrackColors.gold,
   },
+  periodBtnContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  periodTextLocked: {
+    color: OrTrackColors.tabIconDefault,
+  },
+  periodBtnLocked: {
+    borderColor: OrTrackColors.border,
+    opacity: 0.6,
+  },
+  lockIcon: {
+    fontSize: 10,
+    lineHeight: 12,
+  },
   emptyState: {
     height: CHART_HEIGHT,
     alignItems: 'center',
@@ -285,5 +521,65 @@ const styles = StyleSheet.create({
   emptyHint: {
     fontSize: 12,
     color: OrTrackColors.tabIconDefault,
+  },
+  tooltipArea: {
+    minHeight: 28,
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  tooltipCompact: {
+    marginBottom: 4,
+  },
+  tooltipLine1: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  tooltipLine2: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 1,
+  },
+  tooltipCompactPrice: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: OrTrackColors.white,
+  },
+  tooltipCompactDate: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
+  },
+  tooltipCompactVariation: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  tooltipClose: {
+    padding: 4,
+  },
+  tooltipCloseText: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    opacity: 0.6,
+  },
+  tooltipHint: {
+    fontSize: 10,
+    color: OrTrackColors.subtext,
+    opacity: 0.5,
+  },
+  minMaxRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  minMaxMin: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E07070',
+  },
+  minMaxMax: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4CAF50',
   },
 });

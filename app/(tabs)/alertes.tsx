@@ -25,8 +25,11 @@ import {
 import {
   type MetalType,
   METAL_CONFIG,
+  getSpot,
 } from '../../constants/metals'
 import { OrTrackColors } from '../../constants/theme'
+import { usePremium } from '../../contexts/premium-context'
+import { useSpotPrices } from '../../hooks/use-spot-prices'
 
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre']
 
@@ -40,6 +43,8 @@ export default function AlertesScreen() {
   const [selectedCondition, setSelectedCondition] = useState<Condition>('above')
   const [targetPrice, setTargetPrice] = useState('')
   const [creating, setCreating] = useState(false)
+  const { prices } = useSpotPrices()
+  const { canAddAlert, showPaywall, isPremium, limits } = usePremium()
 
   useEffect(() => {
     async function init() {
@@ -61,6 +66,11 @@ export default function AlertesScreen() {
 
   async function handleCreate() {
     if (!pushToken || !targetPrice || isNaN(parseFloat(targetPrice))) return
+    if (!canAddAlert(alerts.length)) {
+      setModalVisible(false)
+      showPaywall()
+      return
+    }
     setCreating(true)
     const success = await createAlert(
       pushToken,
@@ -107,7 +117,7 @@ export default function AlertesScreen() {
         {/* CAS 1 : chargement token */}
         {tokenLoading && (
           <ActivityIndicator
-            color="#C9A84C"
+            color={OrTrackColors.gold}
             style={{ marginTop: 40 }}
           />
         )}
@@ -118,7 +128,7 @@ export default function AlertesScreen() {
             <Ionicons
               name="notifications-off-outline"
               size={48}
-              color="#888888"
+              color={OrTrackColors.subtext}
             />
             <Text style={styles.emptyTitle}>
               Notifications non disponibles
@@ -134,61 +144,150 @@ export default function AlertesScreen() {
           <>
             <TouchableOpacity
               style={styles.createButton}
-              onPress={() => setModalVisible(true)}
+              onPress={() => {
+                if (!canAddAlert(alerts.length)) {
+                  showPaywall()
+                  return
+                }
+                setModalVisible(true)
+              }}
             >
-              <Text style={styles.createButtonText}>＋ Nouvelle alerte</Text>
+              <Text style={styles.createButtonText}>+ Nouvelle alerte</Text>
             </TouchableOpacity>
 
-            <Text style={styles.sectionTitle}>MES ALERTES</Text>
+            <View style={styles.alertsHeader}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
+                MES ALERTES
+              </Text>
+              {!isPremium && (
+                <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
+                  <Text style={styles.alertsLimit}>
+                    {alerts.length}/{limits.maxAlerts} · Passer à illimité
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
 
             {alertsLoading && (
-              <ActivityIndicator color="#C9A84C" style={{ marginTop: 20 }} />
+              <ActivityIndicator color={OrTrackColors.gold} style={{ marginTop: 20 }} />
             )}
 
             {!alertsLoading && alerts.length === 0 && (
-              <Text style={styles.noAlerts}>Aucune alerte active</Text>
+              <View style={styles.emptyAlerts}>
+                <Ionicons
+                  name="notifications-outline"
+                  size={40}
+                  color={OrTrackColors.subtext}
+                />
+                <Text style={styles.emptyAlertsTitle}>
+                  Aucune alerte active
+                </Text>
+                <Text style={styles.emptyAlertsHint}>
+                  Définissez un seuil de prix pour être notifié
+                </Text>
+              </View>
             )}
 
             {alerts.map((alert) => (
               <View key={alert.id} style={styles.alertCard}>
                 <View style={styles.alertCardContent}>
                   <View style={styles.alertInfo}>
-                    <Text style={styles.alertMetal}>
-                      {METAL_CONFIG[alert.metal].name}
-                    </Text>
+
+                    {/* Ligne 1 : badge symbole + nom métal */}
+                    <View style={styles.alertHeaderRow}>
+                      <View style={[styles.metalBadge,
+                        { borderColor: METAL_CONFIG[alert.metal].chipBorder }]}>
+                        <Text style={[styles.metalBadgeText,
+                          { color: METAL_CONFIG[alert.metal].chipText }]}>
+                          {METAL_CONFIG[alert.metal].symbol}
+                        </Text>
+                      </View>
+                      <Text style={styles.alertMetal}>
+                        {METAL_CONFIG[alert.metal].name}
+                      </Text>
+                    </View>
+
+                    {/* Ligne 2 : badge condition */}
                     <View style={styles.alertRow}>
-                      <View
-                        style={[
-                          styles.conditionBadge,
-                          {
-                            backgroundColor:
-                              alert.condition === 'above'
-                                ? '#1B3A1B'
-                                : '#3A1B1B',
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.conditionText,
-                            {
-                              color:
-                                alert.condition === 'above'
-                                  ? '#4CAF50'
-                                  : '#F44336',
-                            },
-                          ]}
-                        >
-                          {alert.condition === 'above'
-                            ? '▲ Au-dessus'
-                            : '▼ En-dessous'}
+                      <View style={[styles.conditionBadge, {
+                        backgroundColor: alert.condition === 'above'
+                          ? '#1B3A1B' : '#3A1B1B',
+                      }]}>
+                        <Text style={[styles.conditionText, {
+                          color: alert.condition === 'above'
+                            ? '#4CAF50' : '#F44336',
+                        }]}>
+                          {alert.condition === 'above' ? '▲ Au-dessus' : '▼ En-dessous'}
                         </Text>
                       </View>
                     </View>
-                    <Text style={styles.alertPrice}>
-                      {alert.target_price.toLocaleString('fr-FR')} €/oz
-                    </Text>
+
+                    {/* Bloc cours + seuil + écart + barre */}
+                    {(() => {
+                      const currentPrice = getSpot(alert.metal, prices);
+                      if (currentPrice == null) return (
+                        <Text style={styles.alertPrice}>
+                          Seuil : {alert.target_price.toLocaleString('fr-FR',
+                            { maximumFractionDigits: 2 })} {'€'}/oz
+                        </Text>
+                      );
+
+                      const isAbove = alert.condition === 'above';
+                      const gap = alert.target_price - currentPrice;
+                      const gapPct = (gap / currentPrice) * 100;
+                      const proximityRaw = isAbove
+                        ? currentPrice / alert.target_price
+                        : alert.target_price / currentPrice;
+                      const proximity = Math.min(Math.max(proximityRaw, 0), 1);
+
+                      return (
+                        <>
+                          {/* Grille cours / seuil */}
+                          <View style={styles.priceGrid}>
+                            <View style={styles.priceGridItem}>
+                              <Text style={styles.priceGridLabel}>Cours actuel</Text>
+                              <Text style={styles.priceGridValue}>
+                                {currentPrice.toLocaleString('fr-FR',
+                                  { maximumFractionDigits: 2 })} {'€'}/oz
+                              </Text>
+                            </View>
+                            <View style={styles.priceGridItem}>
+                              <Text style={styles.priceGridLabel}>Seuil cible</Text>
+                              <Text style={[styles.priceGridValue,
+                                { color: OrTrackColors.gold }]}>
+                                {alert.target_price.toLocaleString('fr-FR',
+                                  { maximumFractionDigits: 2 })} {'€'}/oz
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Écart */}
+                          <Text style={[styles.gapText, {
+                            color: isAbove
+                              ? (gap > 0 ? OrTrackColors.subtext : '#4CAF50')
+                              : (gap < 0 ? OrTrackColors.subtext : '#F44336'),
+                          }]}>
+                            Écart : {gap > 0 ? '+' : ''}
+                            {gap.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}
+                            {' €'} ({gapPct > 0 ? '+' : ''}
+                            {gapPct.toFixed(1)} %)
+                          </Text>
+
+                          {/* Barre de proximité */}
+                          <View style={styles.proximityBarBg}>
+                            <View style={[styles.proximityBarFill, {
+                              width: `${(proximity * 100).toFixed(1)}%` as any,
+                              backgroundColor: isAbove ? OrTrackColors.gold : '#F44336',
+                            }]} />
+                          </View>
+                          <Text style={styles.proximityLabel}>
+                            {(proximity * 100).toFixed(0)} % du seuil atteint
+                          </Text>
+                        </>
+                      );
+                    })()}
                   </View>
+
                   <TouchableOpacity
                     onPress={() => handleDelete(alert.id)}
                     style={styles.deleteButton}
@@ -196,7 +295,7 @@ export default function AlertesScreen() {
                     <Ionicons
                       name="trash-outline"
                       size={20}
-                      color="#888888"
+                      color={OrTrackColors.subtext}
                     />
                   </TouchableOpacity>
                 </View>
@@ -226,6 +325,7 @@ export default function AlertesScreen() {
                 horizontal
                 showsHorizontalScrollIndicator={false}
                 style={{ marginBottom: 16 }}
+                contentContainerStyle={{ paddingRight: 16 }}
               >
                 {METALS.map((metal) => (
                   <TouchableOpacity
@@ -236,8 +336,8 @@ export default function AlertesScreen() {
                       {
                         backgroundColor:
                           selectedMetal === metal
-                            ? '#C9A84C'
-                            : '#2A2A2A',
+                            ? OrTrackColors.gold
+                            : OrTrackColors.border,
                       },
                     ]}
                   >
@@ -246,7 +346,7 @@ export default function AlertesScreen() {
                         styles.metalChipText,
                         {
                           color:
-                            selectedMetal === metal ? '#000000' : '#FFFFFF',
+                            selectedMetal === metal ? '#000000' : OrTrackColors.white,
                         },
                       ]}
                     >
@@ -265,8 +365,8 @@ export default function AlertesScreen() {
                     {
                       backgroundColor:
                         selectedCondition === 'above'
-                          ? '#C9A84C'
-                          : '#2A2A2A',
+                          ? OrTrackColors.gold
+                          : OrTrackColors.border,
                       marginRight: 8,
                     },
                   ]}
@@ -275,7 +375,7 @@ export default function AlertesScreen() {
                   <Text
                     style={{
                       color:
-                        selectedCondition === 'above' ? '#000000' : '#FFFFFF',
+                        selectedCondition === 'above' ? '#000000' : OrTrackColors.white,
                       textAlign: 'center',
                     }}
                   >
@@ -288,8 +388,8 @@ export default function AlertesScreen() {
                     {
                       backgroundColor:
                         selectedCondition === 'below'
-                          ? '#C9A84C'
-                          : '#2A2A2A',
+                          ? OrTrackColors.gold
+                          : OrTrackColors.border,
                     },
                   ]}
                   onPress={() => setSelectedCondition('below')}
@@ -297,7 +397,7 @@ export default function AlertesScreen() {
                   <Text
                     style={{
                       color:
-                        selectedCondition === 'below' ? '#000000' : '#FFFFFF',
+                        selectedCondition === 'below' ? '#000000' : OrTrackColors.white,
                       textAlign: 'center',
                     }}
                   >
@@ -310,6 +410,26 @@ export default function AlertesScreen() {
               <Text style={[styles.inputLabel, { marginTop: 16 }]}>
                 PRIX CIBLE
               </Text>
+              {(() => {
+                const spot = getSpot(selectedMetal, prices);
+                if (!spot) return null;
+                return (
+                  <View style={styles.spotHintRow}>
+                    <Ionicons
+                      name="pulse-outline"
+                      size={13}
+                      color={OrTrackColors.gold}
+                    />
+                    <Text style={styles.spotHintText}>
+                      Cours actuel :{' '}
+                      <Text style={{ color: OrTrackColors.white, fontWeight: '700' }}>
+                        {spot.toLocaleString('fr-FR',
+                          { maximumFractionDigits: 2 })} {'€'}/oz
+                      </Text>
+                    </Text>
+                  </View>
+                );
+              })()}
               <View style={styles.priceInputRow}>
                 <TextInput
                   style={styles.priceInput}
@@ -317,7 +437,7 @@ export default function AlertesScreen() {
                   onChangeText={setTargetPrice}
                   keyboardType="numeric"
                   placeholder="ex: 4500"
-                  placeholderTextColor="#888888"
+                  placeholderTextColor={OrTrackColors.subtext}
                 />
                 <Text style={styles.priceUnit}>€/oz</Text>
               </View>
@@ -363,51 +483,75 @@ const styles = StyleSheet.create({
   },
   headerBrand: {
     fontSize: 13,
-    color: '#C9A84C',
+    color: OrTrackColors.gold,
     fontWeight: 'bold',
     letterSpacing: 2,
     textTransform: 'uppercase',
   },
-  headerTab: { fontSize: 13, color: '#888888' },
+  headerTab: { fontSize: 13, color: OrTrackColors.subtext },
   emptyState: { alignItems: 'center', marginTop: 60 },
   emptyTitle: {
-    color: '#888888',
+    color: OrTrackColors.subtext,
     fontSize: 16,
     marginTop: 16,
     fontWeight: '600',
   },
-  emptySubtitle: { color: '#888888', fontSize: 12, marginTop: 8 },
+  emptySubtitle: { color: OrTrackColors.subtext, fontSize: 12, marginTop: 8 },
   createButton: {
-    backgroundColor: '#C9A84C',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: OrTrackColors.gold,
     borderRadius: 10,
     padding: 14,
     alignItems: 'center',
     marginBottom: 24,
   },
   createButtonText: {
-    color: '#000000',
-    fontWeight: 'bold',
+    color: OrTrackColors.gold,
+    fontWeight: '600',
     fontSize: 15,
   },
   sectionTitle: {
     fontSize: 11,
-    color: '#C9A84C',
+    color: OrTrackColors.gold,
     fontWeight: 'bold',
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 12,
   },
-  noAlerts: {
-    color: '#888888',
-    textAlign: 'center',
-    marginTop: 20,
+  alertsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  alertsLimit: {
+    fontSize: 11,
+    color: OrTrackColors.gold,
+    fontWeight: '600',
+  },
+  emptyAlerts: {
+    alignItems: 'center',
+    marginTop: 40,
+    gap: 8,
+  },
+  emptyAlertsTitle: {
+    color: OrTrackColors.subtext,
     fontSize: 14,
+    fontWeight: '600',
+    marginTop: 8,
+  },
+  emptyAlertsHint: {
+    color: OrTrackColors.subtext,
+    fontSize: 12,
+    opacity: 0.6,
+    textAlign: 'center',
   },
   alertCard: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: OrTrackColors.card,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderColor: OrTrackColors.border,
     padding: 14,
     marginBottom: 10,
   },
@@ -416,11 +560,26 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   alertInfo: { flex: 1 },
+  alertHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  metalBadge: {
+    borderWidth: 1,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  metalBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
   alertMetal: {
-    color: '#FFFFFF',
+    color: OrTrackColors.white,
     fontWeight: 'bold',
     fontSize: 15,
-    marginBottom: 6,
   },
   alertRow: { flexDirection: 'row', marginBottom: 6 },
   conditionBadge: {
@@ -430,7 +589,7 @@ const styles = StyleSheet.create({
   },
   conditionText: { fontSize: 12, fontWeight: '600' },
   alertPrice: {
-    color: '#C9A84C',
+    color: OrTrackColors.gold,
     fontSize: 14,
     fontWeight: '600',
   },
@@ -441,20 +600,20 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#1A1A1A',
+    backgroundColor: OrTrackColors.card,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     padding: 24,
     paddingBottom: 40,
   },
   modalTitle: {
-    color: '#FFFFFF',
+    color: OrTrackColors.white,
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 20,
   },
   inputLabel: {
-    color: '#C9A84C',
+    color: OrTrackColors.gold,
     fontSize: 11,
     fontWeight: 'bold',
     letterSpacing: 1,
@@ -477,19 +636,19 @@ const styles = StyleSheet.create({
   priceInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#2A2A2A',
+    backgroundColor: OrTrackColors.border,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   priceInput: {
     flex: 1,
-    color: '#FFFFFF',
+    color: OrTrackColors.white,
     fontSize: 16,
   },
-  priceUnit: { color: '#888888', marginLeft: 8 },
+  priceUnit: { color: OrTrackColors.subtext, marginLeft: 8 },
   confirmButton: {
-    backgroundColor: '#C9A84C',
+    backgroundColor: OrTrackColors.gold,
     borderRadius: 8,
     padding: 14,
     alignItems: 'center',
@@ -501,5 +660,58 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   cancelButton: { padding: 12, alignItems: 'center', marginTop: 4 },
-  cancelButtonText: { color: '#888888', fontSize: 14 },
+  cancelButtonText: { color: OrTrackColors.subtext, fontSize: 14 },
+  priceGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  priceGridItem: {
+    flex: 1,
+  },
+  priceGridLabel: {
+    color: OrTrackColors.subtext,
+    fontSize: 10,
+    marginBottom: 2,
+  },
+  priceGridValue: {
+    color: OrTrackColors.white,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  gapText: {
+    fontSize: 11,
+    marginBottom: 8,
+  },
+  proximityBarBg: {
+    height: 4,
+    backgroundColor: OrTrackColors.border,
+    borderRadius: 2,
+    overflow: 'hidden',
+    marginBottom: 4,
+  },
+  proximityBarFill: {
+    height: 4,
+    borderRadius: 2,
+  },
+  proximityLabel: {
+    color: OrTrackColors.subtext,
+    fontSize: 10,
+    textAlign: 'right',
+  },
+  spotHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: OrTrackColors.background,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: 8,
+  },
+  spotHintText: {
+    color: OrTrackColors.subtext,
+    fontSize: 12,
+  },
 })

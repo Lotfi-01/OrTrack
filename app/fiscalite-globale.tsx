@@ -217,7 +217,7 @@ export default function FiscaliteGlobaleScreen() {
                   placeholderTextColor={OrTrackColors.subtext}
                   selectionColor={OrTrackColors.gold}
                 />
-                <Text style={styles.inputHint}>Date de cession appliquée à toutes les positions</Text>
+                <Text style={styles.inputHint}>La date de cession détermine l'abattement du régime plus-values (5 % par an dès la 3e année de détention).</Text>
               </View>
 
               {/* 2. POSITIONS EXCLUES */}
@@ -250,17 +250,17 @@ export default function FiscaliteGlobaleScreen() {
                         </View>
 
                         {/* Row 2 : forfaitaire vs plus-values */}
-                        <View style={styles.taxRow}>
+                        <View style={{ marginTop: 4 }}>
                           <Text style={[
                             styles.taxLabel,
                             { color: r.bestRegime === 'forfaitaire' ? gold : subtext,
                               fontWeight: r.bestRegime === 'forfaitaire' ? '700' : '400' },
-                          ]}>Forfait : {fmtEur(r.tax.forfaitaire)} €</Text>
+                          ]}>Taxe forfaitaire : {fmtEur(r.tax.forfaitaire)} €</Text>
                           <Text style={[
-                            styles.taxLabel,
+                            styles.fiscalLabelPV,
                             { color: r.bestRegime === 'plusvalues' ? gold : subtext,
                               fontWeight: r.bestRegime === 'plusvalues' ? '700' : '400' },
-                          ]}>PV : {fmtEur(r.tax.plusValuesTax)} €</Text>
+                          ]}>Taxe plus-values : {fmtEur(r.tax.plusValuesTax)} €</Text>
                         </View>
                       </View>
                     );
@@ -285,7 +285,7 @@ export default function FiscaliteGlobaleScreen() {
                       <Text style={styles.recapColNet}>Net : {fmtEur(netForfaitaire)} €</Text>
                       {bestGlobalRegime === 'forfaitaire' && (
                         <View style={styles.recommendBadge}>
-                          <Text style={styles.recommendBadgeText}>Recommandé</Text>
+                          <Text style={styles.recommendBadgeText}>Le moins taxé</Text>
                         </View>
                       )}
                     </View>
@@ -295,7 +295,7 @@ export default function FiscaliteGlobaleScreen() {
                       <Text style={styles.recapColNet}>Net : {fmtEur(netPlusValues)} €</Text>
                       {bestGlobalRegime === 'plusvalues' && (
                         <View style={styles.recommendBadge}>
-                          <Text style={styles.recommendBadgeText}>Recommandé</Text>
+                          <Text style={styles.recommendBadgeText}>Le moins taxé</Text>
                         </View>
                       )}
                     </View>
@@ -409,14 +409,14 @@ const styles = StyleSheet.create({
     color: subtext,
   },
 
-  // Tax comparison row
-  taxRow: {
-    flexDirection: 'row',
-    marginTop: 8,
-    justifyContent: 'space-between',
-  },
+  // Tax labels
   taxLabel: {
     fontSize: 12,
+  },
+  fiscalLabelPV: {
+    fontSize: 12,
+    color: subtext,
+    marginTop: 2,
   },
 
   // Récapitulatif global
@@ -565,7 +565,7 @@ const styles = StyleSheet.create({
 
   // Legal
   legalCard: {
-    backgroundColor: '#111118',
+    backgroundColor: cardColor,
     borderRadius: 10,
     padding: 14,
     borderWidth: 1,
@@ -574,7 +574,7 @@ const styles = StyleSheet.create({
   },
   legalText: {
     fontSize: 11,
-    color: tabIconDefault,
+    color: subtext,
     lineHeight: 18,
   },
 });

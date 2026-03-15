@@ -2,17 +2,19 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { GoldSilverRatio } from '@/components/gold-silver-ratio';
+import { IndicateursPanel } from '@/components/indicateurs-panel';
 import { MetalConverter } from '@/components/metal-converter';
+import { ActualitesPanel } from '@/components/actualites-panel';
 import { MetalGuide } from '@/components/metal-guide';
 import { OrTrackColors } from '@/constants/theme';
 
-type Tab = 'indicateurs' | 'convertisseur' | 'guide';
+type Tab = 'indicateurs' | 'convertisseur' | 'guide' | 'actualites';
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: 'indicateurs', label: 'Indicateurs' },
-  { key: 'convertisseur', label: 'Convertisseur' },
+  { key: 'indicateurs', label: 'Marchés' },
+  { key: 'convertisseur', label: 'Convertir' },
   { key: 'guide', label: 'Guide' },
+  { key: 'actualites', label: 'Actus' },
 ];
 
 export default function ApprendreScreen() {
@@ -47,9 +49,10 @@ export default function ApprendreScreen() {
 
         {/* 3. Contenu */}
         <View>
-          {activeTab === 'indicateurs' && <GoldSilverRatio />}
+          {activeTab === 'indicateurs' && <IndicateursPanel />}
           {activeTab === 'convertisseur' && <MetalConverter />}
           {activeTab === 'guide' && <MetalGuide />}
+          {activeTab === 'actualites' && <ActualitesPanel />}
         </View>
 
       </ScrollView>

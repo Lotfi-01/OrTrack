@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { PriceChart } from '@/components/price-chart';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -33,7 +34,17 @@ type Position = {
   createdAt: string;
 };
 
+type PricePoint = {
+  timestamp: number;
+  gold: number;
+  silver: number;
+  platinum: number;
+  palladium: number;
+  copper: number;
+};
+
 const STORAGE_KEY = '@ortrack:positions';
+const HIDE_VALUE_KEY = '@ortrack:hide_portfolio_value';
 const OZ_TO_G = 31.10435;
 
 const { width } = Dimensions.get('window');
@@ -55,11 +66,16 @@ function fmtG(g: number): string {
   if (g >= 1000) {
     return `${(g / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 })} kg`;
   }
-  return `${g % 1 === 0 ? g : g.toFixed(2)} g`;
+  return `${g % 1 === 0 ? g : g.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} g`;
 }
 
 function fmtQty(n: number): string {
-  return `${n % 1 === 0 ? String(n) : n.toFixed(2)} pcs`;
+  const qty = n % 1 === 0 ? String(n) : n.toFixed(2);
+  return `${qty} pièce${n > 1 ? 's' : ''}`;
+}
+
+function fmtPct(value: number, decimals = 2): string {
+  return value.toFixed(decimals).replace('.', ',');
 }
 
 // ─── Config cours & graphique ────────────────────────────────────────────────
@@ -77,9 +93,11 @@ const METALS_CONFIG: { metal: ChartMetal; name: string; symbol: string; color: s
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function TableauDeBordScreen() {
-  const { prices, loading, error, lastUpdated, historyReady, refresh } = useSpotPrices();
+  const { prices, pricesUsd, loading, refreshing, error, lastUpdated, refresh, currency, currencySymbol } = useSpotPrices();
   const [positions, setPositions] = useState<Position[]>([]);
   const [selectedChartMetal, setSelectedChartMetal] = useState<ChartMetal>('gold');
+  const [change24h, setChange24h] = useState<Partial<Record<string, number>>>({});
+  const [hideValue, setHideValue] = useState(false);
 
   // Recharge à chaque activation de l'onglet
   useFocusEffect(
@@ -89,6 +107,84 @@ export default function TableauDeBordScreen() {
         .catch(() => setPositions([]));
     }, [])
   );
+
+  useFocusEffect(
+    useCallback(() => {
+      async function checkCacheAndRefresh() {
+        const cached = await AsyncStorage.getItem('@ortrack:spot_cache');
+        if (!cached) {
+          refresh();
+        }
+      }
+      checkCacheAndRefresh();
+    }, [refresh])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      AsyncStorage.getItem(HIDE_VALUE_KEY).then((val) => {
+        setHideValue(val === 'true');
+      });
+    }, [])
+  );
+
+  const toggleHideValue = useCallback(() => {
+    setHideValue((prev) => {
+      const next = !prev;
+      AsyncStorage.setItem(HIDE_VALUE_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    async function compute24hChange() {
+      try {
+        const raw = await AsyncStorage.getItem('@ortrack:price_history');
+        if (!raw) return;
+        const history: PricePoint[] = JSON.parse(raw);
+        if (history.length < 2) return;
+
+        const now = Date.now();
+        const target = now - 24 * 60 * 60 * 1000;
+
+        // Point le plus proche de 24h
+        const point24h = history.reduce((prev, curr) =>
+          Math.abs(curr.timestamp - target) < Math.abs(prev.timestamp - target)
+            ? curr : prev
+        );
+
+        // Ignore si point trop récent (< 1h d'ancienneté)
+        if (now - point24h.timestamp < 60 * 60 * 1000) return;
+
+        const currentMap: Record<string, number | null> = {
+          gold: pricesUsd.gold,
+          silver: pricesUsd.silver,
+          platinum: pricesUsd.platinum,
+          palladium: pricesUsd.palladium,
+          copper: pricesUsd.copper,
+        };
+
+        const changes: Partial<Record<string, number>> = {};
+        const keys = ['gold', 'silver', 'platinum', 'palladium', 'copper'] as const;
+
+        keys.forEach(key => {
+          const past = point24h[key];
+          const current = currentMap[key];
+          if (past && current && past > 0) {
+            changes[key] = ((current - past) / past) * 100;
+          }
+        });
+
+        setChange24h(changes);
+      } catch {
+        // Silencieux — pas de variation affichée
+      }
+    }
+
+    if (Object.values(pricesUsd).some(v => v !== null)) {
+      compute24hChange();
+    }
+  }, [pricesUsd]);
 
   const pricesReady = !loading && prices.gold !== null;
   const hasPositions = positions.length > 0;
@@ -149,7 +245,7 @@ export default function TableauDeBordScreen() {
         contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl
-            refreshing={loading}
+            refreshing={refreshing}
             onRefresh={refresh}
             tintColor={OrTrackColors.gold}
             colors={[OrTrackColors.gold]}
@@ -159,7 +255,7 @@ export default function TableauDeBordScreen() {
         {/* ── 1. Header compact ── */}
         <View style={styles.headerRow}>
           <Text style={styles.headerBrand}>ORTRACK</Text>
-          {loading ? (
+          {loading && !prices.gold ? (
             <ActivityIndicator size="small" color={OrTrackColors.gold} />
           ) : lastUpdated ? (
             <Text style={styles.headerTime}>Mis à jour à {formatTime(lastUpdated)}</Text>
@@ -168,26 +264,48 @@ export default function TableauDeBordScreen() {
 
         {/* ── 2. Hero card ── */}
         <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>VALEUR TOTALE ESTIMÉE</Text>
+          <View style={styles.heroLabelRow}>
+            <Text style={styles.heroLabel}>VALEUR TOTALE ESTIMÉE</Text>
+            <TouchableOpacity
+              onPress={toggleHideValue}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons
+                name={hideValue ? 'eye-off-outline' : 'eye-outline'}
+                size={18}
+                color={OrTrackColors.subtext}
+              />
+            </TouchableOpacity>
+          </View>
 
           {!hasPositions ? (
             <>
-              <Text style={styles.heroValue}>— €</Text>
+              <Text style={styles.heroValue}>— {currencySymbol}</Text>
               <Text style={styles.heroHint}>Ajoutez des actifs pour commencer</Text>
             </>
           ) : loading || !pricesReady ? (
             <ActivityIndicator size="large" color={OrTrackColors.gold} style={styles.heroSpinner} />
           ) : (
             <>
-              <Text style={styles.heroValue}>{formatEur(portfolio.totalValue)} €</Text>
-              {portfolio.totalGainLoss !== null && (
+              {hideValue ? (
+                <View style={styles.blurRow}>
+                  <View style={[styles.blurBlock, { width: 80 }]} />
+                  <View style={[styles.blurBlock, { width: 60 }]} />
+                  <View style={[styles.blurBlock, { width: 40 }]} />
+                </View>
+              ) : (
+                <Text style={styles.heroValue}>
+                  {formatEur(portfolio.totalValue)} {currencySymbol}
+                </Text>
+              )}
+              {portfolio.totalGainLoss !== null && !hideValue && (
                 <View style={styles.gainRow}>
                   <Text style={[
                     styles.gainValue,
                     portfolio.totalGainLoss >= 0 ? styles.changePositive : styles.changeNegative,
                   ]}>
                     {portfolio.totalGainLoss >= 0 ? '+' : ''}
-                    {formatEur(portfolio.totalGainLoss)} €
+                    {formatEur(portfolio.totalGainLoss)} {currencySymbol}
                   </Text>
                   {portfolio.totalGainLossPct !== null && (
                     <Text style={[
@@ -195,7 +313,7 @@ export default function TableauDeBordScreen() {
                       portfolio.totalGainLoss >= 0 ? styles.changePositive : styles.changeNegative,
                     ]}>
                       {'  '}{portfolio.totalGainLoss >= 0 ? '+' : ''}
-                      {portfolio.totalGainLossPct.toFixed(2)} %
+                      {fmtPct(portfolio.totalGainLossPct)} %
                     </Text>
                   )}
                 </View>
@@ -204,87 +322,7 @@ export default function TableauDeBordScreen() {
           )}
         </View>
 
-        {/* ── 3. Portefeuille résumé ── */}
-        {hasPositions && portfolioMetals.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>MON PORTEFEUILLE</Text>
-            <View style={styles.portfolioCard}>
-              {portfolioMetals.map((m, i) => (
-                <View key={m.key}>
-                  {i > 0 && <View style={styles.separator} />}
-                  <View style={styles.portfolioRow}>
-                    <View style={styles.portfolioLeft}>
-                      <View style={[styles.miniBadge, { borderColor: m.color }]}>
-                        <Text style={[styles.miniBadgeText, { color: m.color }]}>{m.symbol}</Text>
-                      </View>
-                      <Text style={styles.portfolioLabel}>{m.label}</Text>
-                    </View>
-                    <View style={styles.portfolioRight}>
-                      <Text style={styles.portfolioWeight}>{fmtG(m.totalG)}</Text>
-                      <Text style={styles.portfolioPieces}>{fmtQty(m.pieces)}</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
-            </View>
-          </>
-        )}
-
-        {/* ── 4. Cours en direct ── */}
-        <Text style={styles.sectionTitle}>COURS EN DIRECT</Text>
-
-        {/* Bandeau erreur */}
-        {error && !loading && (
-          <View style={styles.errorBanner}>
-            <View style={styles.errorRow}>
-              <Text style={styles.errorIcon}>!</Text>
-              <Text style={styles.errorText}>{error} — Vérifiez votre connexion.</Text>
-            </View>
-            <TouchableOpacity onPress={refresh} style={styles.retryButton}>
-              <Text style={styles.retryText}>Réessayer</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        <View style={styles.spotGrid}>
-          {METALS_CONFIG.map((m) => {
-            const spot = prices[m.metal];
-            const isCopper = m.metal === 'copper';
-            const displayPrice = spot !== null
-              ? isCopper ? spot * (1000 / OZ_TO_G) : spot
-              : null;
-            const unitLabel = isCopper ? '€/kg' : '€/oz';
-            return (
-              <View key={m.metal} style={styles.spotCard}>
-                <View style={styles.spotInner}>
-                  <View>
-                    <Text style={styles.spotName}>{m.name}</Text>
-                    <Text style={styles.spotSymbol}>{m.symbol}</Text>
-                    {loading ? (
-                      <ActivityIndicator size="small" color={OrTrackColors.gold} style={styles.spotSpinner} />
-                    ) : displayPrice !== null ? (
-                      <>
-                        <Text style={styles.spotPrice}>{formatEur(displayPrice)}</Text>
-                        <Text style={styles.spotUnit}>{unitLabel}</Text>
-                      </>
-                    ) : (
-                      <Text style={styles.spotUnavailable}>—</Text>
-                    )}
-                  </View>
-                  <View style={[
-                    styles.spotBadge,
-                    { borderColor: m.color },
-                    m.metal === 'platinum' && { backgroundColor: 'rgba(224,224,224,0.15)' },
-                  ]}>
-                    <Text style={[styles.spotBadgeText, { color: m.color }]}>{m.symbol}</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-
-        {/* ── 5. Graphique unique ── */}
+        {/* ── 3. Graphique unique ── */}
         <Text style={styles.sectionTitle}>HISTORIQUE</Text>
 
         <ScrollView
@@ -314,22 +352,112 @@ export default function TableauDeBordScreen() {
           })}
         </ScrollView>
 
-        <PriceChart metal={selectedChartMetal} historyReady={historyReady} />
+        <PriceChart
+          metal={selectedChartMetal}
+          currency={currency}
+          compact
+          onFullScreen={() => router.push(`/graphique?metal=${selectedChartMetal}&currency=${currency}` as any)}
+        />
+
+        {/* ── 4. Cours en direct ── */}
+        <Text style={styles.sectionTitle}>COURS EN DIRECT</Text>
+
+        {/* Bandeau erreur */}
+        {error && !loading && (
+          <View style={styles.errorBanner}>
+            <View style={styles.errorRow}>
+              <Text style={styles.errorIcon}>!</Text>
+              <Text style={styles.errorText}>{error} — Vérifiez votre connexion.</Text>
+            </View>
+            <TouchableOpacity onPress={refresh} style={styles.retryButton}>
+              <Text style={styles.retryText}>Réessayer</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        <View style={styles.spotGrid}>
+          {METALS_CONFIG.map((m) => {
+            const spot = prices[m.metal];
+            const isCopper = m.metal === 'copper';
+            const displayPrice = spot !== null
+              ? isCopper ? spot * (1000 / OZ_TO_G) : spot
+              : null;
+            const unitLabel = isCopper ? `${currencySymbol}/kg` : `${currencySymbol}/oz`;
+            return (
+              <View key={m.metal} style={[
+                styles.spotCard,
+                isCopper && { width: '100%' as const },
+              ]}>
+                <View style={styles.spotInner}>
+                  <View>
+                    <Text style={styles.spotName}>{m.name}</Text>
+                    <Text style={styles.spotSymbol}>{m.symbol}</Text>
+                    {loading && !prices.gold ? (
+                      <ActivityIndicator size="small" color={OrTrackColors.gold} style={styles.spotSpinner} />
+                    ) : displayPrice !== null ? (
+                      <>
+                        <Text style={styles.spotPrice}>{formatEur(displayPrice)}</Text>
+                        <Text style={styles.spotUnit}>{unitLabel}</Text>
+                        {change24h[m.metal] !== undefined && (
+                          <Text style={[
+                            styles.spotChange,
+                            change24h[m.metal]! >= 0
+                              ? styles.spotChangePositive
+                              : styles.spotChangeNegative,
+                          ]}>
+                            {change24h[m.metal]! >= 0 ? '▲' : '▼'}{' '}
+                            {fmtPct(Math.abs(change24h[m.metal]!))}%
+                          </Text>
+                        )}
+                      </>
+                    ) : (
+                      <Text style={styles.spotUnavailable}>—</Text>
+                    )}
+                  </View>
+                  <View style={[
+                    styles.spotBadge,
+                    { borderColor: m.color },
+                    m.metal === 'platinum' && { backgroundColor: 'rgba(224,224,224,0.15)' },
+                  ]}>
+                    <Text style={[styles.spotBadgeText, { color: m.color }]}>{m.symbol}</Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* ── 5. Portefeuille résumé ── */}
+        {hasPositions && portfolioMetals.length > 0 && !hideValue && (
+          <>
+            <Text style={styles.sectionTitle}>MON PORTEFEUILLE</Text>
+            <View style={styles.portfolioCard}>
+              {portfolioMetals.map((m, i) => (
+                <View key={m.key}>
+                  {i > 0 && <View style={styles.separator} />}
+                  <View style={styles.portfolioRow}>
+                    <View style={styles.portfolioLeft}>
+                      <View style={[styles.miniBadge, { borderColor: m.color }]}>
+                        <Text style={[styles.miniBadgeText, { color: m.color }]}>{m.symbol}</Text>
+                      </View>
+                      <Text style={styles.portfolioLabel}>{m.label}</Text>
+                    </View>
+                    <View style={styles.portfolioRight}>
+                      <Text style={styles.portfolioWeight}>{fmtG(m.totalG)}</Text>
+                      <Text style={styles.portfolioPieces}>{fmtQty(m.pieces)}</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
 
         {/* ── 6. Accès rapide alertes ── */}
         <TouchableOpacity style={styles.alertsBtn} onPress={() => router.push('/alertes')}>
           <Text style={styles.alertsBtnText}>Alertes de cours</Text>
           <Text style={styles.alertsArrow}>›</Text>
         </TouchableOpacity>
-
-        {/* ── 9. Footer ── */}
-        {!loading && lastUpdated && (
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>
-              Mis à jour à {formatTime(lastUpdated)}
-            </Text>
-          </View>
-        )}
 
       </ScrollView>
     </SafeAreaView>
@@ -344,7 +472,8 @@ const styles = StyleSheet.create({
     backgroundColor: OrTrackColors.background,
   },
   scrollContent: {
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 12,
     paddingBottom: 40,
   },
 
@@ -353,7 +482,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   headerBrand: {
     fontSize: 13,
@@ -370,22 +499,40 @@ const styles = StyleSheet.create({
   heroCard: {
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
+    padding: 14,
+    marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#3A2E0A',
+    borderColor: 'rgba(201,168,76,0.2)',
+  },
+  heroLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
   },
   heroLabel: {
     fontSize: 11,
-    color: OrTrackColors.subtext,
+    fontWeight: '700',
+    color: OrTrackColors.gold,
     textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
+    letterSpacing: 1,
   },
   heroValue: {
-    fontSize: 36,
-    fontWeight: '700',
+    fontSize: 28,
+    fontWeight: '800',
     color: OrTrackColors.white,
+  },
+  blurRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    height: 40,
+  },
+  blurBlock: {
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: OrTrackColors.subtext,
+    opacity: 0.25,
   },
   heroHint: {
     fontSize: 12,
@@ -522,6 +669,17 @@ const styles = StyleSheet.create({
     color: OrTrackColors.subtext,
     marginTop: 1,
   },
+  spotChange: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  spotChangePositive: {
+    color: '#4CAF50',
+  },
+  spotChangeNegative: {
+    color: '#E07070',
+  },
   spotSpinner: {
     alignSelf: 'flex-start',
     marginVertical: 2,
@@ -582,10 +740,10 @@ const styles = StyleSheet.create({
 
   // Error banner
   errorBanner: {
-    backgroundColor: '#2A1A1A',
+    backgroundColor: OrTrackColors.card,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#5A2020',
+    borderColor: 'rgba(224,112,112,0.3)',
     padding: 14,
     marginBottom: 16,
   },
@@ -621,15 +779,4 @@ const styles = StyleSheet.create({
     color: '#E07070',
   },
 
-  // Footer
-  footer: {
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  footerText: {
-    fontSize: 11,
-    color: OrTrackColors.tabIconDefault,
-    textAlign: 'center',
-    lineHeight: 18,
-  },
 });

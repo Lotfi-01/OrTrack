@@ -2,7 +2,7 @@
   "expo": {
     "name": "OrTrack",
     "slug": "ortrack",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ortrack",
@@ -16,11 +16,13 @@
       "supportsTablet": true
     },
     "android": {
+      "backgroundColor": "#161410",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#0A0C14"
       },
+      "versionCode": 8,
       "package": "com.ortrack.app",
       "predictiveBackGestureEnabled": false,
       "permissions": [

@@ -36,7 +36,7 @@ export function MetalConverter() {
   const { prices } = useSpotPrices();
   const [selectedMetal, setSelectedMetal] = useState<MetalKey>('gold');
   const [mode, setMode] = useState<Mode>('weightToEur');
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState('1');
   const [unit, setUnit] = useState<Unit>('g');
 
   const spotEur: number | null = prices[selectedMetal] ?? null;
@@ -45,7 +45,7 @@ export function MetalConverter() {
 
   const switchMode = (m: Mode) => {
     setMode(m);
-    setInputValue('');
+    setInputValue('1');
   };
 
   const switchMetal = (k: MetalKey) => {
@@ -90,7 +90,7 @@ export function MetalConverter() {
           <View style={styles.resultBlock}>
             <Text style={styles.resultMain}>{fmtEur(eurValue)} €</Text>
             <Text style={styles.resultEquiv}>
-              = {inOz.toFixed(4)} oz · {inG.toFixed(2)} g · {inKg.toFixed(6)} kg
+              = {inOz.toFixed(4).replace('.', ',')} oz · {inG.toFixed(2).replace('.', ',')} g · {inKg.toFixed(6).replace('.', ',')} kg
             </Text>
           </View>
         ) : null}
@@ -119,9 +119,9 @@ export function MetalConverter() {
           <Text style={styles.unavailable}>Prix indisponible</Text>
         ) : num > 0 && oz !== null && inG !== null && inKg !== null ? (
           <View style={styles.resultBlock}>
-            <Text style={styles.resultMain}>{oz.toFixed(4)} oz</Text>
-            <Text style={styles.resultLine}>{inG.toFixed(2)} g</Text>
-            <Text style={styles.resultLine}>{inKg.toFixed(6)} kg</Text>
+            <Text style={styles.resultMain}>{oz.toFixed(4).replace('.', ',')} oz</Text>
+            <Text style={styles.resultLine}>{inG.toFixed(2).replace('.', ',')} g</Text>
+            <Text style={styles.resultLine}>{inKg.toFixed(6).replace('.', ',')} kg</Text>
           </View>
         ) : null}
       </>
