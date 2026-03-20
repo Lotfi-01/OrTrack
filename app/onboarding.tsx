@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useRef, useState } from 'react'
 import {
   View,
   Text,
@@ -20,55 +20,44 @@ const { width } = Dimensions.get('window')
 
 type Slide = {
   id: number
-  emoji?: string
-  icon?: keyof typeof Ionicons.glyphMap
-  iconColor?: string
+  icon: keyof typeof Ionicons.glyphMap
   title: string
   subtitle: string
   isFirst: boolean
+  encartIcon: keyof typeof Ionicons.glyphMap
   proofCardLabel: string
-  proofCardValue?: string
-  proofCardText?: string
-  isLivePrice?: boolean
+  proofCardText: string
 }
 
 const SLIDES: Slide[] = [
   {
     id: 1,
-    emoji: '🏅',
+    icon: 'trending-up',
     title: 'Votre or vaut combien\naujourd\'hui ?',
-    subtitle: 'Suivez la valeur réelle de votre patrimoine\nen métaux précieux, en temps réel',
+    subtitle: 'Cours en direct pour l\'Or, l\'Argent,\nle Platine et le Palladium',
     isFirst: true,
-    proofCardLabel: '🥇 Or — cours actuel',
-    isLivePrice: true,
-  },
-  {
-    id: 2,
-    icon: 'stats-chart-outline',
-    iconColor: '#C9A84C',
-    title: 'Ne manquez plus jamais\nune opportunité',
-    subtitle: 'Or, Argent, Platine, Palladium\nles cours en direct, actualisés en permanence',
-    isFirst: false,
-    proofCardLabel: '🔔 Alertes personnalisables',
+    encartIcon: 'notifications-outline',
+    proofCardLabel: 'Alertes personnalisables',
     proofCardText: 'Soyez notifié dès que le prix cible est atteint',
   },
   {
-    id: 3,
-    emoji: '💰',
+    id: 2,
+    icon: 'wallet-outline',
     title: 'Sachez exactement\nce que vous possédez',
     subtitle: 'Lingots, pièces ou grammes\nchaque métal valorisé à l\'euro près',
     isFirst: false,
-    proofCardLabel: '📦 Exemple de suivi',
+    encartIcon: 'cube-outline',
+    proofCardLabel: 'Exemple de suivi',
     proofCardText: '1 Napoléon · 6,45g · valorisé en temps réel',
   },
   {
-    id: 4,
+    id: 3,
     icon: 'calculator-outline',
-    iconColor: '#C9A84C',
     title: 'Simulation fiscale\nincluse',
     subtitle: 'Calculez vos plus-values et anticipez\nvotre imposition en quelques secondes',
     isFirst: false,
-    proofCardLabel: '✅ Conforme au droit français',
+    encartIcon: 'checkmark-circle',
+    proofCardLabel: 'Conforme au droit français',
     proofCardText: 'Régime forfaitaire et abattement inclus',
   },
 ]
@@ -81,27 +70,6 @@ async function completeOnboarding() {
 export default function OnboardingScreen() {
   const scrollRef = useRef<ScrollView>(null)
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [goldPrice, setGoldPrice] = useState<number | null>(null)
-  const [goldLoading, setGoldLoading] = useState(true)
-
-  useEffect(() => {
-    async function fetchGoldPrice() {
-      try {
-        const res = await fetch(
-          'https://api.metals.dev/v1/latest?api_key=C45MSCCNECVXIFIWN9W7609IWN9W7&currency=EUR&unit=toz'
-        )
-        const data = await res.json()
-        if (data.status === 'success' && data.metals?.gold) {
-          setGoldPrice(data.metals.gold)
-        }
-      } catch {
-        // Fallback silencieux → prix null
-      } finally {
-        setGoldLoading(false)
-      }
-    }
-    fetchGoldPrice()
-  }, [])
 
   function handleScroll(
     event: NativeSyntheticEvent<NativeScrollEvent>
@@ -152,16 +120,12 @@ export default function OnboardingScreen() {
       >
         {SLIDES.map((slide) => (
           <View key={slide.id} style={styles.slide}>
-            <View style={styles.emojiContainer}>
-              {slide.emoji ? (
-                <Text style={styles.emoji}>{slide.emoji}</Text>
-              ) : (
-                <Ionicons
-                  name={slide.icon!}
-                  size={64}
-                  color={slide.iconColor}
-                />
-              )}
+            <View style={styles.iconContainer}>
+              <Ionicons
+                name={slide.icon}
+                size={64}
+                color={OrTrackColors.gold}
+              />
             </View>
 
             {slide.isFirst && (
@@ -172,30 +136,19 @@ export default function OnboardingScreen() {
             <Text style={styles.subtitle}>{slide.subtitle}</Text>
 
             <View style={styles.proofCard}>
-              <Text style={styles.proofCardLabel}>
-                {slide.proofCardLabel}
-              </Text>
-              {slide.isLivePrice ? (
-                goldLoading ? (
-                  <Text style={styles.proofCardText}>
-                    Chargement du cours...
-                  </Text>
-                ) : goldPrice ? (
-                  <Text style={styles.proofCardValue}>
-                    {goldPrice.toLocaleString('fr-FR', {
-                      maximumFractionDigits: 2,
-                    })} €/oz
-                  </Text>
-                ) : (
-                  <Text style={styles.proofCardText}>
-                    Cours disponible dans l'app
-                  </Text>
-                )
-              ) : slide.proofCardText ? (
-                <Text style={styles.proofCardText}>
-                  {slide.proofCardText}
+              <View style={styles.proofCardLabelRow}>
+                <Ionicons
+                  name={slide.encartIcon}
+                  size={16}
+                  color={OrTrackColors.gold}
+                />
+                <Text style={styles.proofCardLabel}>
+                  {slide.proofCardLabel}
                 </Text>
-              ) : null}
+              </View>
+              <Text style={styles.proofCardText}>
+                {slide.proofCardText}
+              </Text>
             </View>
           </View>
         ))}
@@ -223,7 +176,7 @@ export default function OnboardingScreen() {
           onPress={goToNext}
         >
           <Text style={styles.ctaText}>
-            {isLastSlide ? 'Accéder à OrTrack' : 'Suivant'}
+            {isLastSlide ? "C'est parti" : 'Suivant'}
           </Text>
           {!isLastSlide && (
             <Ionicons
@@ -246,7 +199,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     justifyContent: 'center',
   },
-  skipText: { color: '#888888', fontSize: 14 },
+  skipText: { color: '#888888', fontSize: 15 },
   scrollView: { flex: 1 },
   slide: {
     width,
@@ -255,7 +208,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
-  emojiContainer: {
+  iconContainer: {
     width: 140,
     height: 140,
     borderRadius: 70,
@@ -270,9 +223,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 20,
     elevation: 8,
-  },
-  emoji: {
-    fontSize: 64,
   },
   logo: {
     fontSize: 13,
@@ -307,17 +257,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: width - 64,
   },
+  proofCardLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
   proofCardLabel: {
     fontSize: 13,
     color: '#C9A84C',
     fontWeight: '600',
-    marginBottom: 4,
-    textAlign: 'center',
-  },
-  proofCardValue: {
-    fontSize: 22,
-    color: '#FFFFFF',
-    fontWeight: 'bold',
     textAlign: 'center',
   },
   proofCardText: {

@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   Share,
@@ -157,36 +158,17 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getInitials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return '?';
-  if (words.length === 1) return words[0].charAt(0).toUpperCase();
-  return (words[0].charAt(0) + words[words.length - 1].charAt(0)).toUpperCase();
-}
-
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function ReglagesScreen() {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [profileSaved, setProfileSaved] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
   const { showPaywall } = usePremium();
-  const [showProfileForm, setShowProfileForm] = useState(false);
 
   // ── Chargement initial ────────────────────────────────────────────────────
 
   useEffect(() => {
-    AsyncStorage.getItem(PROFILE_KEY).then((raw) => {
-      if (!raw) return;
-      const p = JSON.parse(raw);
-      setName(p.name ?? '');
-      setEmail(p.email ?? '');
-    });
     AsyncStorage.getItem(SETTINGS_KEY).then((raw) => {
       if (!raw) return;
       setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
@@ -207,14 +189,6 @@ export default function ReglagesScreen() {
     }
     loadBiometric();
   }, []);
-
-  // ── Sauvegarde profil ─────────────────────────────────────────────────────
-
-  const saveProfile = async () => {
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify({ name: name.trim(), email: email.trim() }));
-    setProfileSaved(true);
-    setTimeout(() => setProfileSaved(false), 2000);
-  };
 
   // ── Mise à jour + sauvegarde instantanée des préférences ──────────────────
 
@@ -319,8 +293,6 @@ export default function ReglagesScreen() {
           style: 'destructive',
           onPress: async () => {
             await AsyncStorage.multiRemove([POSITIONS_KEY, PROFILE_KEY, SETTINGS_KEY]);
-            setName('');
-            setEmail('');
             setSettings(DEFAULT_SETTINGS);
             Alert.alert('Données supprimées', 'Toutes vos données ont été effacées.');
           },
@@ -329,9 +301,22 @@ export default function ReglagesScreen() {
     );
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Contact ─────────────────────────────────────────────────────────────
 
-  const initials = getInitials(name);
+  const handleContact = useCallback(async () => {
+    try {
+      const supported = await Linking.canOpenURL('mailto:contact@ortrack.fr');
+      if (supported) {
+        await Linking.openURL('mailto:contact@ortrack.fr');
+      } else {
+        Alert.alert('Nous contacter', 'contact@ortrack.fr');
+      }
+    } catch {
+      Alert.alert('Nous contacter', 'contact@ortrack.fr');
+    }
+  }, []);
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container}>
@@ -344,10 +329,7 @@ export default function ReglagesScreen() {
           showsVerticalScrollIndicator={false}>
 
           {/* En-tête */}
-          <View style={styles.header}>
-            <Text style={styles.headerBrand}>ORTRACK</Text>
-            <Text style={styles.headerTab}>Réglages</Text>
-          </View>
+          <Text style={styles.headerTitle}>Réglages</Text>
 
           {/* ── PREMIUM ─────────────────────────────────────────────── */}
           <TouchableOpacity
@@ -368,85 +350,10 @@ export default function ReglagesScreen() {
                   opacity={0.7}
                 />
               </Svg>
-              <View>
-                <Text style={styles.premiumTitle}>OrTrack Premium</Text>
-                <Text style={styles.premiumStatus}>Découvrir les avantages</Text>
-              </View>
+              <Text style={styles.premiumTitle}>OrTrack Premium</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={OrTrackColors.gold} />
           </TouchableOpacity>
-
-          {/* ── PROFIL ──────────────────────────────────────────────── */}
-          <SectionTitle title="Profil" />
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.profileRow}
-              onPress={() => setShowProfileForm(!showProfileForm)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.profileLeft}>
-                <View style={styles.avatarSmall}>
-                  <Text style={styles.avatarSmallText}>{initials}</Text>
-                </View>
-                <View>
-                  <Text style={styles.profileName}>
-                    {name || 'Ajouter votre nom'}
-                  </Text>
-                  <Text style={styles.profileEmail}>
-                    {email || 'Ajouter votre email'}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons
-                name={showProfileForm ? 'chevron-up' : 'chevron-down'}
-                size={16}
-                color={OrTrackColors.subtext}
-              />
-            </TouchableOpacity>
-
-            {showProfileForm && (
-              <>
-                <ItemSeparator />
-                <View style={styles.fieldRow}>
-                  <Text style={styles.fieldLabel}>Nom</Text>
-                  <TextInput
-                    style={styles.fieldInput}
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="Votre nom"
-                    placeholderTextColor={OrTrackColors.tabIconDefault}
-                    returnKeyType="next"
-                  />
-                </View>
-                <ItemSeparator />
-                <View style={styles.fieldRow}>
-                  <Text style={styles.fieldLabel}>Email</Text>
-                  <TextInput
-                    style={styles.fieldInput}
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="votre@email.com"
-                    placeholderTextColor={OrTrackColors.tabIconDefault}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    returnKeyType="done"
-                  />
-                </View>
-                <ItemSeparator />
-                <TouchableOpacity
-                  onPress={saveProfile}
-                  style={[styles.saveButton, profileSaved && styles.saveButtonConfirmed]}
-                  activeOpacity={0.8}>
-                  <Text style={[
-                    styles.saveButtonText,
-                    { color: profileSaved ? OrTrackColors.background : OrTrackColors.gold }
-                  ]}>
-                    {profileSaved ? '✓  Enregistré' : 'Enregistrer'}
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
-          </View>
 
           {/* ── PRÉFÉRENCES ────────────────────────────────────────────── */}
           <SectionTitle title="Préférences" />
@@ -584,6 +491,24 @@ export default function ReglagesScreen() {
 
             <TouchableOpacity
               style={styles.row}
+              onPress={handleContact}
+              activeOpacity={0.7}
+              accessibilityLabel="Nous contacter par email"
+            >
+              <View style={styles.actionRowInner}>
+                <Ionicons name="chatbubble-outline" size={18} color={OrTrackColors.gold} />
+                <Text style={[styles.rowLabel, { flex: 1 }]}>Nous contacter</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={OrTrackColors.subtext} />
+            </TouchableOpacity>
+
+            <ItemSeparator />
+
+            {/* TODO: Ajouter "Noter OrTrack" quand l'app sera en production
+                URL: https://play.google.com/store/apps/details?id=com.ortrack.app */}
+
+            <TouchableOpacity
+              style={styles.row}
               activeOpacity={0.7}
               onPress={() =>
                 Alert.alert(
@@ -684,26 +609,15 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scrollContent: {
     padding: 20,
-    paddingBottom: 48,
+    paddingBottom: 90,
   },
 
   // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  headerBrand: {
-    fontSize: 13,
-    color: OrTrackColors.gold,
+  headerTitle: {
+    fontSize: 20,
     fontWeight: '700',
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  },
-  headerTab: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
+    color: OrTrackColors.white,
+    marginBottom: 20,
   },
 
   // Section title
@@ -725,7 +639,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: OrTrackColors.border,
     overflow: 'hidden',
-    marginBottom: 24,
+    marginBottom: 16,
   },
 
   // Separator
@@ -786,8 +700,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: 'rgba(201,168,76,0.3)',
-    padding: 16,
-    marginBottom: 24,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
   premiumLeft: {
     flexDirection: 'row',
@@ -795,91 +710,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   premiumTitle: {
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '700',
     color: OrTrackColors.gold,
-  },
-  premiumStatus: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
-
-  // Profile
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
-  },
-  profileLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  avatarSmall: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1F1B0A',
-    borderWidth: 1.5,
-    borderColor: OrTrackColors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  avatarSmallText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-  },
-  profileName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-  },
-  profileEmail: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 1,
-  },
-
-  // Field rows (profile inputs)
-  fieldRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-    minHeight: 52,
-    gap: 12,
-  },
-  fieldLabel: {
-    fontSize: 15,
-    color: OrTrackColors.subtext,
-    width: 52,
-  },
-  fieldInput: {
-    flex: 1,
-    fontSize: 15,
-    color: OrTrackColors.white,
-    paddingVertical: 10,
-  },
-
-  // Save profile button
-  saveButton: {
-    margin: 12,
-    backgroundColor: 'transparent',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: OrTrackColors.gold,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  saveButtonConfirmed: {
-    backgroundColor: '#2E7D32',
-  },
-  saveButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
   },
 
   // Segmented control row

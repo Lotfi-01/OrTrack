@@ -184,6 +184,12 @@ export function MetalGuide() {
               <View style={styles.body}>
                 <Text style={styles.description}>{m.description}</Text>
 
+                {/* Conseil (remonté en 2ème position) */}
+                <View style={[styles.tipBox, { marginTop: 0, marginBottom: 14 }]}>
+                  <Text style={styles.tipLabel}>{'\uD83D\uDCA1'} Conseil</Text>
+                  <Text style={styles.tipText}>{m.tip}</Text>
+                </View>
+
                 {/* Cours actuel */}
                 <View style={styles.priceRow}>
                   <Text style={styles.sectionLabel}>COURS ACTUEL</Text>
@@ -241,12 +247,6 @@ export function MetalGuide() {
                 <View style={styles.funFactBox}>
                   <Text style={styles.funFactLabel}>Le saviez-vous ?</Text>
                   <Text style={styles.funFactText}>{m.funFact}</Text>
-                </View>
-
-                {/* Conseil */}
-                <View style={styles.tipBox}>
-                  <Text style={styles.tipLabel}>{'\uD83D\uDCA1'} Conseil</Text>
-                  <Text style={styles.tipText}>{m.tip}</Text>
                 </View>
               </View>
             )}

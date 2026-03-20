@@ -10,7 +10,7 @@ const PREMIUM_LIMITS = {
   maxPositions: 3,
   maxAlerts: 2,
   maxNewsSources: 2,
-  freePeriods: ['1J', '1M', '3M', '1A'] as const,
+  freePeriods: ['1S', '1M', '3M', '1A'] as const,
 };
 
 // ─── Types ───────────────────────────────────────────────────────────────────

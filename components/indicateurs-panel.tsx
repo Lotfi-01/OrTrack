@@ -18,6 +18,7 @@ type Indicator = {
   midSignal: string;
   highSignal: string;
   explanation: string;
+  spotLine?: string;
 };
 
 function getSignal(ind: Indicator): { label: string; color: string } {
@@ -93,6 +94,17 @@ function IndicatorCard({ ind }: { ind: Indicator }) {
         <Text style={styles.gaugeLabel}>{ind.high}</Text>
       </View>
 
+      {!expanded && (
+        <View style={styles.ratioSummaryBlock}>
+          <Text style={styles.ratioSummary}>
+            {ind.unit} · Historique {ind.low}–{ind.high}
+          </Text>
+          {ind.spotLine && (
+            <Text style={styles.ratioSpotLine}>{ind.spotLine}</Text>
+          )}
+        </View>
+      )}
+
       {expanded && (
         <>
           <Text style={[styles.ratioUnit, { marginBottom: 8 }]}>
@@ -103,6 +115,11 @@ function IndicatorCard({ ind }: { ind: Indicator }) {
       )}
     </View>
   );
+}
+
+function fmtSpot(v: number | null): string {
+  if (v === null) return '—';
+  return v.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
 }
 
 export function IndicateursPanel() {
@@ -123,6 +140,7 @@ export function IndicateursPanel() {
       value: ratio1,
       unit: 'onces d\'argent pour 1 once d\'or',
       low: 60, high: 80,
+      spotLine: `Or : ${fmtSpot(prices.gold)} €/oz · Argent : ${fmtSpot(prices.silver)} €/oz`,
       lowLabel: 'Or sous-évalué',
       midLabel: 'Zone neutre',
       highLabel: 'Argent sous-évalué',
@@ -136,6 +154,7 @@ export function IndicateursPanel() {
       value: ratio2,
       unit: 'fois plus cher que le platine',
       low: 0.8, high: 1.2,
+      spotLine: `Or : ${fmtSpot(prices.gold)} €/oz · Platine : ${fmtSpot(prices.platinum)} €/oz`,
       lowLabel: 'Platine cher',
       midLabel: 'Zone neutre',
       highLabel: 'Platine sous-évalué',
@@ -149,6 +168,7 @@ export function IndicateursPanel() {
       value: ratio3,
       unit: 'fois plus cher que le palladium',
       low: 0.8, high: 1.5,
+      spotLine: `Or : ${fmtSpot(prices.gold)} €/oz · Palladium : ${fmtSpot(prices.palladium)} €/oz`,
       lowLabel: 'Palladium cher',
       midLabel: 'Zone neutre',
       highLabel: 'Palladium sous-évalué',
@@ -259,6 +279,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.5,
+  },
+  ratioSummaryBlock: {
+    marginTop: 8,
+  },
+  ratioSummary: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
+  },
+  ratioSpotLine: {
+    fontSize: 10,
+    color: OrTrackColors.subtext,
+    marginTop: 4,
   },
   explanation: {
     fontSize: 13,

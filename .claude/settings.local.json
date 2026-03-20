@@ -22,7 +22,9 @@
       "Bash(eas submit:*)",
       "Bash(eas build:version:set:*)",
       "Bash(curl:*)",
-      "Bash(npm uninstall:*)"
+      "Bash(npm uninstall:*)",
+      "Bash(ls \"app/\\(tabs\\)/\")",
+      "Bash(xargs grep:*)"
     ]
   }
 }

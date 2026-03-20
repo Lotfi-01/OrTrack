@@ -253,6 +253,7 @@ export function ActualitesPanel() {
                     <Text style={styles.articleTitle} numberOfLines={2}>
                       {article.title}
                     </Text>
+                    {/* TODO: description article si dispo dans le feed */}
                     <Text style={styles.articleDate}>
                       {formatDate(article.pubDate)}
                     </Text>
@@ -275,10 +276,10 @@ export function ActualitesPanel() {
           activeOpacity={0.7}
         >
           <Text style={styles.premiumNudgeTitle}>
-            4+ sources disponibles en Premium
+            Débloquer 4+ sources d'actualités
           </Text>
           <Text style={styles.premiumNudgeSubtitle}>
-            Accédez à des sources FR et internationales
+            Sources FR et internationales
           </Text>
         </TouchableOpacity>
       )}
@@ -392,13 +393,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   premiumNudgeTitle: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
     color: OrTrackColors.gold,
     marginBottom: 4,
   },
   premiumNudgeSubtitle: {
-    fontSize: 11,
+    fontSize: 12,
     color: OrTrackColors.subtext,
   },
 });

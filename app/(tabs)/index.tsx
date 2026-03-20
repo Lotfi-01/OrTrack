@@ -4,7 +4,6 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -17,7 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PriceChart } from '@/components/price-chart';
 import { OrTrackColors } from '@/constants/theme';
-import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { loadPriceHistory } from '@/hooks/use-metal-history';
+import { type SpotPrices, useSpotPrices } from '@/hooks/use-spot-prices';
 
 // ─── Types (miroir de ajouter.tsx / portefeuille.tsx) ─────────────────────────
 
@@ -32,6 +32,7 @@ type Position = {
   purchasePrice: number;
   purchaseDate: string;
   createdAt: string;
+  note?: string;
 };
 
 type PricePoint = {
@@ -47,8 +48,11 @@ const STORAGE_KEY = '@ortrack:positions';
 const HIDE_VALUE_KEY = '@ortrack:hide_portfolio_value';
 const OZ_TO_G = 31.10435;
 
-const { width } = Dimensions.get('window');
-const cardHalfWidth = (width - 40 - 12) / 2;
+// ─── Date française (fiable Android/Hermes) ──────────────────────────────────
+
+const JOURS_FR = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -90,21 +94,42 @@ const METALS_CONFIG: { metal: ChartMetal; name: string; symbol: string; color: s
   { metal: 'copper', name: 'Cuivre', symbol: 'XCU', color: '#B87333' },
 ];
 
+const METAL_SPOT_KEY: Record<string, keyof SpotPrices> = {
+  or: 'gold', argent: 'silver', platine: 'platinum',
+  palladium: 'palladium', cuivre: 'copper',
+};
+
 // ─── Composant principal ──────────────────────────────────────────────────────
 
 export default function TableauDeBordScreen() {
   const { prices, pricesUsd, loading, refreshing, error, lastUpdated, refresh, currency, currencySymbol } = useSpotPrices();
   const [positions, setPositions] = useState<Position[]>([]);
+  const [positionsLoaded, setPositionsLoaded] = useState(false);
   const [selectedChartMetal, setSelectedChartMetal] = useState<ChartMetal>('gold');
   const [change24h, setChange24h] = useState<Partial<Record<string, number>>>({});
   const [hideValue, setHideValue] = useState(false);
+  const [dateStr, setDateStr] = useState('');
 
-  // Recharge à chaque activation de l'onglet
+  // Date française — rafraîchie au retour sur l'onglet
+  useFocusEffect(
+    useCallback(() => {
+      const d = new Date();
+      setDateStr(JOURS_FR[d.getDay()] + ' ' + d.getDate() + ' ' + MOIS_FR[d.getMonth()]);
+    }, [])
+  );
+
+  // Recharge positions à chaque activation de l'onglet
   useFocusEffect(
     useCallback(() => {
       AsyncStorage.getItem(STORAGE_KEY)
-        .then((raw) => setPositions(raw ? JSON.parse(raw) : []))
-        .catch(() => setPositions([]));
+        .then((raw) => {
+          setPositions(raw ? JSON.parse(raw) : []);
+          setPositionsLoaded(true);
+        })
+        .catch(() => {
+          setPositions([]);
+          setPositionsLoaded(true);
+        });
     }, [])
   );
 
@@ -139,22 +164,16 @@ export default function TableauDeBordScreen() {
   useEffect(() => {
     async function compute24hChange() {
       try {
-        const raw = await AsyncStorage.getItem('@ortrack:price_history');
-        if (!raw) return;
-        const history: PricePoint[] = JSON.parse(raw);
+        const history = await loadPriceHistory('1S', 'USD');
         if (history.length < 2) return;
 
-        const now = Date.now();
-        const target = now - 24 * 60 * 60 * 1000;
-
-        // Point le plus proche de 24h
-        const point24h = history.reduce((prev, curr) =>
-          Math.abs(curr.timestamp - target) < Math.abs(prev.timestamp - target)
-            ? curr : prev
-        );
-
-        // Ignore si point trop récent (< 1h d'ancienneté)
-        if (now - point24h.timestamp < 60 * 60 * 1000) return;
+        // Cibler explicitement la date d'hier
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const point24h = history.find(p => p.date === yesterdayStr)
+          ?? history[history.length - 2];
+        if (!point24h) return;
 
         const currentMap: Record<string, number | null> = {
           gold: pricesUsd.gold,
@@ -231,13 +250,42 @@ export default function TableauDeBordScreen() {
     };
   }, [positions, prices]);
 
-  const portfolioMetals = [
-    { key: 'or', label: 'Or', symbol: 'XAU', color: '#C9A84C', totalG: portfolio.goldTotalG, pieces: portfolio.goldPieces },
-    { key: 'argent', label: 'Argent', symbol: 'XAG', color: '#A8A8B8', totalG: portfolio.silverTotalG, pieces: portfolio.silverPieces },
-    { key: 'platine', label: 'Platine', symbol: 'XPT', color: '#E0E0E0', totalG: portfolio.platinumTotalG, pieces: portfolio.platinumPieces },
-    { key: 'palladium', label: 'Palladium', symbol: 'XPD', color: '#CBA135', totalG: portfolio.palladiumTotalG, pieces: portfolio.palladiumPieces },
-    { key: 'cuivre', label: 'Cuivre', symbol: 'XCU', color: '#B87333', totalG: portfolio.copperTotalG, pieces: portfolio.copperPieces },
-  ].filter((m) => m.totalG > 0);
+  const portfolioMetals = useMemo(() =>
+    [
+      { key: 'or', label: 'Or', symbol: 'XAU', color: '#C9A84C', totalG: portfolio.goldTotalG, pieces: portfolio.goldPieces },
+      { key: 'argent', label: 'Argent', symbol: 'XAG', color: '#A8A8B8', totalG: portfolio.silverTotalG, pieces: portfolio.silverPieces },
+      { key: 'platine', label: 'Platine', symbol: 'XPT', color: '#E0E0E0', totalG: portfolio.platinumTotalG, pieces: portfolio.platinumPieces },
+      { key: 'palladium', label: 'Palladium', symbol: 'XPD', color: '#CBA135', totalG: portfolio.palladiumTotalG, pieces: portfolio.palladiumPieces },
+      { key: 'cuivre', label: 'Cuivre', symbol: 'XCU', color: '#B87333', totalG: portfolio.copperTotalG, pieces: portfolio.copperPieces },
+    ]
+    .filter((m) => m.totalG > 0)
+    .map(m => {
+      const spotKey = METAL_SPOT_KEY[m.key];
+      const spot = spotKey ? prices[spotKey] : null;
+      const value = spot && m.totalG ? (m.totalG / OZ_TO_G) * spot : null;
+      return { ...m, value };
+    }),
+    [portfolio, prices]
+  );
+
+  const selectedMetalConfig = useMemo(() =>
+    METALS_CONFIG.find(m => m.metal === selectedChartMetal)!,
+    [selectedChartMetal]
+  );
+
+  // ── Navigation inter-tabs ────────────────────────────────────────────────
+
+  const navigateToPortfolio = useCallback(() => {
+    router.navigate('/(tabs)/portefeuille');
+  }, []);
+
+  const navigateToAjouter = useCallback(() => {
+    router.navigate('/(tabs)/ajouter');
+  }, []);
+
+  const handleSelectMetal = useCallback((metal: ChartMetal) => {
+    setSelectedChartMetal(metal);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -252,9 +300,9 @@ export default function TableauDeBordScreen() {
           />
         }>
 
-        {/* ── 1. Header compact ── */}
+        {/* ── 1. Header — date + heure ── */}
         <View style={styles.headerRow}>
-          <Text style={styles.headerBrand}>ORTRACK</Text>
+          <Text style={styles.headerDate}>{dateStr}</Text>
           {loading && !prices.gold ? (
             <ActivityIndicator size="small" color={OrTrackColors.gold} />
           ) : lastUpdated ? (
@@ -262,7 +310,7 @@ export default function TableauDeBordScreen() {
           ) : null}
         </View>
 
-        {/* ── 2. Hero card ── */}
+        {/* ── 2. Hero card — valeur totale ── */}
         <View style={styles.heroCard}>
           <View style={styles.heroLabelRow}>
             <Text style={styles.heroLabel}>VALEUR TOTALE ESTIMÉE</Text>
@@ -320,49 +368,12 @@ export default function TableauDeBordScreen() {
               )}
             </>
           )}
+          {/* TODO: sparkline */}
         </View>
 
-        {/* ── 3. Graphique unique ── */}
-        <Text style={styles.sectionTitle}>HISTORIQUE</Text>
+        {/* ── 3. MARCHÉS — chips horizontales ── */}
+        <Text style={styles.sectionTitle}>MARCHÉS</Text>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8 }}
-          style={styles.chartSelector}>
-          {METALS_CONFIG.map((m) => {
-            const active = selectedChartMetal === m.metal;
-            return (
-              <TouchableOpacity
-                key={m.metal}
-                style={[
-                  styles.chartBtn,
-                  { borderColor: m.color },
-                  active ? { backgroundColor: m.color } : { backgroundColor: OrTrackColors.card },
-                ]}
-                onPress={() => setSelectedChartMetal(m.metal)}>
-                <Text style={[
-                  styles.chartBtnText,
-                  active ? { color: OrTrackColors.background } : { color: m.color },
-                ]}>
-                  {m.name}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        <PriceChart
-          metal={selectedChartMetal}
-          currency={currency}
-          compact
-          onFullScreen={() => router.push(`/graphique?metal=${selectedChartMetal}&currency=${currency}` as any)}
-        />
-
-        {/* ── 4. Cours en direct ── */}
-        <Text style={styles.sectionTitle}>COURS EN DIRECT</Text>
-
-        {/* Bandeau erreur */}
         {error && !loading && (
           <View style={styles.errorBanner}>
             <View style={styles.errorRow}>
@@ -375,88 +386,180 @@ export default function TableauDeBordScreen() {
           </View>
         )}
 
-        <View style={styles.spotGrid}>
-          {METALS_CONFIG.map((m) => {
-            const spot = prices[m.metal];
-            const isCopper = m.metal === 'copper';
-            const displayPrice = spot !== null
-              ? isCopper ? spot * (1000 / OZ_TO_G) : spot
-              : null;
-            const unitLabel = isCopper ? `${currencySymbol}/kg` : `${currencySymbol}/oz`;
-            return (
-              <View key={m.metal} style={[
-                styles.spotCard,
-                isCopper && { width: '100%' as const },
-              ]}>
-                <View style={styles.spotInner}>
-                  <View>
-                    <Text style={styles.spotName}>{m.name}</Text>
-                    <Text style={styles.spotSymbol}>{m.symbol}</Text>
-                    {loading && !prices.gold ? (
-                      <ActivityIndicator size="small" color={OrTrackColors.gold} style={styles.spotSpinner} />
-                    ) : displayPrice !== null ? (
-                      <>
-                        <Text style={styles.spotPrice}>{formatEur(displayPrice)}</Text>
-                        <Text style={styles.spotUnit}>{unitLabel}</Text>
-                        {change24h[m.metal] !== undefined && (
-                          <Text style={[
-                            styles.spotChange,
-                            change24h[m.metal]! >= 0
-                              ? styles.spotChangePositive
-                              : styles.spotChangeNegative,
-                          ]}>
-                            {change24h[m.metal]! >= 0 ? '▲' : '▼'}{' '}
-                            {fmtPct(Math.abs(change24h[m.metal]!))}%
-                          </Text>
-                        )}
-                      </>
-                    ) : (
-                      <Text style={styles.spotUnavailable}>—</Text>
-                    )}
-                  </View>
-                  <View style={[
-                    styles.spotBadge,
-                    { borderColor: m.color },
-                    m.metal === 'platinum' && { backgroundColor: 'rgba(224,224,224,0.15)' },
+        {!pricesReady ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginHorizontal: -20 }}
+            contentContainerStyle={{ paddingLeft: 20, paddingRight: 40, gap: 8, marginBottom: 16 }}>
+            {[1, 2, 3].map(i => (
+              <View key={i} style={styles.marketPlaceholder} />
+            ))}
+          </ScrollView>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginHorizontal: -20 }}
+            contentContainerStyle={{ paddingLeft: 20, paddingRight: 40, gap: 8, marginBottom: 16 }}>
+            {METALS_CONFIG.map((m) => {
+              const active = selectedChartMetal === m.metal;
+              const spot = prices[m.metal];
+              const isCopper = m.metal === 'copper';
+              const displayPrice = spot !== null
+                ? isCopper ? spot * (1000 / OZ_TO_G) : spot
+                : null;
+              const unitLabel = isCopper ? `${currencySymbol}/kg` : `${currencySymbol}/oz`;
+              const variationEur = (change24h[m.metal] !== undefined && spot !== null)
+                ? isCopper
+                  ? (spot * change24h[m.metal]! / 100) * (1000 / OZ_TO_G)
+                  : spot * change24h[m.metal]! / 100
+                : null;
+              return (
+                <TouchableOpacity
+                  key={m.metal}
+                  onPress={() => handleSelectMetal(m.metal)}
+                  activeOpacity={0.75}
+                  accessibilityLabel={`${m.name} ${displayPrice !== null ? formatEur(displayPrice) + ' ' + unitLabel : ''}`}
+                  style={[
+                    styles.marketChip,
+                    active && { borderWidth: 1.5, borderColor: m.color, backgroundColor: `${m.color}26` },
                   ]}>
-                    <Text style={[styles.spotBadgeText, { color: m.color }]}>{m.symbol}</Text>
-                  </View>
-                </View>
-              </View>
-            );
-          })}
-        </View>
+                  <Text style={styles.marketChipName}>{m.name}</Text>
+                  {displayPrice !== null ? (
+                    <>
+                      <Text style={styles.marketChipPrice}>{formatEur(displayPrice)}</Text>
+                      <Text style={styles.marketChipUnit}>{unitLabel}</Text>
+                      {variationEur !== null && change24h[m.metal] !== undefined && (
+                        <Text style={[
+                          styles.marketChipVariation,
+                          change24h[m.metal]! >= 0 ? styles.changePositive : styles.changeNegative,
+                        ]}>
+                          {change24h[m.metal]! >= 0 ? '▲' : '▼'}{' '}
+                          {fmtPct(Math.abs(change24h[m.metal]!))}%
+                          {'  '}{change24h[m.metal]! >= 0 ? '+' : '-'}
+                          {formatEur(Math.abs(variationEur))}{currencySymbol}
+                        </Text>
+                      )}
+                    </>
+                  ) : (
+                    <Text style={styles.marketChipPrice}>—</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
 
-        {/* ── 5. Portefeuille résumé ── */}
-        {hasPositions && portfolioMetals.length > 0 && !hideValue && (
+        {/* ── 4. MA DÉTENTION ── */}
+        {positionsLoaded && (
           <>
-            <Text style={styles.sectionTitle}>MON PORTEFEUILLE</Text>
-            <View style={styles.portfolioCard}>
-              {portfolioMetals.map((m, i) => (
-                <View key={m.key}>
-                  {i > 0 && <View style={styles.separator} />}
-                  <View style={styles.portfolioRow}>
-                    <View style={styles.portfolioLeft}>
-                      <View style={[styles.miniBadge, { borderColor: m.color }]}>
-                        <Text style={[styles.miniBadgeText, { color: m.color }]}>{m.symbol}</Text>
-                      </View>
-                      <Text style={styles.portfolioLabel}>{m.label}</Text>
-                    </View>
-                    <View style={styles.portfolioRight}>
-                      <Text style={styles.portfolioWeight}>{fmtG(m.totalG)}</Text>
-                      <Text style={styles.portfolioPieces}>{fmtQty(m.pieces)}</Text>
-                    </View>
-                  </View>
-                </View>
-              ))}
+            <View style={styles.detentionTitleRow}>
+              <Text style={[styles.sectionTitle, { marginBottom: 0, marginTop: 0 }]}>MA DÉTENTION</Text>
+              {hasPositions && !hideValue && (
+                <TouchableOpacity
+                  onPress={navigateToPortfolio}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Voir tout le portfolio"
+                >
+                  <Text style={styles.detentionViewAll}>Voir tout ›</Text>
+                </TouchableOpacity>
+              )}
             </View>
+
+            {hasPositions && portfolioMetals.length > 0 && !hideValue ? (
+              <View style={styles.detentionCard}>
+                {portfolioMetals.map((m, i) => (
+                  <TouchableOpacity
+                    key={m.key}
+                    onPress={navigateToPortfolio}
+                    activeOpacity={0.7}
+                    accessibilityLabel={`${m.label} ${fmtG(m.totalG)} ${m.value !== null ? formatEur(m.value) + ' ' + currencySymbol : ''}`}
+                  >
+                    {i > 0 && <View style={styles.separator} />}
+                    <View style={styles.detentionRow}>
+                      <View style={styles.detentionLeft}>
+                        <View style={[styles.miniBadge, { borderColor: m.color }]}>
+                          <Text style={[styles.miniBadgeText, { color: m.color }]}>{m.symbol}</Text>
+                        </View>
+                        <View style={styles.detentionNameCol}>
+                          <Text style={styles.detentionLabel}>{m.label}</Text>
+                          <Text style={styles.detentionSub}>{fmtG(m.totalG)} · {fmtQty(m.pieces)}</Text>
+                        </View>
+                      </View>
+                      <View style={styles.detentionRight}>
+                        {m.value !== null && (
+                          <Text style={styles.detentionValue}>{formatEur(m.value)} {currencySymbol}</Text>
+                        )}
+                        <Text style={styles.detentionChevron}>›</Text>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                <View style={styles.separator} />
+                <TouchableOpacity
+                  onPress={navigateToAjouter}
+                  style={styles.detentionCta}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Ajouter une position"
+                >
+                  <Text style={styles.detentionCtaIcon}>+</Text>
+                  <Text style={styles.detentionCtaText}>Ajouter une position</Text>
+                </TouchableOpacity>
+              </View>
+            ) : !hasPositions ? (
+              <View style={styles.detentionCard}>
+                <Text style={styles.detentionEmptyText}>Aucune position pour le moment.</Text>
+                <TouchableOpacity
+                  onPress={navigateToAjouter}
+                  style={styles.detentionCta}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Ajouter une position"
+                >
+                  <Text style={styles.detentionCtaIcon}>+</Text>
+                  <Text style={styles.detentionCtaText}>Ajouter votre première position</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
           </>
         )}
 
-        {/* ── 6. Accès rapide alertes ── */}
-        <TouchableOpacity style={styles.alertsBtn} onPress={() => router.push('/alertes')}>
-          <Text style={styles.alertsBtnText}>Alertes de cours</Text>
-          <Text style={styles.alertsArrow}>›</Text>
+        {/* ── 5. COURS [MÉTAL] ── */}
+        <View style={styles.courseTitleRow}>
+          <Text style={[styles.sectionTitle, { marginBottom: 0, marginTop: 0 }]}>
+            Cours {selectedMetalConfig.name} ({selectedMetalConfig.symbol})
+          </Text>
+          {change24h[selectedChartMetal] !== undefined && (
+            <Text style={[
+              styles.courseVariation,
+              change24h[selectedChartMetal]! >= 0 ? styles.changePositive : styles.changeNegative,
+            ]}>
+              {change24h[selectedChartMetal]! >= 0 ? '▲' : '▼'}{' '}
+              {fmtPct(Math.abs(change24h[selectedChartMetal]!))}%
+            </Text>
+          )}
+        </View>
+
+        <PriceChart
+          metal={selectedChartMetal}
+          currency={currency}
+          compact
+          height={160}
+          onFullScreen={() => router.push(`/graphique?metal=${selectedChartMetal}&currency=${currency}` as any)}
+        />
+
+        {/* ── 6. Alertes de prix ── */}
+        <TouchableOpacity
+          style={styles.alertCard}
+          onPress={() => router.push('/alertes')}
+          activeOpacity={0.7}
+          accessibilityLabel="Configurer les alertes de prix"
+        >
+          <View style={styles.alertCardInner}>
+            <Ionicons name="notifications-outline" size={18} color={OrTrackColors.gold} />
+            <Text style={styles.alertCardText}>Configurer mes alertes de prix</Text>
+          </View>
+          <Text style={styles.alertCardChevron}>›</Text>
         </TouchableOpacity>
 
       </ScrollView>
@@ -474,7 +577,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 12,
-    paddingBottom: 40,
+    paddingBottom: 90,
   },
 
   // 1. Header
@@ -484,11 +587,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  headerBrand: {
+  headerDate: {
     fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-    letterSpacing: 2,
+    fontWeight: '500',
+    color: OrTrackColors.subtext,
   },
   headerTime: {
     fontSize: 11,
@@ -559,7 +661,7 @@ const styles = StyleSheet.create({
   changePositive: { color: '#4CAF50' },
   changeNegative: { color: '#E07070' },
 
-  // 3. Portefeuille résumé
+  // Section title (shared)
   sectionTitle: {
     fontSize: 11,
     fontWeight: '600',
@@ -569,7 +671,61 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 4,
   },
-  portfolioCard: {
+
+  // 3. MARCHÉS chips
+  marketChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: OrTrackColors.card,
+    borderWidth: 1,
+    borderColor: OrTrackColors.border,
+  },
+  marketChipName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.white,
+  },
+  marketChipPrice: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: OrTrackColors.white,
+    marginTop: 2,
+  },
+  marketChipUnit: {
+    fontSize: 10,
+    color: OrTrackColors.subtext,
+    marginTop: 1,
+  },
+  marketChipVariation: {
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  marketPlaceholder: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: OrTrackColors.card,
+    opacity: 0.5,
+    minWidth: 80,
+    height: 80,
+  },
+
+  // 4. MA DÉTENTION
+  detentionTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+    marginTop: 4,
+  },
+  detentionViewAll: {
+    fontSize: 12,
+    color: OrTrackColors.gold,
+    fontWeight: '600',
+  },
+  detentionCard: {
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
     padding: 16,
@@ -577,15 +733,68 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: OrTrackColors.border,
   },
-  portfolioRow: {
+  detentionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 8,
   },
-  portfolioLeft: {
+  detentionLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
+  },
+  detentionNameCol: {
+    marginLeft: 10,
+  },
+  detentionLabel: {
+    fontSize: 14,
+    color: OrTrackColors.white,
+    fontWeight: '500',
+  },
+  detentionSub: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    marginTop: 2,
+  },
+  detentionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  detentionValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: OrTrackColors.white,
+  },
+  detentionChevron: {
+    fontSize: 20,
+    color: OrTrackColors.subtext,
+    fontWeight: '300',
+    lineHeight: 22,
+  },
+  detentionCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 12,
+    gap: 6,
+  },
+  detentionCtaIcon: {
+    fontSize: 18,
+    fontWeight: '300',
+    color: OrTrackColors.gold,
+  },
+  detentionCtaText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
+  },
+  detentionEmptyText: {
+    fontSize: 13,
+    color: OrTrackColors.subtext,
+    textAlign: 'center',
+    marginBottom: 12,
   },
   miniBadge: {
     width: 28,
@@ -600,140 +809,49 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
   },
-  portfolioLabel: {
-    fontSize: 14,
-    color: OrTrackColors.white,
-    fontWeight: '500',
-    marginLeft: 10,
-  },
-  portfolioRight: {
-    alignItems: 'flex-end',
-  },
-  portfolioWeight: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  portfolioPieces: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
   separator: {
     height: 1,
     backgroundColor: OrTrackColors.border,
   },
 
-  // 4. Cours en direct
-  spotGrid: {
+  // 5. COURS
+  courseTitleRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 16,
-  },
-  spotCard: {
-    width: cardHalfWidth,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: OrTrackColors.card,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  spotInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-  },
-  spotName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-  },
-  spotSymbol: {
-    fontSize: 10,
-    color: OrTrackColors.subtext,
-    marginBottom: 4,
-  },
-  spotPrice: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  spotUnavailable: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: OrTrackColors.subtext,
-  },
-  spotUnit: {
-    fontSize: 10,
-    color: OrTrackColors.subtext,
-    marginTop: 1,
-  },
-  spotChange: {
-    fontSize: 11,
-    fontWeight: '600',
+    alignItems: 'center',
+    marginBottom: 12,
     marginTop: 4,
   },
-  spotChangePositive: {
-    color: '#4CAF50',
-  },
-  spotChangeNegative: {
-    color: '#E07070',
-  },
-  spotSpinner: {
-    alignSelf: 'flex-start',
-    marginVertical: 2,
-  },
-  spotBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    backgroundColor: OrTrackColors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spotBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  // 5. Graphique
-  chartSelector: {
-    marginBottom: 12,
-  },
-  chartBtn: {
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-  },
-  chartBtnText: {
-    fontSize: 12,
+  courseVariation: {
+    fontSize: 11,
     fontWeight: '600',
   },
 
   // 6. Alertes
-  alertsBtn: {
+  alertCard: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 10,
-    marginBottom: 16,
     backgroundColor: OrTrackColors.card,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
+    padding: 16,
+    marginTop: 16,
   },
-  alertsBtnText: {
-    fontSize: 13,
+  alertCardInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  alertCardText: {
+    fontSize: 14,
+    fontWeight: '600',
     color: OrTrackColors.white,
-    fontWeight: '500',
   },
-  alertsArrow: {
+  alertCardChevron: {
     fontSize: 20,
-    color: OrTrackColors.gold,
+    color: OrTrackColors.subtext,
     fontWeight: '300',
     lineHeight: 22,
   },
@@ -778,5 +896,4 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#E07070',
   },
-
 });

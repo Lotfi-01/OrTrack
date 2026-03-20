@@ -1,9 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  LayoutAnimation,
   ScrollView,
   StyleSheet,
   Text,
@@ -27,6 +28,7 @@ type Position = {
   purchasePrice: number; // € par unité
   purchaseDate: string;  // JJ/MM/AAAA
   createdAt: string;
+  note?: string;
 };
 
 const STORAGE_KEY = '@ortrack:positions';
@@ -53,6 +55,7 @@ function fmtQty(n: number): string {
   return `${qty} pièce${n > 1 ? 's' : ''}`;
 }
 
+const getPositionMetal = (p: Position): MetalType => p.metal;
 
 function parseDateDMY(dateStr: string): Date | null {
   const parts = dateStr.split('/');
@@ -179,36 +182,15 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
           </Text>
         </View>
       )}
+      {!expanded && currentValue !== null && !hideValue && (
+        <Text style={styles.posCompactCurrentValue}>
+          Vaut aujourd'hui : {fmtEur(currentValue)} {currencySymbol}
+        </Text>
+      )}
 
       {/* ── Contenu déplié ── */}
       {expanded && (
         <>
-          <Text style={styles.posDetail}>
-            {fmtQty(pos.quantity)} · {fmtG(totalWeightG)} · Achat le {pos.purchaseDate}
-          </Text>
-
-          {!hideValue && <View style={styles.posDivider} />}
-
-          {!hideValue && (
-            <View style={styles.posValuesRow}>
-              <View style={styles.posValueCol}>
-                <Text style={styles.posValueLabel}>Coût total</Text>
-                <Text style={styles.posValueAmount}>{fmtEur(totalCost)} {currencySymbol}</Text>
-              </View>
-              <View style={styles.posValueDivider} />
-              <View style={[styles.posValueCol, styles.posValueColRight]}>
-                <Text style={styles.posValueLabel}>Valeur actuelle</Text>
-                <Text style={styles.posValueAmount}>
-                  {pricesLoading
-                    ? 'Calcul…'
-                    : currentValue !== null
-                    ? `${fmtEur(currentValue)} ${currencySymbol}`
-                    : '—'}
-                </Text>
-              </View>
-            </View>
-          )}
-
           {gainLoss !== null && !hideValue && (
             <View style={styles.posGainRow}>
               <Text style={[styles.posGain, gainLoss >= 0 ? styles.positive : styles.negative]}>
@@ -222,9 +204,41 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
             </View>
           )}
 
+          <Text style={styles.posDetail}>
+            {fmtQty(pos.quantity)} · {fmtG(totalWeightG)} · Acheté le {pos.purchaseDate}
+          </Text>
+          {pos.quantity > 1 && (
+            <Text style={styles.posDetail}>
+              Prix d'achat : {fmtEur(pos.purchasePrice)} €/pièce
+            </Text>
+          )}
+          {pos.note ? <Text style={styles.posNote}>{pos.note}</Text> : null}
+
+          {!hideValue && <View style={styles.posDivider} />}
+
+          {!hideValue && (
+            <View style={styles.posValuesRow}>
+              <View style={styles.posValueCol}>
+                <Text style={styles.posValueLabel}>Investi</Text>
+                <Text style={styles.posValueAmount}>{fmtEur(totalCost)} {currencySymbol}</Text>
+              </View>
+              <View style={styles.posValueDivider} />
+              <View style={[styles.posValueCol, styles.posValueColRight]}>
+                <Text style={styles.posValueLabel}>Vaut aujourd'hui</Text>
+                <Text style={styles.posValueAmount}>
+                  {pricesLoading
+                    ? 'Calcul…'
+                    : currentValue !== null
+                    ? `${fmtEur(currentValue)} ${currencySymbol}`
+                    : '—'}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {fiscal && (
             <View style={styles.fiscalCountdown}>
-              <Text style={styles.fiscalTitle}>EXONÉRATION FISCALE</Text>
+              <Text style={styles.fiscalTitle}>Exonération fiscale</Text>
 
               <Text style={styles.fiscalDetail}>
                 Détention : {fiscal.detentionLabel}
@@ -245,14 +259,9 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
               {fiscal.isExonere ? (
                 <Text style={styles.fiscalExonere}>{'Exonéré ✓'}</Text>
               ) : (
-                <View>
-                  <Text style={styles.fiscalRemaining}>
-                    Exonération totale dans {fiscal.remainingLabel}
-                  </Text>
-                  <Text style={styles.fiscalDate}>
-                    ({fiscal.exemptionLabel})
-                  </Text>
-                </View>
+                <Text style={styles.fiscalRemaining}>
+                  Totalement exonéré en {fiscal.exemptionLabel}
+                </Text>
               )}
             </View>
           )}
@@ -260,9 +269,10 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
           <View style={styles.posExpandedFooter}>
             <TouchableOpacity
               onPress={onFiscalite}
-              activeOpacity={0.7}>
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
               <Text style={styles.posSimulLink}>
-                Détails fiscaux →
+                Simulation fiscale →
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -282,6 +292,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
 export default function PortefeuilleScreen() {
   const [positions, setPositions] = useState<Position[]>([]);
   const [hideValue, setHideValue] = useState(false);
+  const [metalFilter, setMetalFilter] = useState<'all' | MetalType>('all');
   const { prices, loading: pricesLoading, currencySymbol } = useSpotPrices();
   const { showPaywall, isPremium, limits, canAddPosition } = usePremium();
 
@@ -317,7 +328,7 @@ export default function PortefeuilleScreen() {
     });
   }, []);
 
-  const handleDelete = (id: string) => {
+  const handleDelete = useCallback((id: string) => {
     Alert.alert(
       'Supprimer la position',
       'Cette action est irréversible.',
@@ -334,28 +345,51 @@ export default function PortefeuilleScreen() {
         },
       ]
     );
-  };
+  }, [positions]);
+
+  // ── Filtre métal ────────────────────────────────────────────────────────
+
+  const handleFilterChange = useCallback((key: 'all' | MetalType) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setMetalFilter(key);
+  }, []);
+
+  // Reset auto si le métal filtré n'a plus de positions
+  useEffect(() => {
+    if (metalFilter !== 'all') {
+      const stillExists = positions.some(p => getPositionMetal(p) === metalFilter);
+      if (!stillExists) {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setMetalFilter('all');
+      }
+    }
+  }, [positions, metalFilter]);
+
+  const metalChips = useMemo(() => {
+    const metals: Record<string, { count: number; label: string }> = {};
+    positions.forEach(p => {
+      const key = getPositionMetal(p);
+      if (!metals[key]) {
+        metals[key] = { count: 0, label: METAL_CONFIG[key].name };
+      }
+      metals[key].count += 1;
+    });
+    return [
+      { key: 'all' as const, label: 'Tout', count: positions.length },
+      ...Object.entries(metals).map(([key, { count, label }]) => ({
+        key: key as MetalType,
+        label,
+        count,
+      })),
+    ];
+  }, [positions]);
+
+  const filteredPositions = useMemo(() => {
+    if (metalFilter === 'all') return positions;
+    return positions.filter(p => getPositionMetal(p) === metalFilter);
+  }, [positions, metalFilter]);
 
   // ── Calculs agrégés ───────────────────────────────────────────────────────
-
-  const metalSummary = (['or', 'argent', 'platine', 'palladium', 'cuivre'] as const).map((m) => {
-    const filtered = positions.filter((p) => p.metal === m);
-    const totalG = filtered.reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const pieces = filtered.reduce((s, p) => s + p.quantity, 0);
-    const spot = getSpot(m, prices);
-    const valueEur = spot !== null && totalG > 0
-      ? (totalG / OZ_TO_G) * spot
-      : null;
-
-    return {
-      metal: m,
-      cfg: METAL_CONFIG[m],
-      totalG,
-      pieces,
-      valueEur,
-    };
-  });
-  const visibleMetals = metalSummary.filter((m) => m.totalG > 0);
 
   let totalValue = 0;
   let totalCost = 0;
@@ -385,17 +419,28 @@ export default function PortefeuilleScreen() {
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* En-tête */}
-        <View style={styles.headerRow}>
-          <Text style={styles.headerBrand}>ORTRACK</Text>
-          <Text style={styles.headerRight}>Portefeuille</Text>
-        </View>
+        {/* ── 1. Header ── */}
+        <Text style={styles.headerTitle}>Portefeuille</Text>
 
-        {/* ── Valeur totale (si positions) ── */}
+        {/* ── 2. Valeur totale compacte ── */}
         {hasPositions && (
-          <View style={styles.totalCard}>
-            <View style={styles.totalLabelRow}>
-              <Text style={styles.totalLabel}>Valeur totale estimée</Text>
+          <View style={styles.compactValue}>
+            <View style={styles.compactValueRow}>
+              {hideValue ? (
+                <View style={styles.blurRow}>
+                  <View style={[styles.blurBlock, { width: 80 }]} />
+                  <View style={[styles.blurBlock, { width: 60 }]} />
+                  <View style={[styles.blurBlock, { width: 40 }]} />
+                </View>
+              ) : (
+                <Text style={styles.compactAmount}>
+                  {pricesLoading
+                    ? 'Calcul en cours…'
+                    : allPricesKnown
+                    ? `${fmtEur(totalValue)} ${currencySymbol}`
+                    : `— ${currencySymbol}`}
+                </Text>
+              )}
               <TouchableOpacity
                 onPress={toggleHideValue}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -407,109 +452,78 @@ export default function PortefeuilleScreen() {
                 />
               </TouchableOpacity>
             </View>
-            {hideValue ? (
-              <View style={styles.blurRow}>
-                <View style={[styles.blurBlock, { width: 80 }]} />
-                <View style={[styles.blurBlock, { width: 60 }]} />
-                <View style={[styles.blurBlock, { width: 40 }]} />
-              </View>
-            ) : (
-              <Text style={styles.totalValue}>
-                {pricesLoading
-                  ? 'Calcul en cours…'
-                  : allPricesKnown
-                  ? `${fmtEur(totalValue)} ${currencySymbol}`
-                  : `— ${currencySymbol}`}
+            {totalGainLoss !== null && !hideValue && (
+              <Text style={[styles.compactGain, totalGainLoss >= 0 ? styles.positive : styles.negative]}>
+                {totalGainLoss >= 0 ? '+' : ''}{fmtEur(totalGainLoss)} {currencySymbol}
+                {totalGainLossPct !== null && (
+                  `  (${totalGainLoss >= 0 ? '+' : ''}${fmtPct(totalGainLossPct)} %)`
+                )}
               </Text>
             )}
-            {totalGainLoss !== null && !hideValue && (
-              <View style={styles.totalGainRow}>
-                <Text style={[styles.totalGain, totalGainLoss >= 0 ? styles.positive : styles.negative]}>
-                  {totalGainLoss >= 0 ? '+' : ''}{fmtEur(totalGainLoss)} {currencySymbol}
-                </Text>
-                {totalGainLossPct !== null && (
-                  <Text style={[styles.totalGainPct, totalGainLoss >= 0 ? styles.positive : styles.negative]}>
-                    {'  '}{totalGainLoss >= 0 ? '+' : ''}{fmtPct(totalGainLossPct)} %
+          </View>
+        )}
+
+        {/* ── 3. Chips filtre métal ── */}
+        {hasPositions && (
+          <View style={styles.filterChipsRow}>
+            {metalChips.map(chip => {
+              const active = metalFilter === chip.key;
+              return (
+                <TouchableOpacity
+                  key={chip.key}
+                  onPress={() => handleFilterChange(chip.key)}
+                  activeOpacity={0.7}
+                  accessibilityLabel={`Filtrer ${chip.label}`}
+                  style={[
+                    styles.filterChip,
+                    active && styles.filterChipActive,
+                  ]}
+                >
+                  <Text style={[
+                    styles.filterChipText,
+                    active && styles.filterChipTextActive,
+                  ]}>
+                    {chip.key === 'all'
+                      ? `${chip.label} (${chip.count})`
+                      : `${chip.label} · ${chip.count}`}
                   </Text>
-                )}
-              </View>
-            )}
+                </TouchableOpacity>
+              );
+            })}
           </View>
         )}
 
-        {/* ── Résumé métaux ── */}
-        {hasPositions && visibleMetals.length > 0 && !hideValue && (
-          <View style={styles.summaryCard}>
-            {visibleMetals.map((m, i) => (
-              <View key={m.metal}>
-                {i > 0 && <View style={styles.summarySeparator} />}
-                <View style={styles.summaryMetalRow}>
-                  <View style={styles.summaryLeft}>
-                    <View style={[styles.summaryBadge, { borderColor: m.cfg.chipBorder }]}>
-                      <Text style={[styles.summaryBadgeText, { color: m.cfg.chipText }]}>{m.cfg.symbol}</Text>
-                    </View>
-                    <Text style={styles.summaryName}>{m.cfg.name}</Text>
-                  </View>
-                  <View style={styles.summaryRight}>
-                    {m.valueEur !== null && (
-                      <Text style={styles.summaryValue}>
-                        {fmtEur(m.valueEur)} {currencySymbol}
-                      </Text>
-                    )}
-                    <Text style={styles.summaryWeight}>{fmtG(m.totalG)}</Text>
-                    <Text style={styles.summaryPieces}>{fmtQty(m.pieces)}</Text>
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* ── Statistiques ── */}
-        {hasPositions && (
-          <TouchableOpacity
-            style={styles.statsButton}
-            onPress={() => router.push('/statistiques' as never)}>
-            <Text style={styles.statsButtonText}>Statistiques →</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Simulation fiscale globale ── */}
-        {hasPositions && (
-          <TouchableOpacity
-            style={styles.globalFiscalButton}
-            onPress={() => router.push('/fiscalite-globale' as never)}>
-            <Text style={styles.globalFiscalText}>Simulation fiscale globale →</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── Liste des positions ── */}
+        {/* ── 4. Positions ── */}
         {hasPositions ? (
           <View>
             <View style={styles.positionsHeader}>
               <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
-                Positions ({positions.length})
+                Positions ({filteredPositions.length})
               </Text>
               {!isPremium && (
                 <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
-                  <Text style={styles.positionsLimit}>
-                    {positions.length}/{limits.maxPositions} · Passer à illimité
+                  <Text style={positions.length >= limits.maxPositions ? styles.positionsLimitFull : styles.positionsLimit}>
+                    {positions.length}/{limits.maxPositions} · {positions.length >= limits.maxPositions ? 'Débloquer plus de positions' : 'Passer à illimité'}
                   </Text>
                 </TouchableOpacity>
               )}
             </View>
-            {positions.map((pos) => (
-              <PositionCard
-                key={pos.id}
-                pos={pos}
-                spotEur={getSpot(pos.metal, prices)}
-                pricesLoading={pricesLoading}
-                onDelete={handleDelete}
-                onFiscalite={() => router.push({ pathname: '/fiscalite', params: { positionId: pos.id } })}
-                currencySymbol={currencySymbol}
-                hideValue={hideValue}
-              />
-            ))}
+            {filteredPositions.length > 0 ? (
+              filteredPositions.map((pos) => (
+                <PositionCard
+                  key={pos.id}
+                  pos={pos}
+                  spotEur={getSpot(pos.metal, prices)}
+                  pricesLoading={pricesLoading}
+                  onDelete={handleDelete}
+                  onFiscalite={() => router.push({ pathname: '/fiscalite', params: { positionId: pos.id } })}
+                  currencySymbol={currencySymbol}
+                  hideValue={hideValue}
+                />
+              ))
+            ) : metalFilter !== 'all' ? (
+              <Text style={styles.emptyFilterText}>Aucune position pour ce métal</Text>
+            ) : null}
           </View>
         ) : (
           <View style={styles.emptyState}>
@@ -527,6 +541,25 @@ export default function PortefeuilleScreen() {
           </View>
         )}
 
+        {/* ── 5. Statistiques + Simulation ── */}
+        {hasPositions && (
+          <>
+            <TouchableOpacity
+              style={styles.statsButton}
+              onPress={() => router.push('/statistiques' as never)}>
+              <Ionicons name="stats-chart-outline" size={18} color={OrTrackColors.gold} />
+              <Text style={styles.statsButtonText}>Statistiques →</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.globalFiscalButton}
+              onPress={() => router.push('/fiscalite-globale' as never)}>
+              <Ionicons name="calculator-outline" size={18} color={OrTrackColors.gold} />
+              <Text style={styles.globalFiscalText}>Simulation fiscale globale →</Text>
+            </TouchableOpacity>
+          </>
+        )}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -541,159 +574,63 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: 20,
-    paddingBottom: 48,
+    paddingBottom: 90,
   },
 
-  // Header
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  headerBrand: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-    letterSpacing: 2,
-  },
-  headerRight: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
-  },
-
-  // Total card
-  totalCard: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.2)',
-  },
-  totalLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  totalLabel: {
-    fontSize: 11,
+  // 1. Header
+  headerTitle: {
+    fontSize: 20,
     fontWeight: '700',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+    color: OrTrackColors.white,
+    marginBottom: 16,
   },
-  totalValue: {
-    fontSize: 32,
+
+  // 2. Valeur totale compacte
+  compactValue: {
+    marginBottom: 12,
+  },
+  compactValueRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  compactAmount: {
+    fontSize: 24,
     fontWeight: '800',
     color: OrTrackColors.white,
   },
-  totalGainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  totalGain: {
-    fontSize: 15,
+  compactGain: {
+    fontSize: 13,
     fontWeight: '600',
-  },
-  totalGainPct: {
-    fontSize: 14,
-    fontWeight: '500',
+    marginTop: 4,
   },
 
-  // Summary card
-  summaryCard: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 28,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  summaryMetalRow: {
+  // 3. Chips filtre
+  filterChipsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
     paddingVertical: 8,
-  },
-  summaryLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  summaryBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    backgroundColor: OrTrackColors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  summaryBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  summaryName: {
-    fontSize: 14,
-    color: OrTrackColors.white,
-    fontWeight: '500',
-    marginLeft: 10,
-  },
-  summaryRight: {
-    alignItems: 'flex-end',
-  },
-  summaryValue: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    marginBottom: 2,
-  },
-  summaryWeight: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  summaryPieces: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
-  summarySeparator: {
-    height: 1,
-    backgroundColor: OrTrackColors.border,
-  },
-
-  // Stats button
-  statsButton: {
+    borderRadius: 20,
     backgroundColor: OrTrackColors.card,
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
-    alignItems: 'center',
   },
-  statsButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-  },
-
-  // Global fiscal button
-  globalFiscalButton: {
-    backgroundColor: '#1F1B0A',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 24,
-    borderWidth: 1,
+  filterChipActive: {
+    backgroundColor: `${OrTrackColors.gold}20`,
+    borderWidth: 1.5,
     borderColor: OrTrackColors.gold,
-    alignItems: 'center',
   },
-  globalFiscalText: {
-    fontSize: 13,
+  filterChipText: {
+    fontSize: 12,
     fontWeight: '600',
+    color: OrTrackColors.white,
+  },
+  filterChipTextActive: {
     color: OrTrackColors.gold,
   },
 
@@ -705,6 +642,31 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
     marginBottom: 12,
+  },
+
+  // Positions header
+  positionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  positionsLimit: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
+    fontWeight: '600',
+  },
+  positionsLimitFull: {
+    fontSize: 11,
+    color: OrTrackColors.gold,
+    fontWeight: '600',
+  },
+  emptyFilterText: {
+    fontSize: 13,
+    color: OrTrackColors.subtext,
+    textAlign: 'center',
+    marginTop: 20,
+    marginBottom: 20,
   },
 
   // Position card
@@ -740,13 +702,19 @@ const styles = StyleSheet.create({
     color: OrTrackColors.white,
   },
   deleteLabel: {
-    fontSize: 12,
-    color: '#E07070',
+    fontSize: 13,
+    color: '#E57373',
     fontWeight: '600',
   },
   posDetail: {
     fontSize: 12,
     color: OrTrackColors.subtext,
+    marginBottom: 12,
+  },
+  posNote: {
+    fontSize: 12,
+    color: '#7A7060',
+    fontStyle: 'italic',
     marginBottom: 12,
   },
   posDivider: {
@@ -772,7 +740,6 @@ const styles = StyleSheet.create({
   posValueLabel: {
     fontSize: 10,
     color: OrTrackColors.tabIconDefault,
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -808,8 +775,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
     marginBottom: 8,
   },
   fiscalDetail: {
@@ -844,33 +809,6 @@ const styles = StyleSheet.create({
     color: OrTrackColors.white,
     fontWeight: '500',
   },
-  fiscalDate: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
-
-  // Positions header
-  positionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  positionsLimit: {
-    fontSize: 11,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
-  },
-
-  // Compact gain (collapsed)
-  posCompactGain: {
-    paddingTop: 4,
-  },
-  posCompactGainText: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
 
   // Expanded footer
   posExpandedFooter: {
@@ -888,18 +826,69 @@ const styles = StyleSheet.create({
     color: OrTrackColors.gold,
   },
 
+  // Compact (collapsed)
+  posCompactCurrentValue: {
+    fontSize: 12,
+    color: '#9A8E7E',
+    paddingBottom: 10,
+  },
+  posCompactGain: {
+    paddingTop: 4,
+  },
+  posCompactGainText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
   // Blur blocks
   blurRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    height: 40,
+    height: 34,
   },
   blurBlock: {
-    height: 28,
+    height: 24,
     borderRadius: 8,
     backgroundColor: OrTrackColors.subtext,
     opacity: 0.25,
+  },
+
+  // Stats + Simulation buttons
+  statsButton: {
+    flexDirection: 'row',
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: OrTrackColors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  statsButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
+  },
+  globalFiscalButton: {
+    flexDirection: 'row',
+    backgroundColor: '#1F1B0A',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: OrTrackColors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  globalFiscalText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
   },
 
   // Colors

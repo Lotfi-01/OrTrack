@@ -11,7 +11,7 @@ type Metal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
 type Period = HistoryPeriod;
 
 const PERIODS: { key: HistoryPeriod; label: string }[] = [
-  { key: '1J', label: '1J' },
+  { key: '1S', label: '1S' },
   { key: '1M', label: '1M' },
   { key: '3M', label: '3M' },
   { key: '1A', label: '1A' },
@@ -29,26 +29,25 @@ const LINE_COLORS: Record<Metal, string> = {
 };
 
 const TITLES: Record<Metal, string> = {
-  gold: 'Historique Or (XAU)',
-  silver: 'Historique Argent (XAG)',
-  platinum: 'Historique Platine (XPT)',
-  palladium: 'Historique Palladium (XPD)',
-  copper: 'Historique Cuivre (XCU)',
+  gold: 'Or (XAU)',
+  silver: 'Argent (XAG)',
+  platinum: 'Platine (XPT)',
+  palladium: 'Palladium (XPD)',
+  copper: 'Cuivre (XCU)',
 };
 
 const CHART_HEIGHT = 220;
-const PADDING = { top: 10, bottom: 30, left: 55, right: 12 };
+const PADDING = { top: 10, bottom: 40, left: 55, right: 20 };
 
 function formatLabel(ts: number, period: Period): string {
   const d = new Date(ts);
-  if (period === '1J') {
-    return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-  }
-  if (period === '1M' || period === '3M') {
+  if (period === '1S' || period === '1M' || period === '3M') {
     return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
   }
   if (period === '1A') {
-    return d.toLocaleDateString('fr-FR', { month: 'short' });
+    const month = d.toLocaleDateString('fr-FR', { month: 'short' });
+    const year = d.getFullYear().toString().slice(-2);
+    return `${month} ${year}`;
   }
   // 5A, 10A, 20A → année uniquement
   return d.getFullYear().toString();
@@ -83,7 +82,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const { isPeriodLocked, showPaywall } = usePremium();
-  const [period, setPeriod] = useState<Period>('1M');
+  const [period, setPeriod] = useState<Period>('1S');
   const [touchIndex, setTouchIndex] = useState<number | null>(null);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
   const touchIndexRef = useRef<number | null>(null);
@@ -147,10 +146,11 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   }, [chartData]);
 
   const color = LINE_COLORS[metal];
+  const currencySymbol = currency === 'USD' ? '$' : currency === 'CHF' ? 'CHF' : '€';
   const title = TITLES[metal];
 
   // ── SVG layout computation ─────────────────────────────────────────────
-  const chartHeight = height ?? (compact ? 220 : 380);
+  const chartHeight = height ?? (compact ? 200 : 380);
   const plotW = 340 - PADDING.left - PADDING.right;
   const plotH = chartHeight - PADDING.top - PADDING.bottom;
 
@@ -226,7 +226,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
     const signe = delta >= 0 ? '+' : '';
     const label = signe +
       delta.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
-      ' \u20AC (' + signe + deltaPct.toFixed(2).replace('.', ',') + ' %)';
+      ' ' + currencySymbol + ' (' + signe + deltaPct.toFixed(2).replace('.', ',') + ' %)';
     return { label, couleur: delta >= 0 ? '#4CAF50' : '#F44336' };
   })() : null;
 
@@ -298,7 +298,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
           <View style={styles.tooltipCompact}>
             <View style={styles.tooltipLine1}>
               <Text style={styles.tooltipCompactPrice}>
-                {displayPoint.y.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {'€'}
+                {displayPoint.y.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {currencySymbol}
               </Text>
               {touchIndex === null && pinnedIndex !== null && (
                 <TouchableOpacity onPress={() => setPinnedIndex(null)} style={styles.tooltipClose}>
@@ -317,11 +317,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
               )}
             </View>
           </View>
-        ) : (
-          <Text style={styles.tooltipHint}>
-            Touchez le graphique pour voir le prix
-          </Text>
-        )}
+        ) : null}
       </View>
 
       {/* Chart or empty state */}
@@ -358,7 +354,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
                     <G key={`y-${t}`}>
                       <SvgLine x1={PADDING.left} y1={y} x2={340 - PADDING.right} y2={y} stroke={OrTrackColors.border} strokeDasharray="4" strokeWidth={1} />
                       <SvgText x={PADDING.left - 6} y={y + 3} textAnchor="end" fontSize={11} fill={OrTrackColors.subtext}>
-                        {`${Math.round(t)}\u20AC`}
+                        {`${Math.round(t)}${currencySymbol}`}
                       </SvgText>
                     </G>
                   );
@@ -426,10 +422,10 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
             return (
               <View style={styles.minMaxRow}>
                 <Text style={styles.minMaxMin}>
-                  MIN {dataMin.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {'€'}
+                  MIN {dataMin.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {currencySymbol}
                 </Text>
                 <Text style={styles.minMaxMax}>
-                  MAX {dataMax.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {'€'}
+                  MAX {dataMax.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {currencySymbol}
                 </Text>
               </View>
             );
@@ -561,11 +557,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: OrTrackColors.subtext,
     opacity: 0.6,
-  },
-  tooltipHint: {
-    fontSize: 10,
-    color: OrTrackColors.subtext,
-    opacity: 0.5,
   },
   minMaxRow: {
     flexDirection: 'row',

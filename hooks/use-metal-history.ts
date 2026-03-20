@@ -21,14 +21,14 @@ type CacheEntry = {
   timestamp: number;
 };
 
-export type HistoryPeriod = '1J' | '1M' | '3M' | '1A' | '5A' | '10A' | '20A';
+export type HistoryPeriod = '1S' | '1M' | '3M' | '1A' | '5A' | '10A' | '20A';
 
 export const LONG_TERM_PERIODS: HistoryPeriod[] = ['10A', '20A'];
 
-function periodToStartDate(period: HistoryPeriod): string | null {
-  if (period === '1J') return null;
+function periodToStartDate(period: HistoryPeriod): string {
   const now = new Date();
-  if (period === '1M') now.setMonth(now.getMonth() - 1);
+  if (period === '1S') now.setDate(now.getDate() - 7);
+  else if (period === '1M') now.setMonth(now.getMonth() - 1);
   else if (period === '3M') now.setMonth(now.getMonth() - 3);
   else if (period === '1A') now.setFullYear(now.getFullYear() - 1);
   else if (period === '5A') now.setFullYear(now.getFullYear() - 5);
@@ -42,27 +42,6 @@ export async function loadPriceHistory(
   currency: string = 'EUR',
   metal?: string
 ): Promise<PricePoint[]> {
-  if (period === '1J') {
-    try {
-      const raw = await AsyncStorage.getItem('@ortrack:price_history');
-      const points: any[] = raw ? JSON.parse(raw) : [];
-      const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-      return points
-        .filter((p: any) => p.timestamp >= cutoff)
-        .map((p: any) => ({
-          timestamp: p.timestamp,
-          date: p.date ?? new Date(p.timestamp).toISOString().split('T')[0],
-          gold: p.gold ?? 0,
-          silver: p.silver ?? 0,
-          platinum: p.platinum ?? 0,
-          palladium: p.palladium ?? 0,
-          copper: p.copper ?? 0,
-        }));
-    } catch {
-      return [];
-    }
-  }
-
   const effectiveCurrency = LONG_TERM_PERIODS.includes(period) ? 'USD' : currency;
   const cacheKey = `${CACHE_PREFIX}${period}_${effectiveCurrency}${metal ? '_' + metal : ''}`;
 
@@ -77,7 +56,6 @@ export async function loadPriceHistory(
   } catch {}
 
   const startDate = periodToStartDate(period);
-  if (!startDate) return [];
 
   const metalFilter = metal ? `&metal=eq.${metal}` : '';
 
@@ -143,7 +121,9 @@ export async function loadPriceHistory(
       })
       .sort((a, b) => (a.timestamp ?? 0) - (b.timestamp ?? 0)) as PricePoint[];
 
-    await AsyncStorage.setItem(cacheKey, JSON.stringify({ data: result, timestamp: Date.now() } as CacheEntry));
+    if (result.length > 0) {
+      await AsyncStorage.setItem(cacheKey, JSON.stringify({ data: result, timestamp: Date.now() } as CacheEntry));
+    }
     return result;
 
   } catch {

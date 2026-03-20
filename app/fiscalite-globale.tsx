@@ -28,6 +28,7 @@ type Position = {
   purchasePrice: number;
   purchaseDate: string;
   createdAt: string;
+  note?: string;
 };
 
 type PositionResult = {
@@ -251,16 +252,32 @@ export default function FiscaliteGlobaleScreen() {
 
                         {/* Row 2 : forfaitaire vs plus-values */}
                         <View style={{ marginTop: 4 }}>
-                          <Text style={[
-                            styles.taxLabel,
-                            { color: r.bestRegime === 'forfaitaire' ? gold : subtext,
-                              fontWeight: r.bestRegime === 'forfaitaire' ? '700' : '400' },
-                          ]}>Taxe forfaitaire : {fmtEur(r.tax.forfaitaire)} €</Text>
-                          <Text style={[
-                            styles.fiscalLabelPV,
-                            { color: r.bestRegime === 'plusvalues' ? gold : subtext,
-                              fontWeight: r.bestRegime === 'plusvalues' ? '700' : '400' },
-                          ]}>Taxe plus-values : {fmtEur(r.tax.plusValuesTax)} €</Text>
+                          <View style={styles.taxLineRow}>
+                            <Text style={[
+                              styles.taxLabel,
+                              { color: r.bestRegime === 'forfaitaire' ? gold : subtext,
+                                fontWeight: r.bestRegime === 'forfaitaire' ? '700' : '400' },
+                            ]}>Taxe forfaitaire : {fmtEur(r.tax.forfaitaire)} €</Text>
+                            {r.bestRegime === 'forfaitaire' && (
+                              <View style={styles.miniBadgeBest}>
+                                <Text style={styles.miniBadgeBestText}>Le moins taxé</Text>
+                              </View>
+                            )}
+                          </View>
+                          <View style={styles.taxLineRow}>
+                            <Text style={[
+                              styles.fiscalLabelPV,
+                              { color: r.bestRegime === 'plusvalues' ? gold : subtext,
+                                fontWeight: r.bestRegime === 'plusvalues' ? '700' : '400' },
+                            ]}>Taxe plus-values : {fmtEur(r.tax.plusValuesTax)} €</Text>
+                            {r.bestRegime === 'plusvalues' && (
+                              <View style={styles.miniBadgeBest}>
+                                <Text style={styles.miniBadgeBestText}>
+                                  {r.tax.isExempt ? 'Exonéré' : 'Le moins taxé'}
+                                </Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
                       </View>
                     );
@@ -410,6 +427,11 @@ const styles = StyleSheet.create({
   },
 
   // Tax labels
+  taxLineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   taxLabel: {
     fontSize: 12,
   },
@@ -417,6 +439,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: subtext,
     marginTop: 2,
+  },
+  miniBadgeBest: {
+    backgroundColor: '#1F1B0A',
+    borderWidth: 1,
+    borderColor: gold,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  miniBadgeBestText: {
+    fontSize: 9,
+    color: gold,
+    fontWeight: '700',
   },
 
   // Récapitulatif global

@@ -1,17 +1,22 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Animated,
   Dimensions,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -20,6 +25,12 @@ import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
+
+// ─── LayoutAnimation Android ──────────────────────────────────────────────────
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 export type Position = {
   id: string;
@@ -30,6 +41,7 @@ export type Position = {
   purchasePrice: number; // € par unité
   purchaseDate: string;  // JJ/MM/AAAA
   createdAt: string;     // ISO
+  note?: string;
 };
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -145,50 +157,179 @@ export default function AjouterScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
   const formYRef = useRef<number>(0);
+  const spotInfoCardYRef = useRef<number>(0);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [metal, setMetal] = useState<MetalType>('or');
-  const [product, setProduct] = useState<Product>(PRODUCTS.or[0]);
+  const [product, setProduct] = useState<Product | null>(null);
   const [customWeight, setCustomWeight] = useState('');
   const [quantity, setQuantity] = useState('');
   const [purchasePrice, setPurchasePrice] = useState('');
   const [purchaseDate, setPurchaseDate] = useState('');
+  const [note, setNote] = useState('');
   const [showAllPieces, setShowAllPieces] = useState(false);
+  const [showAllBars, setShowAllBars] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
+  const dateRef = useRef(purchaseDate);
+  dateRef.current = purchaseDate;
+
+  const ctaOpacity = useRef(new Animated.Value(0.4)).current;
+
+  // Cleanup timeout
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    };
+  }, []);
+
+  // CTA opacity animation
+  useEffect(() => {
+    Animated.timing(ctaOpacity, {
+      toValue: product ? 1 : 0.4,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [product, ctaOpacity]);
+
   // ── Métal → reset produit ──────────────────────────────────────────────────
 
-  const handleMetalChange = (m: MetalType) => {
+  const handleMetalChange = useCallback((m: MetalType) => {
     setMetal(m);
-    setProduct(PRODUCTS[m][0]);
+    setProduct(null);
     setCustomWeight('');
+    setPurchasePrice('');
     setShowAllPieces(false);
-  };
+    setShowAllBars(false);
+  }, []);
 
   // ── Calculs temps réel ────────────────────────────────────────────────────
 
-  const effectiveWeightG = product.weightG ?? toNum(customWeight);
+  const effectiveWeightG = product?.weightG ?? toNum(customWeight);
   const qty = toNum(quantity);
   const price = toNum(purchasePrice);
   const spotEur = getSpot(metal, prices);
 
-  const currentValue =
+  const popularProducts = useMemo(() =>
+    PRODUCTS[metal].filter(p => p.popular),
+    [metal]
+  );
+
+  const estimatedValue = useMemo(() => {
+    if (spotEur === null || effectiveWeightG <= 0) return null;
+    const val = (effectiveWeightG / OZ_TO_G) * spotEur;
+    return val > 0 && !isNaN(val) ? val : null;
+  }, [spotEur, effectiveWeightG]);
+
+  const currentValue = useMemo(() =>
     spotEur !== null && effectiveWeightG > 0 && qty > 0
       ? qty * (effectiveWeightG / OZ_TO_G) * spotEur
-      : null;
+      : null,
+    [spotEur, effectiveWeightG, qty]
+  );
 
-  const gainLoss =
+  const gainLoss = useMemo(() =>
     currentValue !== null && price > 0
       ? currentValue - qty * price
-      : null;
+      : null,
+    [currentValue, price, qty]
+  );
+
+  const priceAnalysis = useMemo(() => {
+    const numeric = parseFloat(purchasePrice.replace(',', '.'));
+    const spotValid = estimatedValue !== null && estimatedValue > 0;
+    const matches = spotValid && !isNaN(numeric)
+      && Math.abs(numeric - estimatedValue!) <= estimatedValue! * 0.005;
+    const showRef = spotValid && purchasePrice.trim() !== '' && !isNaN(numeric) && !matches;
+    return { priceMatchesSpot: matches, showPriceReference: showRef };
+  }, [purchasePrice, estimatedValue]);
+
+  // ── Toggles ──────────────────────────────────────────────────────────────
+
+  const toggleShowAllPieces = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowAllPieces(prev => !prev);
+  }, []);
+
+  const toggleShowAllBars = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowAllBars(prev => !prev);
+  }, []);
+
+  // ── Sélection produit ──────────────────────────────────────────────────
+
+  const handleProductSelect = useCallback((p: Product) => {
+    // Animation d'apparition du formulaire
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+
+    // B1. Sélection
+    setProduct(p);
+    setCustomWeight('');
+
+    // B2. Pré-remplir le prix
+    const w = p.weightG ?? 0;
+    const spot = getSpot(metal, prices);
+    if (spot !== null && w > 0) {
+      const unitVal = (w / OZ_TO_G) * spot;
+      if (unitVal > 0 && !isNaN(unitVal)) {
+        setPurchasePrice(unitVal.toFixed(2));
+      } else {
+        setPurchasePrice('');
+      }
+    } else {
+      setPurchasePrice('');
+    }
+
+    // B3. Pré-remplir la date
+    if (!dateRef.current) {
+      const now = new Date();
+      const dd = String(now.getDate()).padStart(2, '0');
+      const mm = String(now.getMonth() + 1).padStart(2, '0');
+      const yyyy = now.getFullYear();
+      setPurchaseDate(`${dd}/${mm}/${yyyy}`);
+    }
+
+    // B4. Cancel double-tap
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+
+    // B5. Collapse + scroll
+    if (showAllPieces || showAllBars) {
+      scrollTimeoutRef.current = setTimeout(() => {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+        setShowAllPieces(false);
+        setShowAllBars(false);
+        scrollTimeoutRef.current = setTimeout(() => {
+          if (spotInfoCardYRef.current > 0) {
+            scrollRef.current?.scrollTo({
+              y: spotInfoCardYRef.current - 20,
+              animated: true,
+            });
+          }
+        }, 400);
+      }, 300);
+    } else {
+      scrollTimeoutRef.current = setTimeout(() => {
+        if (spotInfoCardYRef.current > 0) {
+          scrollRef.current?.scrollTo({
+            y: spotInfoCardYRef.current - 20,
+            animated: true,
+          });
+        }
+      }, 150);
+    }
+  }, [showAllPieces, showAllBars, metal, prices]);
 
   // ── Validation ────────────────────────────────────────────────────────────
 
-  const canSave =
+  const canSave = useMemo(() =>
+    product !== null &&
     qty > 0 &&
     price > 0 &&
     purchaseDate.length === 10 &&
-    effectiveWeightG > 0;
+    effectiveWeightG > 0,
+    [product, qty, price, purchaseDate, effectiveWeightG]
+  );
 
   // ── Sauvegarde ────────────────────────────────────────────────────────────
 
@@ -207,15 +348,23 @@ export default function AjouterScreen() {
       positions.push({
         id: Date.now().toString(),
         metal,
-        product: product.label,
+        product: product!.label,
         weightG: effectiveWeightG,
         quantity: qty,
         purchasePrice: price,
         purchaseDate: purchaseDate.trim(),
         createdAt: new Date().toISOString(),
+        note: note.trim() || undefined,
       });
 
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
+
+      setCustomWeight('');
+      setQuantity('');
+      setPurchasePrice('');
+      setPurchaseDate('');
+      setNote('');
+      setShowAllPieces(false);
 
       setConfirmed(true);
       setTimeout(() => {
@@ -229,32 +378,25 @@ export default function AjouterScreen() {
     }
   };
 
-  // ── Render chip helper ───────────────────────────────────────────────────
+  // ── Render chip helper (grille dépliée) ────────────────────────────────
 
-  const renderChip = (p: Product, fullWidth = false) => {
-    const active = product.label === p.label;
+  const renderChip = (p: Product) => {
+    const active = product?.label === p.label;
     return (
       <TouchableOpacity
         key={p.label}
-        onPress={() => {
-          setProduct(p);
-          setCustomWeight('');
-          setTimeout(() => {
-            if (formYRef.current > 0) {
-              scrollRef.current?.scrollTo({
-                y: formYRef.current - 20,
-                animated: true,
-              });
-            }
-          }, 100);
-        }}
+        onPress={() => handleProductSelect(p)}
         activeOpacity={0.75}
         style={[
           styles.productChip,
           active && styles.productChipActive,
-          fullWidth && { width: '100%' as const },
         ]}>
-        {p.popular && (
+        {active && (
+          <View style={styles.checkBadge}>
+            <Ionicons name="checkmark" size={14} color={OrTrackColors.white} />
+          </View>
+        )}
+        {p.popular && !active && (
           <View style={styles.popularBadge}>
             <Text style={styles.popularBadgeText}>
               ⭐ Populaire
@@ -283,6 +425,15 @@ export default function AjouterScreen() {
     );
   };
 
+  // ── Indicateurs pour boutons expand ──────────────────────────────────────
+
+  const selectedNonPopularPiece = PRODUCTS[metal].some(
+    p => p.category === 'piece' && !p.popular && p.label === product?.label
+  );
+  const selectedInLingots = PRODUCTS[metal].some(
+    p => (p.category === 'lingot' || p.category === 'autre') && p.label === product?.label
+  );
+
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
@@ -297,10 +448,7 @@ export default function AjouterScreen() {
           showsVerticalScrollIndicator={false}>
 
           {/* En-tête */}
-          <View style={styles.headerRow}>
-            <Text style={styles.headerBrand}>ORTRACK</Text>
-            <Text style={styles.headerRight}>Ajouter</Text>
-          </View>
+          <Text style={styles.headerTitle}>Nouvelle position</Text>
 
           {/* ── Sélection métal ─────────────────────────────────────────── */}
           <View style={styles.section}>
@@ -340,230 +488,371 @@ export default function AjouterScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Produit</Text>
 
-            {/* Pièces */}
-            {PRODUCTS[metal].some(p => p.category === 'piece') && (
+            {popularProducts.length >= 2 ? (
               <>
-                <View style={styles.categoryHeader}>
-                  <Text style={[styles.categoryLabel, { marginBottom: 0 }]}>
-                    Pièces
-                  </Text>
-                  {PRODUCTS[metal].filter(p => p.category === 'piece').length > 4 && (
+                {/* Chips populaires horizontales */}
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginHorizontal: -20 }}
+                  contentContainerStyle={{
+                    paddingLeft: 20,
+                    paddingRight: 40,
+                    gap: 8,
+                  }}>
+                  {popularProducts.map(p => {
+                    const active = product?.label === p.label;
+                    return (
+                      <TouchableOpacity
+                        key={p.label}
+                        onPress={() => handleProductSelect(p)}
+                        activeOpacity={0.75}
+                        accessibilityLabel={`Sélectionner ${p.label}`}
+                        style={[
+                          styles.popularChip,
+                          active && styles.popularChipActive,
+                        ]}>
+                        <Text style={[
+                          styles.popularChipLabel,
+                          active && { color: OrTrackColors.gold },
+                        ]}>
+                          {p.label}
+                        </Text>
+                        {p.weightG !== null && (
+                          <Text style={styles.popularChipWeight}>
+                            {fmtG(p.weightG)}
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+
+                {/* Voir toutes les pièces */}
+                {PRODUCTS[metal].some(p => p.category === 'piece') && (
+                  <>
                     <TouchableOpacity
-                      onPress={() => setShowAllPieces(!showAllPieces)}
+                      onPress={toggleShowAllPieces}
                       activeOpacity={0.7}
-                    >
-                      <Text style={styles.categoryToggle}>
-                        {showAllPieces ? 'Voir moins' : 'Voir tout'}
+                      style={styles.expandButton}>
+                      <Text style={styles.expandButtonText}>
+                        Voir toutes les pièces
+                        {!showAllPieces && selectedNonPopularPiece
+                          ? ` · ${product?.label} ✓`
+                          : ''}
                       </Text>
+                      <Ionicons
+                        name={showAllPieces ? 'chevron-down' : 'chevron-forward'}
+                        size={14}
+                        color={OrTrackColors.gold}
+                      />
                     </TouchableOpacity>
-                  )}
-                </View>
-                <View style={styles.productGrid}>
-                  {PRODUCTS[metal]
-                    .filter(p => p.category === 'piece')
-                    .filter((p, i) => showAllPieces || p.popular || i < 4 || p.label === product.label)
-                    .map(p => renderChip(p))}
-                </View>
-              </>
-            )}
+                    {showAllPieces && (
+                      <View style={styles.productGrid}>
+                        {PRODUCTS[metal]
+                          .filter(p => p.category === 'piece')
+                          .map(p => renderChip(p))}
+                      </View>
+                    )}
+                  </>
+                )}
 
-            {/* Lingots */}
-            {PRODUCTS[metal].some(p => p.category === 'lingot') && (
-              <>
-                <Text style={[styles.categoryLabel, { marginTop: 12 }]}>
-                  Lingots
-                </Text>
-                <View style={styles.productGrid}>
-                  {PRODUCTS[metal]
-                    .filter(p => p.category === 'lingot')
-                    .map(p => renderChip(p))}
-                </View>
-              </>
-            )}
-
-            {/* Autre — pleine largeur */}
-            {PRODUCTS[metal].some(p => p.category === 'autre') && (
-              <View style={{ marginTop: 8 }}>
-                {PRODUCTS[metal]
-                  .filter(p => p.category === 'autre')
-                  .map(p => renderChip(p))}
-              </View>
-            )}
-          </View>
-
-          {/* ── Poids personnalisé (Autre) ──────────────────────────────── */}
-          {product.weightG === null && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Poids unitaire</Text>
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="decimal-pad"
-                  placeholder="Ex : 7,78"
-                  placeholderTextColor={OrTrackColors.tabIconDefault}
-                  value={customWeight}
-                  onChangeText={setCustomWeight}
-                />
-                <Text style={styles.inputSuffix}>g</Text>
-              </View>
-            </View>
-          )}
-
-          {/* ── Cours actuel du produit ──────────────────────────────── */}
-          {spotEur !== null && effectiveWeightG > 0 && (
-            <View style={styles.spotInfoCard}>
-              <View style={styles.spotInfoRow}>
-                <Text style={styles.spotInfoLabel}>Cours actuel</Text>
-                <Text style={styles.spotInfoValue}>
-                  {fmtEur(spotEur)} {currencySymbol}/oz
-                </Text>
-              </View>
-              <View>
-                <Text style={styles.spotInfoLabel}>Produit sélectionné</Text>
-                <Text style={[styles.spotInfoValue, { marginTop: 2 }]}>
-                  {product.label} · {fmtG(effectiveWeightG)}
-                </Text>
-              </View>
-              <View style={styles.spotInfoRow}>
-                <Text style={styles.spotInfoLabel}>Valeur unitaire estimée</Text>
-                <Text style={[styles.spotInfoValue, { color: OrTrackColors.gold }]}>
-                  {fmtEur((effectiveWeightG / OZ_TO_G) * spotEur)} {currencySymbol}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* ── Formulaire ──────────────────────────────────────────────── */}
-          <View
-            style={styles.section}
-            onLayout={(e) => { formYRef.current = e.nativeEvent.layout.y; }}
-          >
-            <Text style={styles.sectionTitle}>Détails de l'achat</Text>
-            <View style={styles.fieldGroup}>
-
-              <View style={styles.field}>
-                <Text style={styles.fieldLabel}>Quantité</Text>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    keyboardType="decimal-pad"
-                    placeholder="1"
-                    placeholderTextColor={OrTrackColors.tabIconDefault}
-                    value={quantity}
-                    onChangeText={setQuantity}
-                  />
-                  <Text style={styles.inputSuffix}>pièce(s)</Text>
-                </View>
-              </View>
-
-              <View style={styles.field}>
-                <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
-                  {spotEur !== null && effectiveWeightG > 0 && (
+                {/* Voir tous les lingots */}
+                {PRODUCTS[metal].some(p => p.category === 'lingot' || p.category === 'autre') && (
+                  <>
                     <TouchableOpacity
-                      onPress={() => {
-                        const unitValue = (effectiveWeightG / OZ_TO_G) * spotEur;
-                        setPurchasePrice(Math.round(unitValue).toString());
-                      }}
+                      onPress={toggleShowAllBars}
                       activeOpacity={0.7}
-                    >
-                      <Text style={styles.quickFillBtn}>Cours du jour</Text>
+                      style={styles.expandButton}>
+                      <Text style={styles.expandButtonText}>
+                        Voir tous les lingots
+                        {!showAllBars && selectedInLingots
+                          ? ` · ${product?.label} ✓`
+                          : ''}
+                      </Text>
+                      <Ionicons
+                        name={showAllBars ? 'chevron-down' : 'chevron-forward'}
+                        size={14}
+                        color={OrTrackColors.gold}
+                      />
                     </TouchableOpacity>
-                  )}
-                </View>
-                <View style={styles.inputWrapper}>
-                  <TextInput
-                    style={styles.input}
-                    keyboardType="decimal-pad"
-                    placeholder="Ex : 1 700"
-                    placeholderTextColor={OrTrackColors.tabIconDefault}
-                    value={purchasePrice}
-                    onChangeText={setPurchasePrice}
-                  />
-                  <Text style={styles.inputSuffix}>{currencySymbol}</Text>
-                </View>
-              </View>
+                    {showAllBars && (
+                      <View style={styles.productGrid}>
+                        {PRODUCTS[metal]
+                          .filter(p => p.category === 'lingot' || p.category === 'autre')
+                          .map(p => renderChip(p))}
+                      </View>
+                    )}
+                  </>
+                )}
+              </>
+            ) : (
+              /* Fallback : grille actuelle */
+              <>
+                {PRODUCTS[metal].some(p => p.category === 'piece') && (
+                  <>
+                    <View style={styles.categoryHeader}>
+                      <Text style={[styles.categoryLabel, { marginBottom: 0 }]}>
+                        Pièces
+                      </Text>
+                      {PRODUCTS[metal].filter(p => p.category === 'piece').length > 4 && (
+                        <TouchableOpacity
+                          onPress={toggleShowAllPieces}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={styles.categoryToggle}>
+                            {showAllPieces ? 'Voir moins' : 'Voir tout'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                    <View style={styles.productGrid}>
+                      {PRODUCTS[metal]
+                        .filter(p => p.category === 'piece')
+                        .filter((p, i) => showAllPieces || p.popular || i < 4 || p.label === product?.label)
+                        .map(p => renderChip(p))}
+                    </View>
+                  </>
+                )}
 
-              <View style={styles.field}>
-                <View style={styles.fieldLabelRow}>
-                  <Text style={styles.fieldLabel}>Date d'achat</Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      const now = new Date();
-                      const dd = String(now.getDate()).padStart(2, '0');
-                      const mm = String(now.getMonth() + 1).padStart(2, '0');
-                      const yyyy = now.getFullYear();
-                      setPurchaseDate(`${dd}/${mm}/${yyyy}`);
-                    }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.quickFillBtn}>Aujourd'hui</Text>
-                  </TouchableOpacity>
-                </View>
-                <TextInput
-                  style={styles.input}
-                  keyboardType="numeric"
-                  placeholder="JJ/MM/AAAA"
-                  placeholderTextColor={OrTrackColors.tabIconDefault}
-                  value={purchaseDate}
-                  onChangeText={(t) => setPurchaseDate(autoFormatDate(t))}
-                  maxLength={10}
-                />
-              </View>
+                {PRODUCTS[metal].some(p => p.category === 'lingot') && (
+                  <>
+                    <Text style={[styles.categoryLabel, { marginTop: 12 }]}>
+                      Lingots
+                    </Text>
+                    <View style={styles.productGrid}>
+                      {PRODUCTS[metal]
+                        .filter(p => p.category === 'lingot')
+                        .map(p => renderChip(p))}
+                    </View>
+                  </>
+                )}
 
-            </View>
+                {PRODUCTS[metal].some(p => p.category === 'autre') && (
+                  <View style={{ marginTop: 8 }}>
+                    {PRODUCTS[metal]
+                      .filter(p => p.category === 'autre')
+                      .map(p => renderChip(p))}
+                  </View>
+                )}
+              </>
+            )}
           </View>
 
-          {/* ── Estimation temps réel ───────────────────────────────────── */}
-          {currentValue !== null && (
-            <View style={styles.estimationCard}>
-              <Text style={styles.estimationTitle}>Estimation actuelle</Text>
+          {/* ── Texte incitatif (aucun produit sélectionné) ────────── */}
+          {product === null && (
+            <Text style={styles.hintText}>Touchez une pièce pour commencer</Text>
+          )}
 
-              <View style={styles.estimationRow}>
-                <Text style={styles.estimationLabel}>Valeur de marché</Text>
-                <Text style={styles.estimationValue}>{fmtEur(currentValue)} €</Text>
-              </View>
-
-              {gainLoss !== null && (
-                <View style={styles.estimationRow}>
-                  <Text style={styles.estimationLabel}>Plus/moins-value</Text>
-                  <Text style={[
-                    styles.estimationGainLoss,
-                    gainLoss >= 0 ? styles.positive : styles.negative,
-                  ]}>
-                    {gainLoss >= 0 ? '+' : ''}{fmtEur(gainLoss)} €
-                  </Text>
+          {/* ── Contenu conditionnel (produit sélectionné) ────────── */}
+          {product !== null && (
+            <>
+              {/* ── Poids personnalisé (Autre) ──────────────────────── */}
+              {product.weightG === null && (
+                <View style={styles.section}>
+                  <Text style={styles.sectionTitle}>Poids unitaire</Text>
+                  <View style={styles.inputWrapper}>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="decimal-pad"
+                      placeholder="Ex : 7,78"
+                      placeholderTextColor={OrTrackColors.tabIconDefault}
+                      value={customWeight}
+                      onChangeText={setCustomWeight}
+                    />
+                    <Text style={styles.inputSuffix}>g</Text>
+                  </View>
                 </View>
               )}
 
-              {spotEur !== null && (
-                <Text style={styles.estimationHint}>
-                  Cours spot : {fmtEur(spotEur)} €/oz · {effectiveWeightG}g par unité
-                </Text>
+              {/* ── Cours actuel du produit ──────────────────────── */}
+              {spotEur !== null && effectiveWeightG > 0 && (
+                <View
+                  collapsable={false}
+                  onLayout={(e) => { spotInfoCardYRef.current = e.nativeEvent.layout.y; }}>
+                  <View style={styles.separator} />
+                  <View style={styles.spotInfoCard}>
+                    <View style={styles.spotInfoRow}>
+                      <Text style={styles.spotInfoLabel}>Cours actuel</Text>
+                      <Text style={styles.spotInfoValue}>
+                        {fmtEur(spotEur)} {currencySymbol}/oz
+                      </Text>
+                    </View>
+                    <View>
+                      <Text style={styles.spotInfoLabel}>Produit sélectionné</Text>
+                      <Text style={[styles.spotInfoValue, { marginTop: 2 }]}>
+                        {product.label} · {fmtG(effectiveWeightG)}
+                      </Text>
+                    </View>
+                    <View style={styles.spotInfoRow}>
+                      <Text style={styles.spotInfoLabel}>Valeur unitaire estimée</Text>
+                      <Text style={[styles.spotInfoValue, { color: OrTrackColors.gold }]}>
+                        {fmtEur((effectiveWeightG / OZ_TO_G) * spotEur)} {currencySymbol}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
               )}
-            </View>
-          )}
 
-          {/* ── Bouton submit ───────────────────────────────────────────── */}
-          <TouchableOpacity
-            style={[
-              styles.submitButton,
-              !canSave && styles.submitButtonDisabled,
-              confirmed && styles.submitButtonConfirmed,
-            ]}
-            onPress={handleSave}
-            disabled={!canSave || saving || confirmed}
-            activeOpacity={0.8}>
-            <Text style={[styles.submitText, !canSave && styles.submitTextDisabled]}>
-              {confirmed
-                ? '✓  Position ajoutée !'
-                : saving
-                ? 'Enregistrement…'
-                : 'Ajouter à mon portefeuille'}
-            </Text>
-          </TouchableOpacity>
+              {/* ── Formulaire ──────────────────────────────────────── */}
+              <View
+                style={styles.section}
+                onLayout={(e) => { formYRef.current = e.nativeEvent.layout.y; }}
+              >
+                <Text style={styles.sectionTitle}>Détails de l'achat</Text>
+                <View style={styles.fieldGroup}>
+
+                  <View style={styles.field}>
+                    <Text style={styles.fieldLabel}>Quantité</Text>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        style={styles.input}
+                        keyboardType="decimal-pad"
+                        placeholder="1"
+                        placeholderTextColor={OrTrackColors.tabIconDefault}
+                        value={quantity}
+                        onChangeText={setQuantity}
+                      />
+                      <Text style={styles.inputSuffix}>pièce(s)</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.field}>
+                    <View style={styles.fieldLabelRow}>
+                      <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
+                      {!priceAnalysis.priceMatchesSpot && estimatedValue !== null && estimatedValue > 0 ? (
+                        <TouchableOpacity
+                          onPress={() => setPurchasePrice(estimatedValue!.toFixed(2))}
+                          activeOpacity={0.7}
+                        >
+                          <Text style={[styles.quickFillBtn, { fontSize: 13 }]}>Utiliser le cours actuel</Text>
+                        </TouchableOpacity>
+                      ) : estimatedValue === null || estimatedValue <= 0 ? (
+                        <Text style={styles.priceRefUnavailable}>Cours indisponible</Text>
+                      ) : null}
+                    </View>
+                    <View style={styles.inputWrapper}>
+                      <TextInput
+                        style={styles.input}
+                        keyboardType="decimal-pad"
+                        placeholder="Ex : 1 700"
+                        placeholderTextColor={OrTrackColors.tabIconDefault}
+                        value={purchasePrice}
+                        onChangeText={setPurchasePrice}
+                      />
+                      <Text style={styles.inputSuffix}>{currencySymbol}</Text>
+                    </View>
+                    {priceAnalysis.showPriceReference && (
+                      <Text style={styles.priceRef}>
+                        Cours actuel : {estimatedValue!.toFixed(2)} €
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.field}>
+                    <View style={styles.fieldLabelRow}>
+                      <Text style={styles.fieldLabel}>Date d'achat</Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          const now = new Date();
+                          const dd = String(now.getDate()).padStart(2, '0');
+                          const mm = String(now.getMonth() + 1).padStart(2, '0');
+                          const yyyy = now.getFullYear();
+                          setPurchaseDate(`${dd}/${mm}/${yyyy}`);
+                        }}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.quickFillBtn}>Aujourd'hui</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={styles.input}
+                      keyboardType="numeric"
+                      placeholder="JJ/MM/AAAA"
+                      placeholderTextColor={OrTrackColors.tabIconDefault}
+                      value={purchaseDate}
+                      onChangeText={(t) => setPurchaseDate(autoFormatDate(t))}
+                      maxLength={10}
+                    />
+                  </View>
+
+                  <View style={styles.field}>
+                    <Text style={styles.fieldLabel}>Note (optionnel)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Ex : héritage, cadeau, enchères..."
+                      multiline={false}
+                      placeholderTextColor={OrTrackColors.tabIconDefault}
+                      value={note}
+                      onChangeText={setNote}
+                      maxLength={120}
+                    />
+                  </View>
+
+                </View>
+              </View>
+
+              {/* ── Estimation temps réel ───────────────────────────── */}
+              {currentValue !== null && (
+                <View style={styles.estimationCard}>
+                  <Text style={styles.estimationTitle}>Estimation actuelle</Text>
+
+                  <View style={styles.estimationRow}>
+                    <Text style={styles.estimationLabel}>Valeur de marché</Text>
+                    <Text style={styles.estimationValue}>{fmtEur(currentValue)} €</Text>
+                  </View>
+
+                  {gainLoss !== null && (
+                    <View style={styles.estimationRow}>
+                      <Text style={styles.estimationLabel}>Plus/moins-value</Text>
+                      <Text style={[
+                        styles.estimationGainLoss,
+                        gainLoss >= 0 ? styles.positive : styles.negative,
+                      ]}>
+                        {gainLoss >= 0 ? '+' : ''}{fmtEur(gainLoss)} €
+                      </Text>
+                    </View>
+                  )}
+
+                  {spotEur !== null && (
+                    <Text style={styles.estimationHint}>
+                      Cours spot : {fmtEur(spotEur)} €/oz · {effectiveWeightG}g par unité
+                    </Text>
+                  )}
+                </View>
+              )}
+
+              {/* Spacer pour ne pas masquer le contenu sous le CTA sticky */}
+              <View style={{ height: 80 }} />
+            </>
+          )}
 
         </ScrollView>
+
+        {/* ── CTA sticky ──────────────────────────────────────────────── */}
+        <View style={styles.stickyCtaContainer}>
+          <Animated.View style={{ opacity: ctaOpacity }}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.ctaButton,
+                pressed && !!product && styles.ctaButtonPressed,
+                confirmed && styles.ctaButtonConfirmed,
+              ]}
+              onPress={handleSave}
+              disabled={!product || saving || confirmed}
+              accessibilityLabel="Ajouter au portefeuille"
+            >
+              <Text style={styles.ctaText}>
+                {confirmed
+                  ? '✓  Position ajoutée !'
+                  : saving
+                  ? 'Enregistrement…'
+                  : 'Ajouter au portefeuille'}
+              </Text>
+            </Pressable>
+          </Animated.View>
+          <Text style={styles.ctaReassurance}>Supprimable depuis votre portfolio</Text>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -579,25 +868,15 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   scrollContent: {
     padding: 20,
-    paddingBottom: 48,
+    paddingBottom: 20,
   },
 
   // Header
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: OrTrackColors.white,
     marginBottom: 20,
-  },
-  headerBrand: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-    letterSpacing: 2,
-  },
-  headerRight: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
   },
 
   // Sections
@@ -622,7 +901,62 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Product chips
+  // Popular chips (horizontal)
+  popularChip: {
+    borderRadius: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: OrTrackColors.card,
+    borderWidth: 1,
+    borderColor: OrTrackColors.border,
+    alignItems: 'center',
+    minWidth: 120,
+  },
+  popularChipActive: {
+    borderWidth: 2,
+    borderColor: OrTrackColors.gold,
+    backgroundColor: 'rgba(201,168,76,0.15)',
+  },
+  popularChipLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: OrTrackColors.white,
+  },
+  popularChipWeight: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
+    marginTop: 2,
+  },
+
+  // Check badge (sélection)
+  checkBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: OrTrackColors.gold,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Expand buttons
+  expandButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  expandButtonText: {
+    fontSize: 13,
+    color: OrTrackColors.gold,
+    fontWeight: '600',
+    flex: 1,
+  },
+
+  // Product chips (grid)
   productGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -692,6 +1026,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // Hint text (no product selected)
+  hintText: {
+    fontSize: 13,
+    color: OrTrackColors.subtext,
+    textAlign: 'center',
+    marginTop: 24,
+  },
+
+  // Separator
+  separator: {
+    height: 1,
+    backgroundColor: OrTrackColors.border,
+    marginBottom: 8,
+  },
+
   // Inputs
   fieldGroup: { gap: 14 },
   field: { gap: 6 },
@@ -731,6 +1080,18 @@ const styles = StyleSheet.create({
     right: 14,
     fontSize: 14,
     fontWeight: '600',
+    color: OrTrackColors.subtext,
+  },
+
+  // Price reference
+  priceRef: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
+    marginTop: 4,
+    marginLeft: 2,
+  },
+  priceRefUnavailable: {
+    fontSize: 13,
     color: OrTrackColors.subtext,
   },
 
@@ -803,28 +1164,37 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // Submit button
-  submitButton: {
+  // Sticky CTA
+  stickyCtaContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: OrTrackColors.background,
+    borderTopWidth: 1,
+    borderTopColor: OrTrackColors.border,
+  },
+  ctaButton: {
     backgroundColor: OrTrackColors.gold,
     borderRadius: 12,
-    paddingVertical: 17,
+    paddingVertical: 16,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  submitButtonDisabled: {
-    backgroundColor: OrTrackColors.card,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
+  ctaButtonPressed: {
+    backgroundColor: '#B8982F',
   },
-  submitButtonConfirmed: {
+  ctaButtonConfirmed: {
     backgroundColor: '#2E7D32',
-    borderWidth: 0,
   },
-  submitText: {
+  ctaText: {
+    color: OrTrackColors.background,
     fontSize: 16,
     fontWeight: '700',
-    color: OrTrackColors.background,
   },
-  submitTextDisabled: {
-    color: OrTrackColors.tabIconDefault,
+  ctaReassurance: {
+    color: OrTrackColors.subtext,
+    fontSize: 12,
+    textAlign: 'center',
+    marginTop: 8,
   },
 });

@@ -1,8 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Keyboard,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Platform,
   ScrollView,
   StyleSheet,
@@ -11,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
@@ -26,6 +29,7 @@ type Position = {
   purchasePrice: number;
   purchaseDate: string; // JJ/MM/AAAA
   createdAt: string;
+  note?: string;
 };
 
 const STORAGE_KEY = '@ortrack:positions';
@@ -116,6 +120,13 @@ export default function FiscaliteScreen() {
   const [salePriceStr, setSalePriceStr] = useState('');
   const [saleDate, setSaleDate] = useState(todayStr());
   const [showDetail, setShowDetail] = useState(false);
+  const [showCessionDetails, setShowCessionDetails] = useState(false);
+
+  const toggleCessionDetails = useCallback(() => {
+    Keyboard.dismiss();
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowCessionDetails(prev => !prev);
+  }, []);
 
   // Charger les positions depuis AsyncStorage
   useEffect(() => {
@@ -201,8 +212,8 @@ export default function FiscaliteScreen() {
                     key={p.id}
                     style={[styles.posChip, p.id === selectedId && styles.posChipSelected]}
                     onPress={() => setSelectedId(p.id)}>
-                    <Text style={[styles.posChipText, p.id === selectedId && styles.posChipTextSelected]}>
-                      {p.product} · {p.quantity} pièce{p.quantity > 1 ? 's' : ''}
+                    <Text style={[styles.posChipText, p.id === selectedId && styles.posChipTextSelected]} numberOfLines={1}>
+                      {p.product}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -210,7 +221,7 @@ export default function FiscaliteScreen() {
             </View>
           )}
 
-          {/* ── Info de la position sélectionnée ── */}
+          {/* ── Info de la position sélectionnée (compacte) ── */}
           {selectedPos && (
             <View style={[styles.card, styles.posInfoCard]}>
               <View style={styles.posInfoRow}>
@@ -221,53 +232,78 @@ export default function FiscaliteScreen() {
                   </Text>
                 </View>
               ); })()}
-                <Text style={styles.posInfoProduct}>{selectedPos.product}</Text>
+                <Text style={styles.posInfoProduct} numberOfLines={1}>{selectedPos.product}</Text>
+                <Text style={styles.posInfoSub}>
+                  {selectedPos.quantity} pièce{selectedPos.quantity > 1 ? 's' : ''}
+                  {years !== null ? ` · ${years} an${years > 1 ? 's' : ''}` : ''}
+                </Text>
               </View>
-              <Text style={styles.posInfoDetail}>
-                {selectedPos.quantity} pièce{selectedPos.quantity > 1 ? 's' : ''} · Acquis le {selectedPos.purchaseDate} · Prix de revient : {fmtEur(selectedPos.quantity * selectedPos.purchasePrice)} €
-              </Text>
             </View>
           )}
 
-          {/* ── Détails de la cession ── */}
+          {/* ── Détails de la cession (repliable) ── */}
           <View style={styles.section}>
-            <Text style={styles.sectionLabel}>Détails de la cession</Text>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Prix de cession (€)</Text>
-              <TextInput
-                style={styles.input}
-                value={salePriceStr}
-                onChangeText={setSalePriceStr}
-                keyboardType="decimal-pad"
-                placeholder="Ex : 1 250,00"
-                placeholderTextColor={OrTrackColors.subtext}
-                selectionColor={OrTrackColors.gold}
-              />
-              {selectedPos && (
-                <Text style={styles.inputHint}>
-                  Valeur marché estimée :&nbsp;
-                  {(() => {
-                    const mv = spotValue(selectedPos, getSpot(selectedPos.metal, prices));
-                    return mv !== null ? `${fmtEur(mv)} €` : 'cours indisponible';
-                  })()}
+            <TouchableOpacity
+              style={styles.cessionToggle}
+              onPress={toggleCessionDetails}
+              activeOpacity={0.7}
+            >
+              <View style={styles.cessionToggleLeft}>
+                <Text style={styles.cessionToggleText}>
+                  {showCessionDetails ? 'Masquer les paramètres' : 'Modifier les paramètres'}
+                </Text>
+                <Ionicons
+                  name={showCessionDetails ? 'chevron-down' : 'chevron-forward'}
+                  size={14}
+                  color={OrTrackColors.gold}
+                />
+              </View>
+              {!showCessionDetails && (
+                <Text style={styles.cessionSummary}>
+                  {salePrice !== null ? `${fmtEur(salePrice)} €` : salePriceStr} · {saleDate}
                 </Text>
               )}
-            </View>
+            </TouchableOpacity>
 
-            <View style={styles.inputGroup}>
-              <Text style={styles.inputLabel}>Date de cession</Text>
-              <TextInput
-                style={styles.input}
-                value={saleDate}
-                onChangeText={(v) => setSaleDate(autoFormatDate(v))}
-                keyboardType="number-pad"
-                placeholder="JJ/MM/AAAA"
-                placeholderTextColor={OrTrackColors.subtext}
-                selectionColor={OrTrackColors.gold}
-                maxLength={10}
-              />
-            </View>
+            {showCessionDetails && (
+              <>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Prix de cession (€)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={salePriceStr}
+                    onChangeText={setSalePriceStr}
+                    keyboardType="decimal-pad"
+                    placeholder="Ex : 1 250,00"
+                    placeholderTextColor={OrTrackColors.subtext}
+                    selectionColor={OrTrackColors.gold}
+                  />
+                  {selectedPos && (
+                    <Text style={styles.inputHint}>
+                      Valeur marché estimée :&nbsp;
+                      {(() => {
+                        const mv = spotValue(selectedPos, getSpot(selectedPos.metal, prices));
+                        return mv !== null ? `${fmtEur(mv)} €` : 'cours indisponible';
+                      })()}
+                    </Text>
+                  )}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Date de cession</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={saleDate}
+                    onChangeText={(v) => setSaleDate(autoFormatDate(v))}
+                    keyboardType="number-pad"
+                    placeholder="JJ/MM/AAAA"
+                    placeholderTextColor={OrTrackColors.subtext}
+                    selectionColor={OrTrackColors.gold}
+                    maxLength={10}
+                  />
+                </View>
+              </>
+            )}
           </View>
 
           {/* ── Résultats ── */}
@@ -488,10 +524,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: border,
   },
-  posInfoCard: { marginBottom: 24 },
-  posInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 8 },
-  posInfoProduct: { fontSize: 16, fontWeight: '700', color: white, flex: 1 },
-  posInfoDetail: { fontSize: 13, color: subtext, lineHeight: 20 },
+  posInfoCard: { marginBottom: 16 },
+  posInfoRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  posInfoProduct: { fontSize: 15, fontWeight: '700', color: white },
+  posInfoSub: { fontSize: 13, color: subtext },
 
   // Badges métal
   metalBadge: {
@@ -501,6 +537,29 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   metalBadgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
+
+  // Cession toggle
+  cessionToggle: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  cessionToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  cessionToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: gold,
+  },
+  cessionSummary: {
+    fontSize: 12,
+    color: subtext,
+  },
 
   // Inputs
   inputGroup: { marginBottom: 14 },

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
@@ -27,6 +28,7 @@ type Position = {
   purchasePrice: number;
   purchaseDate: string;
   createdAt: string;
+  note?: string;
 };
 
 const STORAGE_KEY = '@ortrack:positions';
@@ -261,7 +263,36 @@ export default function StatistiquesScreen() {
               </View>
             </View>
 
-            {/* ── 2. Répartition barres horizontales ── */}
+            {/* ── 2. Analyse OrTrack (premium only, remontée) ── */}
+            {isPremium && (
+              <>
+                <Text style={styles.sectionTitle}>ANALYSE ORTRACK</Text>
+                <View style={[
+                  styles.adviceCard,
+                  advice.type === 'warning' && styles.adviceWarning,
+                  advice.type === 'good' && styles.adviceGood,
+                  advice.type === 'info' && styles.adviceInfo,
+                ]}>
+                  <Text style={styles.adviceIcon}>
+                    {advice.type === 'warning' ? '⚠️' : advice.type === 'good' ? '✅' : '💡'}
+                  </Text>
+                  <View style={styles.adviceContent}>
+                    <Text style={styles.adviceText}>{advice.text}</Text>
+                    {advice.type === 'good' && totalGainLossPct !== null && totalGainLossPct > 50 && (
+                      <TouchableOpacity
+                        onPress={() => router.push('/fiscalite-globale' as never)}
+                        style={styles.adviceLink}
+                        activeOpacity={0.7}
+                      >
+                        <Text style={styles.adviceLinkText}>Simuler ma fiscalité →</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* ── 3. Répartition barres horizontales ── */}
             <Text style={styles.sectionTitle}>RÉPARTITION DU PORTEFEUILLE</Text>
             <View style={styles.card}>
               {metalValues.map((m) => {
@@ -270,9 +301,14 @@ export default function StatistiquesScreen() {
                 return (
                   <View key={m.metal} style={styles.barRow}>
                     <View style={styles.barMeta}>
-                      <Text style={[styles.barLabel, { color: cfg.chipText }]}>
-                        {cfg.name}
-                      </Text>
+                      <View style={styles.barLabelRow}>
+                        <View style={[styles.metalBadgeSmall, { borderColor: cfg.chipBorder }]}>
+                          <Text style={[styles.metalBadgeSmallText, { color: cfg.chipText }]}>{cfg.symbol}</Text>
+                        </View>
+                        <Text style={[styles.barLabel, { color: cfg.chipText }]}>
+                          {cfg.name}
+                        </Text>
+                      </View>
                       <Text style={styles.barPct}>{fmtPct(pct, 1)} %</Text>
                     </View>
                     <View style={styles.barTrack}>
@@ -289,9 +325,10 @@ export default function StatistiquesScreen() {
               })}
             </View>
 
+            {/* ── 4. Contenu premium ── */}
             {isPremium ? (
               <>
-                {/* ── 3. Podium positions ── */}
+                {/* Podium positions */}
                 {positionsWithPerf.length > 1 && (
                   <>
                     <Text style={styles.sectionTitle}>VOS POSITIONS</Text>
@@ -366,12 +403,11 @@ export default function StatistiquesScreen() {
                   </>
                 )}
 
-                {/* ── 4. Grid 2x2 métriques ── */}
+                {/* Grid 2x2 métriques */}
                 <Text style={styles.sectionTitle}>MÉTRIQUES CLÉS</Text>
                 <View style={styles.grid}>
-
                   <View style={styles.gridCard}>
-                    <Text style={styles.gridLabel}>PRIX DE REVIENT</Text>
+                    <Text style={styles.gridLabel}>COÛT MOYEN</Text>
                     {metalMetrics.map((m) => (
                       <Text key={m.metal} style={styles.gridValue}>
                         {METAL_CONFIG[m.metal].name} — {fmtEur(m.avgPrice)} {currencySymbol}
@@ -389,7 +425,7 @@ export default function StatistiquesScreen() {
                   </View>
 
                   <View style={styles.gridCard}>
-                    <Text style={styles.gridLabel}>DÉTENTION MOYENNE</Text>
+                    <Text style={styles.gridLabel}>ANCIENNETÉ</Text>
                     <Text style={[styles.gridValue, styles.gridValueLarge]}>
                       {fmtMonths(globalAvgMonths)}
                     </Text>
@@ -401,7 +437,7 @@ export default function StatistiquesScreen() {
                   </View>
 
                   <View style={styles.gridCard}>
-                    <Text style={styles.gridLabel}>ALLOCATION OR / ARGENT</Text>
+                    <Text style={styles.gridLabel}>ALLOCATION</Text>
                     {hasRatio ? (
                       <>
                         <Text style={[styles.gridValue, styles.gridValueLarge]}>
@@ -417,52 +453,76 @@ export default function StatistiquesScreen() {
                       </Text>
                     )}
                   </View>
-
-                </View>
-
-                {/* ── 5. Conseil intelligent ── */}
-                <Text style={styles.sectionTitle}>ANALYSE ORTRACK</Text>
-                <View style={[
-                  styles.adviceCard,
-                  advice.type === 'warning' && styles.adviceWarning,
-                  advice.type === 'good' && styles.adviceGood,
-                  advice.type === 'info' && styles.adviceInfo,
-                ]}>
-                  <Text style={styles.adviceIcon}>
-                    {advice.type === 'warning' ? '⚠️' : advice.type === 'good' ? '✅' : '💡'}
-                  </Text>
-                  <View style={styles.adviceContent}>
-                    <Text style={styles.adviceText}>{advice.text}</Text>
-                    {advice.type === 'good' && totalGainLossPct !== null && totalGainLossPct > 50 && (
-                      <TouchableOpacity
-                        onPress={() => router.push('/fiscalite-globale' as never)}
-                        style={styles.adviceLink}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.adviceLinkText}>Simuler ma fiscalité →</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
                 </View>
               </>
             ) : (
-              <TouchableOpacity
-                style={styles.premiumStatsCard}
-                onPress={showPaywall}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.premiumStatsTitle}>
-                  Statistiques détaillées
-                </Text>
-                <Text style={styles.premiumStatsSubtitle}>
-                  Classement des positions, métriques clés et analyse personnalisée disponibles en Premium.
-                </Text>
-                <View style={styles.premiumStatsBadge}>
-                  <Text style={styles.premiumStatsBadgeText}>
-                    Découvrir Premium
-                  </Text>
+              <>
+                {/* Placeholder premium avec aperçu */}
+                <View style={styles.premiumPreviewContainer}>
+                  <View pointerEvents="none">
+
+                    {/* Placeholder Positions */}
+                    <View style={[styles.card, { opacity: 0.25 }]}>
+                      <View style={styles.podiumRow}>
+                        <View style={styles.rankBadge}>
+                          <Text style={styles.rankBadgeText}>1</Text>
+                        </View>
+                        <View style={styles.podiumInfo}>
+                          <Text style={styles.podiumProduct}>Position</Text>
+                          <Text style={styles.podiumMetal}>—</Text>
+                        </View>
+                        <Text style={styles.placeholderText}>+XX,X %</Text>
+                      </View>
+                      <View style={styles.divider} />
+                      <View style={styles.podiumRow}>
+                        <View style={[styles.rankBadge, styles.rankBadgeSilver]}>
+                          <Text style={[styles.rankBadgeText, styles.rankBadgeTextSilver]}>2</Text>
+                        </View>
+                        <View style={styles.podiumInfo}>
+                          <Text style={styles.podiumProduct}>Position</Text>
+                          <Text style={styles.podiumMetal}>—</Text>
+                        </View>
+                        <Text style={styles.placeholderText}>+XX,X %</Text>
+                      </View>
+                    </View>
+
+                    {/* Placeholder Métriques */}
+                    <View style={[styles.grid, { marginTop: 12 }]}>
+                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
+                        <Text style={styles.gridLabel}>COÛT MOYEN</Text>
+                        <Text style={styles.placeholderValue}>— €</Text>
+                      </View>
+                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
+                        <Text style={styles.gridLabel}>POIDS TOTAL</Text>
+                        <Text style={styles.placeholderValue}>— g</Text>
+                      </View>
+                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
+                        <Text style={styles.gridLabel}>ANCIENNETÉ</Text>
+                        <Text style={styles.placeholderValue}>— ans</Text>
+                      </View>
+                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
+                        <Text style={styles.gridLabel}>ALLOCATION</Text>
+                        <Text style={styles.placeholderValue}>— : —</Text>
+                      </View>
+                    </View>
+
+                  </View>
+
+                  {/* Overlay cadenas + CTA */}
+                  <View style={styles.premiumOverlay}>
+                    <Ionicons name="lock-closed" size={24} color={OrTrackColors.gold} />
+                    <Text style={styles.premiumOverlayTitle}>Statistiques détaillées</Text>
+                    <TouchableOpacity
+                      style={styles.premiumCtaButton}
+                      onPress={showPaywall}
+                      activeOpacity={0.7}
+                      accessibilityLabel="Débloquer les statistiques détaillées"
+                    >
+                      <Text style={styles.premiumCtaText}>Débloquer</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              </TouchableOpacity>
+              </>
             )}
 
           </>
@@ -619,7 +679,23 @@ const styles = StyleSheet.create({
   barMeta: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 6,
+  },
+  barLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  metalBadgeSmall: {
+    borderWidth: 1,
+    borderRadius: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 1,
+  },
+  metalBadgeSmallText: {
+    fontSize: 8,
+    fontWeight: '700',
   },
   barLabel: {
     fontSize: 13,
@@ -740,7 +816,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     borderWidth: 1,
-    marginBottom: 8,
+    marginBottom: 20,
   },
   adviceWarning: {
     backgroundColor: 'rgba(255,193,7,0.08)',
@@ -775,41 +851,48 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Premium stats card
-  premiumStatsCard: {
-    backgroundColor: OrTrackColors.card,
+  // Premium placeholder
+  premiumPreviewContainer: {
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  placeholderText: {
+    color: OrTrackColors.subtext,
+    fontSize: 14,
+  },
+  placeholderValue: {
+    color: OrTrackColors.subtext,
+    fontSize: 18,
+    fontWeight: '700',
+  },
+  premiumOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(18, 17, 15, 0.85)',
+  },
+  premiumOverlayTitle: {
+    color: OrTrackColors.white,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 12,
+    marginBottom: 16,
+  },
+  premiumCtaButton: {
+    backgroundColor: OrTrackColors.gold,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.3)',
-    padding: 20,
-    marginTop: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
     alignItems: 'center',
   },
-  premiumStatsTitle: {
+  premiumCtaText: {
+    color: OrTrackColors.background,
     fontSize: 15,
     fontWeight: '700',
-    color: OrTrackColors.gold,
-    marginBottom: 8,
-  },
-  premiumStatsSubtitle: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  premiumStatsBadge: {
-    backgroundColor: 'rgba(201,168,76,0.15)',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.4)',
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-  },
-  premiumStatsBadgeText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
   },
 
   // Colors
