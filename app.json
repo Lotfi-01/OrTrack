@@ -4,7 +4,7 @@
     "slug": "ortrack",
     "version": "1.0.1",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/icon.png",
     "scheme": "ortrack",
     "userInterfaceStyle": "automatic",
     "splash": {
@@ -19,8 +19,8 @@
       "backgroundColor": "#161410",
       "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/icon.png",
-        "backgroundColor": "#0A0C14"
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0C0B09"
       },
       "versionCode": 8,
       "package": "com.ortrack.app",

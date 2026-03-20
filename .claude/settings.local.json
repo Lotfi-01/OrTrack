@@ -29,7 +29,8 @@
       "Bash(git ls-files:*)",
       "Bash(grep -Pn '[^\\\\x00-\\\\x7F]{2,}' components/premium-paywall.tsx)",
       "Bash(grep:*)",
-      "Bash(grep -c \"''premium''\" services/revenuecat.ts)"
+      "Bash(grep -c \"''premium''\" services/revenuecat.ts)",
+      "Bash(find assets/ -name *.png -o -name *.jpg)"
     ]
   }
 }
