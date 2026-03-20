@@ -1,57 +1,91 @@
-import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { OrTrackColors } from '@/constants/theme';
+import { usePremium } from '@/contexts/premium-context';
 
-const FEATURES_FREE = [
-  { feature: 'Cours 5 métaux', free: '✓', premium: '✓', emoji: '📊' },
-  { feature: 'Suivi portfolio',          free: '✓', premium: '✓', emoji: '💼' },
-];
+type FeatureRow = {
+  feature: string;
+  free: string;
+  premium: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  freeIsCheck?: boolean;
+  premiumIsCheck?: boolean;
+};
 
-const FEATURES_PREMIUM = [
-  { feature: 'Positions',          free: '3 max',     premium: 'Illimité',    emoji: '🪙' },
-  { feature: 'Historique',         free: '1 an',      premium: '20 ans',      emoji: '📈' },
-  { feature: 'Alertes',            free: '2 max',     premium: 'Illimitées',  emoji: '🔔' },
-  { feature: 'Actualités métaux',  free: '2 sources', premium: '6+',          emoji: '📰' },
-  { feature: 'Fiscalité',          free: 'Forfaitaire', premium: '2 régimes',  emoji: '🏛️' },
-  { feature: 'Export CSV',         free: '—',         premium: '✓',           emoji: '📋' },
-  { feature: 'Statistiques',       free: '—',         premium: '✓',           emoji: '📉' },
+const FEATURES: FeatureRow[] = [
+  { feature: 'Positions',         free: '3 max',       premium: 'Illimit\u00e9',   icon: 'layers-outline' },
+  { feature: 'Historique',        free: '1 an',        premium: '20 ans',           icon: 'trending-up-outline' },
+  { feature: 'Alertes',           free: '2 max',       premium: 'Illimit\u00e9es', icon: 'notifications-outline' },
+  { feature: 'Actualit\u00e9s m\u00e9taux', free: '2 sources', premium: '6+',     icon: 'newspaper-outline' },
+  { feature: 'Fiscalit\u00e9',   free: 'Forfaitaire', premium: '2 r\u00e9gimes',  icon: 'business-outline' },
+  { feature: 'Export CSV',        free: '\u2014',       premium: 'check',           icon: 'download-outline', premiumIsCheck: true },
+  { feature: 'Statistiques',      free: '\u2014',       premium: 'check',           icon: 'stats-chart-outline', premiumIsCheck: true },
 ];
 
 export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
+  const { offerings, isPurchasing, handlePurchase, handleRestore, retryLoadOfferings, isPremium } = usePremium();
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
+
+  // Guard : d\u00e9j\u00e0 Premium
+  if (isPremium) {
+    return (
+      <SafeAreaView style={{ backgroundColor: 'transparent', flex: 1 }} edges={['top']}>
+        <View style={styles.premiumDoneContainer}>
+          <Ionicons name="checkmark-circle" size={48} color={OrTrackColors.gold} />
+          <Text style={styles.premiumDoneTitle}>Vous \u00eates Premium !</Text>
+          <TouchableOpacity style={styles.premiumDoneButton} onPress={onClose} activeOpacity={0.8}>
+            <Text style={styles.premiumDoneButtonText}>Fermer</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const hasOfferings = offerings.monthly !== null || offerings.annual !== null;
+  const selectedPkg = selectedPlan === 'annual' ? offerings.annual : offerings.monthly;
+
+  const handleSubscribe = () => {
+    if (!selectedPkg) return;
+    handlePurchase(selectedPkg);
+  };
+
+  const handleRestorePress = async () => {
+    setIsRestoring(true);
+    const restored = await handleRestore();
+    setIsRestoring(false);
+    if (!restored) {
+      Alert.alert('Aucun abonnement trouv\u00e9', "Aucun achat Premium n'a \u00e9t\u00e9 trouv\u00e9 sur ce compte.");
+    }
+  };
+
+  const handleRetry = async () => {
+    setIsRetrying(true);
+    await retryLoadOfferings();
+    setIsRetrying(false);
+  };
+
+  const ctaDisabled = isPurchasing;
+
   return (
     <SafeAreaView style={{ backgroundColor: 'transparent' }} edges={['top']}>
-      {/* Bouton fermer — HORS du ScrollView, toujours visible */}
+      {/* Bouton fermer */}
       <TouchableOpacity
-        onPress={onClose}
+        onPress={isPurchasing ? undefined : onClose}
         hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        style={{
-          position: 'absolute',
-          top: 16,
-          right: 16,
-          zIndex: 10,
-          width: 36,
-          height: 36,
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: OrTrackColors.background,
-          borderRadius: 18,
-        }}
+        style={[styles.closeButton, isPurchasing && { opacity: 0.4 }]}
+        disabled={isPurchasing}
       >
-        <Svg width={20} height={20} viewBox="0 0 24 24">
-          <Path
-            d="M18 6L6 18M6 6l12 12"
-            stroke={OrTrackColors.subtext}
-            strokeWidth={2}
-            strokeLinecap="round"
-          />
-        </Svg>
+        <Ionicons name="close" size={22} color={OrTrackColors.subtext} />
       </TouchableOpacity>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 52, paddingBottom: 40 }}
+        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 52, paddingBottom: 80 }}
         showsVerticalScrollIndicator={false}
         bounces={false}
         overScrollMode="never"
@@ -74,100 +108,166 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
 
         {/* Titre + sous-titre */}
         <Text style={styles.title}>OrTrack Premium</Text>
-        <Text style={styles.subtitle}>L'excellence pour vos métaux précieux</Text>
+        <Text style={styles.subtitle}>Tout votre patrimoine m{'\u00e9'}taux. Sans limite.</Text>
 
-        {/* Entête tableau */}
+        {/* Entete tableau */}
         <View style={styles.tableHeader}>
           <View style={styles.featureCol}>
             <View style={{ width: 22 }} />
-            <Text style={styles.headerLabel}>Fonctionnalité</Text>
+            <Text style={styles.headerLabel}>Fonctionnalit{'\u00e9'}</Text>
           </View>
-          <Text style={styles.headerLabelCenter}>Inclus</Text>
+          <Text style={styles.headerLabelCenter}>Gratuit</Text>
           <Text style={[styles.headerLabelCenter, { color: OrTrackColors.gold }]}>Premium</Text>
         </View>
 
-        {/* Header de section Inclus */}
+        {/* Section Avantages Premium */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionHeaderText}>
-            ✓  INCLUS DANS TOUS LES PLANS
+            AVANTAGES PREMIUM
           </Text>
         </View>
 
-        {/* Lignes gratuites */}
-        {FEATURES_FREE.map((item, index) => (
-          <View key={`free-${index}`} style={styles.tableRow}>
-            <View style={styles.featureCol}>
-              <Text style={styles.emojiText}>{item.emoji}</Text>
-              <Text style={styles.featureText}>{item.feature}</Text>
-            </View>
-            <Text style={styles.freeText}>{item.free}</Text>
-            <Text style={styles.premiumText}>{item.premium}</Text>
-          </View>
-        ))}
-
-        {/* Header de section Premium */}
-        <View style={[styles.sectionHeader, { marginTop: 12 }]}>
-          <Text style={styles.sectionHeaderText}>
-            ★  AVANTAGES PREMIUM
-          </Text>
-        </View>
-
-        {/* Lignes premium */}
-        {FEATURES_PREMIUM.map((item, index) => (
+        {/* Lignes du tableau */}
+        {FEATURES.map((item, index) => (
           <View
-            key={`prem-${index}`}
-            style={styles.tableRow}
+            key={index}
+            style={[
+              styles.tableRow,
+              index % 2 === 0 && styles.tableRowEven,
+            ]}
           >
             <View style={styles.featureCol}>
-              <Text style={styles.emojiText}>{item.emoji}</Text>
+              <View style={styles.iconCell}>
+                <Ionicons name={item.icon} size={20} color={OrTrackColors.gold} />
+              </View>
               <Text style={styles.featureText}>{item.feature}</Text>
             </View>
-            <Text style={styles.freeText}>{item.free}</Text>
-            <Text style={styles.premiumText}>{item.premium}</Text>
+            {item.freeIsCheck ? (
+              <View style={styles.checkCell}>
+                <Ionicons name="checkmark" size={16} color={OrTrackColors.subtext} />
+              </View>
+            ) : (
+              <Text style={styles.freeText}>{item.free}</Text>
+            )}
+            {item.premiumIsCheck ? (
+              <View style={styles.checkCell}>
+                <Ionicons name="checkmark" size={16} color={OrTrackColors.gold} />
+              </View>
+            ) : (
+              <Text style={styles.premiumText}>{item.premium}</Text>
+            )}
           </View>
         ))}
 
-        {/* Réassurance */}
+        {/* Reassurance */}
         <Text style={styles.reassuranceText}>
-          Sans engagement · Annulez à tout moment · Données privées
+          Sans engagement {'\u00b7'} Annulez {'\u00e0'} tout moment {'\u00b7'} Donn{'\u00e9'}es priv{'\u00e9'}es
         </Text>
 
         {/* Cards tarification */}
         <View style={styles.pricingRow}>
           {/* Mensuel */}
-          <View style={styles.pricingCard}>
+          <TouchableOpacity
+            style={[
+              styles.pricingCard,
+              selectedPlan === 'monthly' && styles.pricingCardSelected,
+            ]}
+            onPress={() => setSelectedPlan('monthly')}
+            activeOpacity={0.7}
+          >
             <Text style={styles.pricingLabel}>Mensuel</Text>
-            <Text style={styles.pricingPrice}>{'2,99€'}</Text>
+            <Text style={styles.pricingPrice}>
+              {offerings.monthly?.product.priceString ?? '2,99\u20AC'}
+            </Text>
             <Text style={styles.pricingSub}>/mois</Text>
-          </View>
+          </TouchableOpacity>
 
           {/* Annuel */}
-          <View style={[styles.pricingCard, styles.pricingCardAnnual]}>
+          <TouchableOpacity
+            style={[
+              styles.pricingCard,
+              styles.pricingCardAnnual,
+              selectedPlan === 'annual' && styles.pricingCardSelected,
+            ]}
+            onPress={() => setSelectedPlan('annual')}
+            activeOpacity={0.7}
+          >
             <View style={styles.badge}>
-              <Text style={styles.badgeText}>{'−21€/an'}</Text>
+              <Text style={styles.badgeText}>{'\u221221\u20AC/an'}</Text>
             </View>
             <Text style={[styles.pricingLabel, { color: OrTrackColors.gold }]}>Annuel</Text>
-            <Text style={styles.pricingPrice}>{'14,99€'}</Text>
+            <Text style={styles.pricingPrice}>
+              {offerings.annual?.product.priceString ?? '14,99\u20AC'}
+            </Text>
             <Text style={styles.pricingSub}>/an</Text>
-            <Text style={styles.pricingEquiv}>{'soit 1,25€/mois'}</Text>
-          </View>
+            <Text style={styles.pricingEquiv}>{'soit 1,25\u20AC/mois'}</Text>
+          </TouchableOpacity>
         </View>
 
-        {/* Message passif */}
-        <View style={styles.passiveContainer}>
-          <View style={styles.passiveBox}>
-            <Text style={styles.passiveTitle}>Bientôt disponible</Text>
-            <Text style={styles.passiveBody}>
-              Toutes les fonctionnalités sont gratuites pendant le lancement
-            </Text>
-          </View>
+        {/* CTA S'abonner */}
+        <View style={{ marginTop: 20 }}>
+          {hasOfferings ? (
+            <TouchableOpacity
+              style={[styles.ctaButton, ctaDisabled && { opacity: 0.6 }]}
+              onPress={ctaDisabled ? undefined : handleSubscribe}
+              disabled={ctaDisabled}
+              activeOpacity={0.8}
+            >
+              {isPurchasing && !isRestoring ? (
+                <ActivityIndicator color="#12110F" />
+              ) : (
+                <Text style={styles.ctaText}>
+                  S'abonner {'\u00b7'} {selectedPlan === 'annual'
+                    ? (offerings.annual?.product.priceString ?? '14,99\u20AC') + ' / an'
+                    : (offerings.monthly?.product.priceString ?? '2,99\u20AC') + ' / mois'}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.ctaRetryButton, isRetrying && { opacity: 0.6 }]}
+              onPress={isRetrying ? undefined : handleRetry}
+              disabled={isRetrying}
+              activeOpacity={0.8}
+            >
+              {isRetrying ? (
+                <ActivityIndicator color={OrTrackColors.gold} />
+              ) : (
+                <Text style={styles.ctaRetryText}>R{'\u00e9'}essayer</Text>
+              )}
+            </TouchableOpacity>
+          )}
         </View>
+
+        {/* Restaurer */}
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={ctaDisabled ? undefined : handleRestorePress}
+          disabled={ctaDisabled}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.restoreText, (isRestoring || ctaDisabled) && { opacity: 0.6 }]}>
+            {isRestoring ? 'Restauration...' : 'Restaurer mes achats'}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  closeButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    width: 36,
+    height: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 18,
+  },
   crownContainer: {
     alignItems: 'center',
     marginTop: 8,
@@ -231,16 +331,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: 'rgba(42,38,32,0.5)',
   },
+  tableRowEven: {
+    backgroundColor: 'rgba(201,168,76,0.04)',
+  },
   featureCol: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-  emojiText: {
-    fontSize: 14,
+  iconCell: {
     width: 22,
-    textAlign: 'center',
+    alignItems: 'center',
   },
   featureText: {
     fontSize: 13,
@@ -259,6 +361,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: OrTrackColors.gold,
     textAlign: 'center',
+  },
+  checkCell: {
+    width: 72,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reassuranceText: {
     fontSize: 11,
@@ -282,8 +389,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pricingCardAnnual: {
-    borderColor: OrTrackColors.gold,
     overflow: 'visible',
+  },
+  pricingCardSelected: {
+    borderColor: OrTrackColors.gold,
+    backgroundColor: 'rgba(201,168,76,0.06)',
   },
   badge: {
     position: 'absolute',
@@ -320,31 +430,66 @@ const styles = StyleSheet.create({
     color: OrTrackColors.gold,
     marginTop: 4,
   },
-  passiveContainer: {
-    marginTop: 20,
+  ctaButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: OrTrackColors.gold,
+    borderRadius: 14,
+    paddingVertical: 16,
   },
-  passiveBox: {
-    backgroundColor: 'rgba(201,168,76,0.08)',
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.12)',
+  ctaText: {
+    color: '#12110F',
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  ctaRetryButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    width: '100%',
+    justifyContent: 'center',
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 14,
+    paddingVertical: 16,
+    borderWidth: 1.5,
+    borderColor: OrTrackColors.gold,
   },
-  passiveTitle: {
-    fontSize: 13,
+  ctaRetryText: {
     color: OrTrackColors.gold,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
-  passiveBody: {
-    fontSize: 11,
+  restoreButton: {
+    alignItems: 'center',
+    marginTop: 12,
+    paddingVertical: 8,
+  },
+  restoreText: {
+    fontSize: 13,
     color: OrTrackColors.subtext,
-    marginTop: 4,
-    textAlign: 'center',
-    lineHeight: 16,
+  },
+  premiumDoneContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 32,
+  },
+  premiumDoneTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: OrTrackColors.gold,
+    marginTop: 16,
+  },
+  premiumDoneButton: {
+    backgroundColor: OrTrackColors.gold,
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 48,
+    marginTop: 24,
+  },
+  premiumDoneButtonText: {
+    color: '#12110F',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });
