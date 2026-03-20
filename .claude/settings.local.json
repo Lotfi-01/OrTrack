@@ -24,7 +24,9 @@
       "Bash(curl:*)",
       "Bash(npm uninstall:*)",
       "Bash(ls \"app/\\(tabs\\)/\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git ls-files:*)"
     ]
   }
 }
