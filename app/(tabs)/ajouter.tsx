@@ -845,8 +845,7 @@ export default function AjouterScreen() {
                 </View>
               )}
 
-<<<<<<< HEAD
-              {/* ── Stepper étape 2 + Formulaire (corrections 6, 7, 10) ── */}
+              {/* ── Stepper étape 2 + Formulaire ── */}
               {isStep2Active && (
                 <View
                   style={styles.section}
@@ -867,61 +866,6 @@ export default function AjouterScreen() {
                     <View>
                       <Text style={styles.miniRecapText}>
                         {product.label} · {product.weightG !== null ? fmtG(product.weightG) : fmtG(toNum(customWeight))}
-=======
-              {/* ── Formulaire ──────────────────────────────────────── */}
-              <View
-                style={styles.section}
-                onLayout={(e) => { formYRef.current = e.nativeEvent.layout.y; }}
-              >
-                <Text style={styles.sectionTitle}>Détails de l'achat</Text>
-                <View style={styles.fieldGroup}>
-
-                  <View style={styles.field}>
-                    <Text style={styles.fieldLabel}>Quantité</Text>
-                    <View style={styles.inputWrapper}>
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="decimal-pad"
-                        placeholder="1"
-                        placeholderTextColor={OrTrackColors.tabIconDefault}
-                        value={quantity}
-                        onChangeText={setQuantity}
-                      />
-                      <Text style={styles.inputSuffix}>pièce(s)</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.field}>
-                    <View style={styles.fieldLabelRow}>
-                      <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
-                      {!priceAnalysis.priceMatchesSpot && estimatedValue !== null && estimatedValue > 0 ? (
-                        <TouchableOpacity
-                          onPress={() => { setPurchasePrice(estimatedValue!.toFixed(2)); setIsPriceFocused(false); }}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.quickFillBtn, { fontSize: 13 }]}>Utiliser le cours actuel</Text>
-                        </TouchableOpacity>
-                      ) : estimatedValue === null || estimatedValue <= 0 ? (
-                        <Text style={styles.priceRefUnavailable}>Cours indisponible</Text>
-                      ) : null}
-                    </View>
-                    <View style={styles.inputWrapper}>
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="decimal-pad"
-                        placeholder="Ex : 1 700"
-                        placeholderTextColor={OrTrackColors.tabIconDefault}
-                        value={isPriceFocused ? purchasePrice : purchasePrice.replace(/\./g, ',')}
-                        onChangeText={setPurchasePrice}
-                        onFocus={() => setIsPriceFocused(true)}
-                        onBlur={() => setIsPriceFocused(false)}
-                      />
-                      <Text style={styles.inputSuffix}>{currencySymbol}</Text>
-                    </View>
-                    {priceAnalysis.showPriceReference && (
-                      <Text style={styles.priceRef}>
-                        Cours actuel : {estimatedValue!.toFixed(2)} €
->>>>>>> 8500ca468a5071bbcd185326db27e9e7ed8e4436
                       </Text>
                       <View style={styles.miniRecapSeparator} />
                     </View>
@@ -968,7 +912,9 @@ export default function AjouterScreen() {
                           keyboardType="decimal-pad"
                           placeholder="Ex : 1 700"
                           placeholderTextColor={OrTrackColors.tabIconDefault}
-                          value={purchasePrice}
+                          value={isPriceFocused ? purchasePrice : purchasePrice.replace(/\./g, ',')}
+                          onFocus={() => setIsPriceFocused(true)}
+                          onBlur={() => setIsPriceFocused(false)}
                           onChangeText={(text) => {
                             let n = text.replace(/[\s\u00A0]/g, '');
                             n = n.replace(/,/g, '.');
