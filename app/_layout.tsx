@@ -12,6 +12,7 @@ import BiometricLock from '@/components/BiometricLock';
 import { OrTrackColors } from '@/constants/theme';
 import { PremiumProvider } from '@/contexts/premium-context';
 import { checkPriceAlerts } from '@/hooks/use-price-alerts';
+import { trackInstall } from '@/lib/trackInstall';
 import { registerForPushNotifications } from '../services/notifications';
 
 // Afficher les notifications quand l'app est au premier plan
@@ -114,6 +115,12 @@ export default function RootLayout() {
     registerForPushNotifications().catch((e) => {
       console.log('Push registration failed:', e);
     });
+  }, [ready]);
+
+  // Tracker l'installation dans Supabase
+  useEffect(() => {
+    if (!ready) return;
+    trackInstall();
   }, [ready]);
 
   // Vérifier si l'onboarding a été complété

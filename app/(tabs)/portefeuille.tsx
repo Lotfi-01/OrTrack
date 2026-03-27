@@ -35,6 +35,10 @@ const STORAGE_KEY = '@ortrack:positions';
 const HIDE_VALUE_KEY = '@ortrack:hide_portfolio_value';
 const OZ_TO_G = 31.10435;
 
+// Taux fiscaux métaux précieux (France)
+const TAUX_FORFAITAIRE = 0.115; // TMP 11,5%
+const TAUX_PLUS_VALUES = 0.362; // 36,2% (19% IR + 17,2% PS)
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtEur(n: number): string {
@@ -56,6 +60,37 @@ function fmtQty(n: number): string {
 }
 
 const getPositionMetal = (p: Position): MetalType => p.metal;
+
+// TODO v1.2 : extraire dans services/fiscal-calculator.ts
+// pour partager avec fiscalite.tsx
+function computeNetGains(
+  currentValue: number,
+  totalCost: number,
+  gainLoss: number,
+  abattement: number
+): {
+  netForfaitaire: number;
+  netPlusValues: number;
+  bestRegime: 'forfaitaire' | 'plusvalues';
+} {
+  const taxeForfaitaire = currentValue * TAUX_FORFAITAIRE;
+  const netForfaitaire = currentValue - taxeForfaitaire - totalCost;
+
+  let netPlusValues: number;
+  if (gainLoss > 0) {
+    const gainTaxable = gainLoss * (1 - abattement / 100);
+    const taxePV = gainTaxable * TAUX_PLUS_VALUES;
+    netPlusValues = gainLoss - taxePV;
+  } else {
+    netPlusValues = gainLoss;
+  }
+
+  const bestRegime = netPlusValues >= netForfaitaire
+    ? 'plusvalues' as const
+    : 'forfaitaire' as const;
+
+  return { netForfaitaire, netPlusValues, bestRegime };
+}
 
 function parseDateDMY(dateStr: string): Date | null {
   const parts = dateStr.split('/');
@@ -124,12 +159,15 @@ type PositionCardProps = {
   spotEur: number | null;
   pricesLoading: boolean;
   onDelete: (id: string) => void;
+  onEdit: () => void;
   onFiscalite: () => void;
   currencySymbol: string;
   hideValue: boolean;
+  isPremium: boolean;
+  showPaywall: () => void;
 };
 
-function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, currencySymbol, hideValue }: PositionCardProps) {
+function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscalite, currencySymbol, hideValue, isPremium, showPaywall }: PositionCardProps) {
   const [expanded, setExpanded] = useState(false);
   const totalWeightG = pos.quantity * pos.weightG;
   const totalCost = pos.quantity * pos.purchasePrice;
@@ -146,7 +184,20 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
       : null;
 
   const cfg = METAL_CONFIG[pos.metal];
+
+  // ── Fiscal + calcul gain net ──
   const fiscal = computeFiscalCountdown(pos.purchaseDate);
+  const abattement = fiscal?.abattement ?? 0;
+
+  const netGains = (currentValue !== null && gainLoss !== null)
+    ? computeNetGains(currentValue, totalCost, gainLoss, abattement)
+    : null;
+
+  const displayNet = netGains
+    ? (isPremium
+        ? (netGains.bestRegime === 'plusvalues' ? netGains.netPlusValues : netGains.netForfaitaire)
+        : netGains.netForfaitaire)
+    : null;
 
   return (
     <View style={styles.posCard}>
@@ -172,25 +223,56 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
       </TouchableOpacity>
 
       {/* ── Plus-value compacte (replié uniquement) ── */}
-      {!expanded && gainLoss !== null && !hideValue && (
-        <View style={styles.posCompactGain}>
-          <Text style={[styles.posCompactGainText, gainLoss >= 0 ? styles.positive : styles.negative]}>
-            {gainLoss >= 0 ? '+' : ''}{fmtEur(gainLoss)} {currencySymbol}
-            {gainLossPct !== null && (
-              `  (${gainLoss >= 0 ? '+' : ''}${fmtPct(gainLossPct)} %)`
-            )}
-          </Text>
+      {!expanded && !hideValue && (
+        <View>
+          {/* Gain brut — taille réduite mais COLORÉ vert/rouge */}
+          {gainLoss !== null && (
+            <Text style={[
+              styles.posCompactGainSmall,
+              gainLoss >= 0 ? styles.positive : styles.negative,
+            ]}>
+              {gainLoss >= 0 ? '+' : ''}{fmtEur(gainLoss)} {currencySymbol}
+              {gainLossPct !== null && (
+                `  (${gainLoss >= 0 ? '+' : ''}${fmtPct(gainLossPct)} %)`
+              )}
+            </Text>
+          )}
+
+          {/* NET = l'info principale, plus visible que le brut */}
+          {netGains && gainLoss !== null && gainLoss > 0 ? (
+            <View style={styles.posCompactNetMain}>
+              <Text style={styles.posCompactNetMainLabel}>Gain net : </Text>
+              <Text style={[
+                styles.posCompactNetMainValue,
+                (displayNet ?? 0) >= 0 ? styles.positive : styles.negative,
+              ]}>
+                {(displayNet ?? 0) >= 0 ? '+' : ''}{fmtEur(displayNet ?? 0)} {currencySymbol}
+              </Text>
+              {isPremium && netGains && (
+                <Text style={styles.posCompactRegime}>
+                  {' · '}{netGains.bestRegime === 'forfaitaire' ? 'Forfaitaire' : 'Plus-values'}
+                </Text>
+              )}
+            </View>
+          ) : gainLoss !== null && gainLoss <= 0 ? (
+            <Text style={styles.posCompactNoTax}>Aucune plus-value · Pas d'impôt</Text>
+          ) : null}
+
+          {/* CTA — visible sans déplier */}
+          <TouchableOpacity
+            onPress={onFiscalite}
+            activeOpacity={0.7}
+            style={styles.posCompactCta}
+          >
+            <Text style={styles.posCompactCtaText}>Simuler ma vente →</Text>
+          </TouchableOpacity>
         </View>
-      )}
-      {!expanded && currentValue !== null && !hideValue && (
-        <Text style={styles.posCompactCurrentValue}>
-          Vaut aujourd'hui : {fmtEur(currentValue)} {currencySymbol}
-        </Text>
       )}
 
       {/* ── Contenu déplié ── */}
       {expanded && (
         <>
+          {/* 1. Gain brut */}
           {gainLoss !== null && !hideValue && (
             <View style={styles.posGainRow}>
               <Text style={[styles.posGain, gainLoss >= 0 ? styles.positive : styles.negative]}>
@@ -204,38 +286,85 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
             </View>
           )}
 
-          <Text style={styles.posDetail}>
-            {fmtQty(pos.quantity)} · {fmtG(totalWeightG)} · Acheté le {pos.purchaseDate}
-          </Text>
-          {pos.quantity > 1 && (
-            <Text style={styles.posDetail}>
-              Prix d'achat : {fmtEur(pos.purchasePrice)} €/pièce
-            </Text>
-          )}
-          {pos.note ? <Text style={styles.posNote}>{pos.note}</Text> : null}
+          {/* 2. Gain net estimé — en gain */}
+          {netGains && !hideValue && gainLoss !== null && gainLoss > 0 && (
+            <View style={styles.netGainSection}>
+              <Text style={styles.netGainTitle}>NET ESTIMÉ</Text>
 
-          {!hideValue && <View style={styles.posDivider} />}
-
-          {!hideValue && (
-            <View style={styles.posValuesRow}>
-              <View style={styles.posValueCol}>
-                <Text style={styles.posValueLabel}>Investi</Text>
-                <Text style={styles.posValueAmount}>{fmtEur(totalCost)} {currencySymbol}</Text>
-              </View>
-              <View style={styles.posValueDivider} />
-              <View style={[styles.posValueCol, styles.posValueColRight]}>
-                <Text style={styles.posValueLabel}>Vaut aujourd'hui</Text>
-                <Text style={styles.posValueAmount}>
-                  {pricesLoading
-                    ? 'Calcul…'
-                    : currentValue !== null
-                    ? `${fmtEur(currentValue)} ${currencySymbol}`
-                    : '—'}
+              {/* Forfaitaire — toujours visible */}
+              <View style={styles.netGainRow}>
+                <Text style={styles.netGainLabel}>Forfaitaire (11,5%)</Text>
+                <Text style={[
+                  styles.netGainValue,
+                  netGains.netForfaitaire >= 0 ? styles.positive : styles.negative,
+                ]}>
+                  {netGains.netForfaitaire >= 0 ? '+' : ''}
+                  {fmtEur(netGains.netForfaitaire)} {currencySymbol}
                 </Text>
               </View>
+
+              {/* Plus-values — premium uniquement */}
+              {isPremium ? (
+                <View style={styles.netGainRow}>
+                  <Text style={styles.netGainLabel}>
+                    Plus-values ({abattement > 0 ? `${abattement}% abatt.` : '36,2%'})
+                  </Text>
+                  <Text style={[
+                    styles.netGainValue,
+                    netGains.netPlusValues >= 0 ? styles.positive : styles.negative,
+                  ]}>
+                    {netGains.netPlusValues >= 0 ? '+' : ''}
+                    {fmtEur(netGains.netPlusValues)} {currencySymbol}
+                  </Text>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  onPress={showPaywall}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Comparer les 2 régimes fiscaux"
+                >
+                  <View style={styles.premiumCompareRow}>
+                    <Ionicons name="lock-closed" size={14} color={OrTrackColors.gold} />
+                    <Text style={styles.premiumCompareText}>
+                      Comparer les 2 régimes
+                    </Text>
+                    <Text style={styles.premiumCompareChevron}>›</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
+
+              {/* Régime optimal — premium */}
+              {isPremium && netGains && (
+                <View style={styles.bestRegimeBanner}>
+                  <Text style={styles.bestRegimeText}>
+                    Régime optimal : {netGains.bestRegime === 'forfaitaire' ? 'Forfaitaire' : 'Plus-values'}
+                    {' · Économie : '}
+                    {fmtEur(Math.abs(netGains.netPlusValues - netGains.netForfaitaire))} {currencySymbol}
+                  </Text>
+                </View>
+              )}
             </View>
           )}
 
+          {/* 2b. Gain net estimé — en perte */}
+          {netGains && !hideValue && gainLoss !== null && gainLoss <= 0 && (
+            <View style={styles.netGainSection}>
+              <Text style={styles.noTaxMessage}>
+                Aucune plus-value · Pas d'impôt
+              </Text>
+            </View>
+          )}
+
+          {/* 3. CTA Simuler — remonté */}
+          <TouchableOpacity
+            onPress={onFiscalite}
+            activeOpacity={0.7}
+            style={styles.simulerInline}
+          >
+            <Text style={styles.simulerInlineText}>Simuler ma vente →</Text>
+          </TouchableOpacity>
+
+          {/* 4. Exonération fiscale */}
           {fiscal && (
             <View style={styles.fiscalCountdown}>
               <Text style={styles.fiscalTitle}>Exonération fiscale</Text>
@@ -266,14 +395,48 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onFiscalite, curr
             </View>
           )}
 
+          {/* 5. Détails d'achat */}
+          <Text style={styles.posDetail}>
+            {fmtQty(pos.quantity)} · {fmtG(totalWeightG)} · Acheté le {pos.purchaseDate}
+          </Text>
+          {pos.quantity > 1 && (
+            <Text style={styles.posDetail}>
+              Prix d'achat : {fmtEur(pos.purchasePrice)} €/pièce
+            </Text>
+          )}
+          {pos.note != null && pos.note.trim().length > 0 && pos.note.trim() !== 'Note' && (
+            <Text style={styles.posNote}>{pos.note}</Text>
+          )}
+
+          {/* 6. Investi / Vaut aujourd'hui */}
+          {!hideValue && <View style={styles.posDivider} />}
+
+          {!hideValue && (
+            <View style={styles.posValuesRow}>
+              <View style={styles.posValueCol}>
+                <Text style={styles.posValueLabel}>Investi</Text>
+                <Text style={styles.posValueAmount}>{fmtEur(totalCost)} {currencySymbol}</Text>
+              </View>
+              <View style={styles.posValueDivider} />
+              <View style={[styles.posValueCol, styles.posValueColRight]}>
+                <Text style={styles.posValueLabel}>Vaut aujourd'hui</Text>
+                <Text style={styles.posValueAmount}>
+                  {pricesLoading
+                    ? 'Calcul…'
+                    : currentValue !== null
+                    ? `${fmtEur(currentValue)} ${currencySymbol}`
+                    : '—'}
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* 7. Footer — Modifier + Supprimer */}
           <View style={styles.posExpandedFooter}>
             <TouchableOpacity
-              onPress={onFiscalite}
-              activeOpacity={0.7}
-              hitSlop={{ top: 12, bottom: 12, left: 8, right: 8 }}>
-              <Text style={styles.posSimulLink}>
-                Simulation fiscale →
-              </Text>
+              onPress={onEdit}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Text style={styles.editLabel}>Modifier</Text>
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => onDelete(pos.id)}
@@ -413,6 +576,11 @@ export default function PortefeuilleScreen() {
 
   const hasPositions = positions.length > 0;
 
+  // Net global estimé (approximation forfaitaire pour le header)
+  const totalNetEstime = (totalGainLoss !== null && totalGainLoss > 0 && allPricesKnown)
+    ? totalValue - (totalValue * TAUX_FORFAITAIRE) - totalCost
+    : totalGainLoss;
+
   // ─────────────────────────────────────────────────────────────────────────
 
   return (
@@ -460,7 +628,34 @@ export default function PortefeuilleScreen() {
                 )}
               </Text>
             )}
+            {totalNetEstime !== null && !hideValue && totalGainLoss !== null && totalGainLoss > 0 && (
+              <Text style={styles.compactNetGlobal}>
+                Gain net : ~{fmtEur(totalNetEstime)} {currencySymbol}
+              </Text>
+            )}
+            {totalNetEstime !== null && !hideValue && totalGainLoss !== null && totalGainLoss > 0 && (
+              <Text style={styles.compactNetTimestamp}>
+                Estimation après impôts
+              </Text>
+            )}
+            {totalGainLoss !== null && totalGainLoss <= 0 && !hideValue && (
+              <Text style={styles.compactNetGlobal}>
+                Aucun impôt si vente en régime plus-values
+              </Text>
+            )}
           </View>
+        )}
+
+        {/* ── CTA principal ── */}
+        {hasPositions && !hideValue && (
+          <TouchableOpacity
+            style={styles.primaryCta}
+            onPress={() => router.push('/fiscalite-globale' as never)}
+            activeOpacity={0.7}
+            accessibilityLabel="Voir combien je récupère"
+          >
+            <Text style={styles.primaryCtaText}>Voir combien je récupère →</Text>
+          </TouchableOpacity>
         )}
 
         {/* ── 3. Chips filtre métal ── */}
@@ -503,7 +698,9 @@ export default function PortefeuilleScreen() {
               {!isPremium && (
                 <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
                   <Text style={positions.length >= limits.maxPositions ? styles.positionsLimitFull : styles.positionsLimit}>
-                    {positions.length}/{limits.maxPositions} · {positions.length >= limits.maxPositions ? 'Débloquer plus de positions' : 'Passer à illimité'}
+                    {positions.length >= limits.maxPositions
+                      ? `${limits.maxPositions}/${limits.maxPositions} · Passer en Premium`
+                      : `${positions.length}/${limits.maxPositions} · Illimité en Premium`}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -516,9 +713,12 @@ export default function PortefeuilleScreen() {
                   spotEur={getSpot(pos.metal, prices)}
                   pricesLoading={pricesLoading}
                   onDelete={handleDelete}
+                  onEdit={() => router.push({ pathname: '/(tabs)/ajouter', params: { editId: pos.id } } as never)}
                   onFiscalite={() => router.push({ pathname: '/fiscalite', params: { positionId: pos.id } })}
                   currencySymbol={currencySymbol}
                   hideValue={hideValue}
+                  isPremium={isPremium}
+                  showPaywall={showPaywall}
                 />
               ))
             ) : metalFilter !== 'all' ? (
@@ -541,23 +741,13 @@ export default function PortefeuilleScreen() {
           </View>
         )}
 
-        {/* ── 5. Statistiques + Simulation ── */}
+        {/* ── 5. Statistiques ── */}
         {hasPositions && (
-          <>
-            <TouchableOpacity
-              style={styles.statsButton}
-              onPress={() => router.push('/statistiques' as never)}>
-              <Ionicons name="stats-chart-outline" size={18} color={OrTrackColors.gold} />
-              <Text style={styles.statsButtonText}>Statistiques →</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.globalFiscalButton}
-              onPress={() => router.push('/fiscalite-globale' as never)}>
-              <Ionicons name="calculator-outline" size={18} color={OrTrackColors.gold} />
-              <Text style={styles.globalFiscalText}>Simulation fiscale globale →</Text>
-            </TouchableOpacity>
-          </>
+          <TouchableOpacity
+            style={styles.statsButton}
+            onPress={() => router.push('/statistiques' as never)}>
+            <Text style={styles.statsButtonText}>Statistiques →</Text>
+          </TouchableOpacity>
         )}
 
       </ScrollView>
@@ -603,6 +793,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     marginTop: 4,
+  },
+  compactNetGlobal: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: OrTrackColors.white,
+    marginTop: 4,
+  },
+  compactNetTimestamp: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
+    marginTop: 2,
+    fontStyle: 'italic',
   },
 
   // 3. Chips filtre
@@ -650,16 +852,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    gap: 8,
   },
   positionsLimit: {
     fontSize: 11,
     color: OrTrackColors.subtext,
     fontWeight: '600',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   positionsLimitFull: {
     fontSize: 11,
     color: OrTrackColors.gold,
-    fontWeight: '600',
+    fontWeight: '700',
+    flexShrink: 1,
+    textAlign: 'right',
   },
   emptyFilterText: {
     fontSize: 13,
@@ -701,10 +908,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: OrTrackColors.white,
   },
-  deleteLabel: {
+  editLabel: {
     fontSize: 13,
-    color: '#E57373',
+    color: OrTrackColors.gold,
     fontWeight: '600',
+  },
+  deleteLabel: {
+    fontSize: 12,
+    color: '#E57373',
+    fontWeight: '500',
+    opacity: 0.7,
   },
   posDetail: {
     fontSize: 12,
@@ -766,8 +979,8 @@ const styles = StyleSheet.create({
 
   // Fiscal countdown
   fiscalCountdown: {
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 16,
+    paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: OrTrackColors.border,
   },
@@ -815,29 +1028,129 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: OrTrackColors.border,
   },
-  posSimulLink: {
+
+  // Net gain compact (collapsed)
+  posCompactRegime: {
+    fontSize: 11,
+    color: OrTrackColors.gold,
+    fontWeight: '500',
+  },
+
+  // Net gain expanded
+  noTaxMessage: {
+    fontSize: 13,
+    color: OrTrackColors.subtext,
+    paddingVertical: 4,
+  },
+  netGainSection: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: OrTrackColors.border,
+    marginBottom: 4,
+  },
+  netGainTitle: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: OrTrackColors.gold,
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  netGainRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  netGainLabel: {
+    fontSize: 13,
+    color: OrTrackColors.subtext,
+  },
+  netGainValue: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  premiumCompareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(201,168,76,0.06)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.2)',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 8,
+    gap: 8,
+  },
+  premiumCompareText: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '600',
     color: OrTrackColors.gold,
   },
+  premiumCompareChevron: {
+    fontSize: 18,
+    color: OrTrackColors.gold,
+    fontWeight: '300',
+  },
+  bestRegimeBanner: {
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(201,168,76,0.2)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  bestRegimeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
+    textAlign: 'center',
+  },
 
   // Compact (collapsed)
-  posCompactCurrentValue: {
-    fontSize: 12,
-    color: '#9A8E7E',
-    paddingBottom: 10,
-  },
-  posCompactGain: {
+  posCompactGainSmall: {
+    fontSize: 11,
+    fontWeight: '500',
     paddingTop: 4,
   },
-  posCompactGainText: {
+  posCompactNetMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    paddingTop: 4,
+  },
+  posCompactNetMainLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: OrTrackColors.white,
+  },
+  posCompactNetMainValue: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  posCompactNoTax: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    paddingTop: 4,
+  },
+  posCompactCta: {
+    marginTop: 10,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: OrTrackColors.border,
+  },
+  posCompactCtaText: {
     fontSize: 13,
     fontWeight: '600',
+    color: OrTrackColors.gold,
   },
 
   // Blur blocks
@@ -859,33 +1172,42 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: OrTrackColors.card,
     borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
+    padding: 10,
+    marginBottom: 8,
     marginTop: 8,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
   },
   statsButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
+    fontSize: 11,
+    fontWeight: '400',
+    color: OrTrackColors.subtext,
+    opacity: 0.6,
   },
-  globalFiscalButton: {
-    flexDirection: 'row',
-    backgroundColor: '#1F1B0A',
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 12,
+  primaryCta: {
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: OrTrackColors.gold,
+    paddingVertical: 14,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
+    marginBottom: 12,
   },
-  globalFiscalText: {
+  primaryCtaText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: OrTrackColors.gold,
+  },
+  simulerInline: {
+    paddingVertical: 12,
+    marginTop: 6,
+    marginBottom: 6,
+    borderTopWidth: 1,
+    borderTopColor: OrTrackColors.border,
+  },
+  simulerInlineText: {
     fontSize: 13,
     fontWeight: '600',
     color: OrTrackColors.gold,

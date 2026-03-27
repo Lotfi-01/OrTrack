@@ -121,6 +121,7 @@ export default function FiscaliteScreen() {
   const [saleDate, setSaleDate] = useState(todayStr());
   const [showDetail, setShowDetail] = useState(false);
   const [showCessionDetails, setShowCessionDetails] = useState(false);
+  const [disclaimerExpanded, setDisclaimerExpanded] = useState(false);
 
   const toggleCessionDetails = useCallback(() => {
     Keyboard.dismiss();
@@ -318,6 +319,22 @@ export default function FiscaliteScreen() {
                 </Text>
               </View>
 
+              {/* Recommandation */}
+              <View style={styles.recommendCard}>
+                <Text style={styles.recommendTitle}>
+                  {taxResult.isExempt
+                    ? 'Régime plus-values — exonération totale'
+                    : taxResult.plusValue <= 0 && bestRegime === 'plusvalues'
+                    ? 'Régime plus-values conseillé — cession à perte, aucune taxe'
+                    : `Régime ${bestRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'} conseillé`}
+                </Text>
+                {!taxResult.isExempt && taxResult.plusValue > 0 && (
+                  <Text style={styles.recommendSaving}>
+                    Économie estimée : {fmtEur(savings!)} €
+                  </Text>
+                )}
+              </View>
+
               {/* Régime forfaitaire */}
               <View style={[styles.card, styles.regimeCard, bestRegime === 'forfaitaire' && styles.regimeBest]}>
                 <View style={styles.regimeHeader}>
@@ -328,11 +345,10 @@ export default function FiscaliteScreen() {
                     </View>
                   )}
                 </View>
-                <Text style={styles.regimeDesc}>11,5 % du prix de cession, quels que soient la durée et le gain</Text>
-                <Text style={styles.regimeTaxAmount}>{fmtEur(taxResult.forfaitaire)} €</Text>
-                <Text style={styles.regimeNet}>
-                  Net encaissé : <Text style={styles.regimeNetAmount}>{fmtEur(salePrice - taxResult.forfaitaire)} €</Text>
-                </Text>
+                <Text style={styles.regimeDesc}>11,5 % du prix de cession</Text>
+                <Text style={styles.regimeNetLabel}>Net encaissé</Text>
+                <Text style={styles.regimeNetAmount}>{fmtEur(salePrice - taxResult.forfaitaire)} €</Text>
+                <Text style={styles.regimeTaxLine}>Taxe (11,5%) : {fmtEur(taxResult.forfaitaire)} €</Text>
               </View>
 
               {/* Régime plus-values */}
@@ -352,30 +368,11 @@ export default function FiscaliteScreen() {
                     ? 'Exonération totale — détention supérieure à 22 ans'
                     : taxResult.plusValue <= 0
                     ? 'Cession à perte — aucune plus-value imposable'
-                    : `36,2 % sur la PV après abattement de ${Math.round(taxResult.abattement * 100)} %`}
+                    : '36,2 % sur la plus-value après abattement'}
                 </Text>
-                <Text style={styles.regimeTaxAmount}>
-                  {fmtEur(taxResult.plusValuesTax)} €
-                </Text>
-                <Text style={styles.regimeNet}>
-                  Net encaissé : <Text style={styles.regimeNetAmount}>{fmtEur(salePrice - taxResult.plusValuesTax)} €</Text>
-                </Text>
-              </View>
-
-              {/* Recommandation */}
-              <View style={styles.recommendCard}>
-                <Text style={styles.recommendTitle}>
-                  {taxResult.isExempt
-                    ? 'Régime plus-values — exonération totale'
-                    : taxResult.plusValue <= 0 && bestRegime === 'plusvalues'
-                    ? 'Régime plus-values conseillé — cession à perte, aucune taxe'
-                    : `Régime ${bestRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'} conseillé`}
-                </Text>
-                {!taxResult.isExempt && taxResult.plusValue > 0 && (
-                  <Text style={styles.recommendSaving}>
-                    Économie estimée : {fmtEur(savings!)} €
-                  </Text>
-                )}
+                <Text style={styles.regimeNetLabel}>Net encaissé</Text>
+                <Text style={styles.regimeNetAmount}>{fmtEur(salePrice - taxResult.plusValuesTax)} €</Text>
+                <Text style={styles.regimeTaxLine}>Taxe (36,2%) : {fmtEur(taxResult.plusValuesTax)} €</Text>
               </View>
 
               {/* Bouton afficher/masquer détail */}
@@ -459,12 +456,38 @@ export default function FiscaliteScreen() {
             )
           )}
 
+          <Text style={styles.reassuranceLine}>
+            Calcul basé sur les règles fiscales françaises en vigueur
+          </Text>
+
           {/* ── Avertissement légal ── */}
-          <View style={styles.legalCard}>
-            <Text style={styles.legalText}>
-              Cette simulation est fournie à titre purement indicatif et ne constitue pas un conseil fiscal ou juridique. Les règles fiscales applicables aux métaux précieux (art. 150 VI du CGI) peuvent évoluer. Consultez un conseiller fiscal ou la Direction générale des finances publiques (DGFiP) pour votre situation personnelle.
+          <View style={styles.disclaimerBlock}>
+            <Text style={styles.disclaimerShort}>
+              Estimation indicative — ne constitue pas un conseil fiscal.
             </Text>
+            <TouchableOpacity
+              onPress={() => setDisclaimerExpanded(!disclaimerExpanded)}
+              activeOpacity={0.7}
+            >
+              <Text style={disclaimerExpanded ? styles.disclaimerToggleClose : styles.disclaimerToggle}>
+                {disclaimerExpanded ? 'Masquer' : 'Mentions fiscales'}
+              </Text>
+            </TouchableOpacity>
+            {disclaimerExpanded && (
+              <Text style={styles.disclaimerFull}>
+                Cette simulation est fournie à titre purement indicatif et ne constitue pas un conseil fiscal ou juridique. Les règles fiscales applicables aux métaux précieux (art. 150 VI du CGI) peuvent évoluer. Consultez un conseiller fiscal ou la Direction générale des finances publiques (DGFiP) pour votre situation personnelle.
+              </Text>
+            )}
           </View>
+
+          <TouchableOpacity
+            style={styles.exitCta}
+            onPress={() => router.back()}
+            activeOpacity={0.7}
+            accessibilityLabel="Retour au portefeuille"
+          >
+            <Text style={styles.exitCtaText}>← Retour au portefeuille</Text>
+          </TouchableOpacity>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -602,7 +625,7 @@ const styles = StyleSheet.create({
 
   // Cartes régime
   regimeCard: { marginBottom: 12 },
-  regimeBest: { borderColor: gold },
+  regimeBest: { borderColor: 'rgba(76,175,80,0.4)', backgroundColor: 'rgba(76,175,80,0.05)' },
   regimeHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -611,14 +634,9 @@ const styles = StyleSheet.create({
   },
   regimeName: { fontSize: 15, fontWeight: '700', color: white },
   regimeDesc: { fontSize: 12, color: subtext, marginBottom: 10, lineHeight: 18 },
-  regimeTaxAmount: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: white,
-    marginBottom: 4,
-  },
-  regimeNet: { fontSize: 12, color: subtext },
-  regimeNetAmount: { color: white, fontWeight: '600' },
+  regimeNetLabel: { fontSize: 12, color: subtext, marginBottom: 2 },
+  regimeNetAmount: { fontSize: 30, fontWeight: '800', color: '#4CAF50', marginBottom: 4 },
+  regimeTaxLine: { fontSize: 23, fontWeight: '400', color: subtext, opacity: 0.7 },
 
   recommendBadge: {
     backgroundColor: '#1F1B0A',
@@ -690,16 +708,56 @@ const styles = StyleSheet.create({
   },
   waitingText: { fontSize: 14, color: subtext, textAlign: 'center', lineHeight: 22 },
 
-  // Avertissement légal
-  legalCard: {
-    backgroundColor: card,
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: border,
-    marginTop: 4,
+  // Disclaimer
+  disclaimerBlock: {
+    marginTop: 16,
   },
-  legalText: { fontSize: 11, color: subtext, lineHeight: 18 },
+  disclaimerShort: {
+    fontSize: 11,
+    color: subtext,
+    textAlign: 'center',
+  },
+  disclaimerToggle: {
+    fontSize: 11,
+    color: gold,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  disclaimerToggleClose: {
+    fontSize: 11,
+    color: subtext,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  disclaimerFull: {
+    fontSize: 11,
+    color: subtext,
+    marginTop: 8,
+    lineHeight: 16,
+  },
+
+  reassuranceLine: {
+    fontSize: 11,
+    color: subtext,
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  exitCta: {
+    backgroundColor: card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: gold,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 20,
+  },
+  exitCtaText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: gold,
+  },
 
   positive: { color: '#4CAF50' },
   negative: { color: '#E07070' },

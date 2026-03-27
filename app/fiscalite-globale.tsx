@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -122,6 +123,8 @@ export default function FiscaliteGlobaleScreen() {
 
   const [positions, setPositions] = useState<Position[]>([]);
   const [saleDate, setSaleDate] = useState(todayStr());
+  const [disclaimerExpanded, setDisclaimerExpanded] = useState(false);
+  const [detailExpanded, setDetailExpanded] = useState(false);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
@@ -230,76 +233,31 @@ export default function FiscaliteGlobaleScreen() {
                 </View>
               )}
 
-              {/* 3. DÉTAIL PAR POSITION */}
-              <View style={styles.section}>
-                <Text style={styles.sectionLabel}>DÉTAIL PAR POSITION ({computed.length})</Text>
-
-                <View style={styles.card}>
-                  {computed.map((r, i) => {
-                    const cfg = METAL_CONFIG[r.pos.metal];
-                    return (
-                      <View key={r.pos.id}>
-                        {i > 0 && <View style={styles.separator} />}
-
-                        {/* Row 1 : badge + produit + durée */}
-                        <View style={styles.posRow}>
-                          <View style={[styles.badge, { backgroundColor: cfg.chipBg, borderColor: cfg.chipBorder }]}>
-                            <Text style={[styles.badgeText, { color: cfg.chipText }]}>{cfg.symbol}</Text>
-                          </View>
-                          <Text style={styles.posProduct} numberOfLines={1}>{r.pos.product}</Text>
-                          <Text style={styles.posDuration}>{r.years} an{r.years > 1 ? 's' : ''}</Text>
-                        </View>
-
-                        {/* Row 2 : forfaitaire vs plus-values */}
-                        <View style={{ marginTop: 4 }}>
-                          <View style={styles.taxLineRow}>
-                            <Text style={[
-                              styles.taxLabel,
-                              { color: r.bestRegime === 'forfaitaire' ? gold : subtext,
-                                fontWeight: r.bestRegime === 'forfaitaire' ? '700' : '400' },
-                            ]}>Taxe forfaitaire : {fmtEur(r.tax.forfaitaire)} €</Text>
-                            {r.bestRegime === 'forfaitaire' && (
-                              <View style={styles.miniBadgeBest}>
-                                <Text style={styles.miniBadgeBestText}>Le moins taxé</Text>
-                              </View>
-                            )}
-                          </View>
-                          <View style={styles.taxLineRow}>
-                            <Text style={[
-                              styles.fiscalLabelPV,
-                              { color: r.bestRegime === 'plusvalues' ? gold : subtext,
-                                fontWeight: r.bestRegime === 'plusvalues' ? '700' : '400' },
-                            ]}>Taxe plus-values : {fmtEur(r.tax.plusValuesTax)} €</Text>
-                            {r.bestRegime === 'plusvalues' && (
-                              <View style={styles.miniBadgeBest}>
-                                <Text style={styles.miniBadgeBestText}>
-                                  {r.tax.isExempt ? 'Exonéré' : 'Le moins taxé'}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-                        </View>
-                      </View>
-                    );
-                  })}
+              {/* 3. RECOMMANDATION */}
+              {economieGlobale > 0.01 && (
+                <View style={styles.savingCard}>
+                  <Text style={styles.savingTitle}>
+                    Régime {bestGlobalRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'} conseillé
+                  </Text>
+                  <Text style={styles.savingAmount}>Économie estimée : {fmtEur(economieGlobale)} €</Text>
                 </View>
-              </View>
+              )}
 
               {/* 4. RÉCAPITULATIF GLOBAL */}
               <View style={styles.section}>
                 <Text style={styles.sectionLabel}>RÉCAPITULATIF GLOBAL</Text>
 
-                {/* Valeur totale de cession */}
                 <View style={[styles.card, styles.recapHero]}>
-                  <Text style={styles.recapHeroLabel}>VALEUR TOTALE DE CESSION</Text>
+                  <Text style={styles.recapHeroLabel}>MONTANT TOTAL DE VENTE</Text>
                   <Text style={styles.recapHeroValue}>{fmtEur(totalSalePrice)} €</Text>
 
                   {/* Deux colonnes : forfaitaire vs plus-values */}
                   <View style={styles.recapColumns}>
                     <View style={[styles.recapCol, bestGlobalRegime === 'forfaitaire' && styles.recapColBest]}>
                       <Text style={styles.recapColTitle}>Forfaitaire</Text>
-                      <Text style={styles.recapColTax}>{fmtEur(totalForfaitaire)} €</Text>
-                      <Text style={styles.recapColNet}>Net : {fmtEur(netForfaitaire)} €</Text>
+                      <Text style={styles.recapColNetAmount}>{fmtEur(netForfaitaire)} €</Text>
+                      <Text style={styles.recapColNetLabel}>Net encaissé</Text>
+                      <Text style={styles.recapColTaxLine}>Taxe (11,5%) : {fmtEur(totalForfaitaire)} €</Text>
                       {bestGlobalRegime === 'forfaitaire' && (
                         <View style={styles.recommendBadge}>
                           <Text style={styles.recommendBadgeText}>Le moins taxé</Text>
@@ -308,8 +266,9 @@ export default function FiscaliteGlobaleScreen() {
                     </View>
                     <View style={[styles.recapCol, bestGlobalRegime === 'plusvalues' && styles.recapColBest]}>
                       <Text style={styles.recapColTitle}>Plus-values</Text>
-                      <Text style={styles.recapColTax}>{fmtEur(totalPlusValuesTax)} €</Text>
-                      <Text style={styles.recapColNet}>Net : {fmtEur(netPlusValues)} €</Text>
+                      <Text style={styles.recapColNetAmount}>{fmtEur(netPlusValues)} €</Text>
+                      <Text style={styles.recapColNetLabel}>Net encaissé</Text>
+                      <Text style={styles.recapColTaxLine}>Taxe (36,2%) : {fmtEur(totalPlusValuesTax)} €</Text>
                       {bestGlobalRegime === 'plusvalues' && (
                         <View style={styles.recommendBadge}>
                           <Text style={styles.recommendBadgeText}>Le moins taxé</Text>
@@ -319,23 +278,120 @@ export default function FiscaliteGlobaleScreen() {
                   </View>
                 </View>
 
-                {/* Recommandation + économie */}
                 {economieGlobale > 0.01 && (
-                  <View style={styles.savingCard}>
-                    <Text style={styles.savingTitle}>
-                      Régime {bestGlobalRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'} conseillé
+                  <View style={styles.savingsBanner}>
+                    <Text style={styles.savingsBannerText}>
+                      +{fmtEur(economieGlobale)} € avec le {bestGlobalRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'}
                     </Text>
-                    <Text style={styles.savingAmount}>Économie estimée : {fmtEur(economieGlobale)} €</Text>
                   </View>
                 )}
               </View>
 
-              {/* Avertissement légal */}
-              <View style={styles.legalCard}>
-                <Text style={styles.legalText}>
-                  Cette simulation est fournie à titre purement indicatif et ne constitue pas un conseil fiscal ou juridique. Les règles fiscales applicables aux métaux précieux (art. 150 VI du CGI) peuvent évoluer. Consultez un conseiller fiscal ou la Direction générale des finances publiques (DGFiP) pour votre situation personnelle.
+              {/* 5. DÉTAIL PAR POSITION (accordéon) */}
+              <TouchableOpacity
+                onPress={() => setDetailExpanded(!detailExpanded)}
+                activeOpacity={0.7}
+                style={styles.detailToggle}
+              >
+                <Text style={styles.detailToggleText}>
+                  {detailExpanded ? 'Masquer le détail' : 'Voir le détail par position'}
                 </Text>
+                <Ionicons
+                  name={detailExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={14}
+                  color={OrTrackColors.gold}
+                />
+              </TouchableOpacity>
+              {detailExpanded && (
+                <>
+                  <View style={styles.section}>
+                    <Text style={styles.sectionLabel}>DÉTAIL PAR POSITION ({computed.length})</Text>
+
+                    <View style={styles.card}>
+                      {computed.map((r, i) => {
+                        const cfg = METAL_CONFIG[r.pos.metal];
+                        return (
+                          <View key={r.pos.id}>
+                            {i > 0 && <View style={styles.separator} />}
+
+                            {/* Row 1 : badge + produit + durée */}
+                            <View style={styles.posRow}>
+                              <View style={[styles.badge, { backgroundColor: cfg.chipBg, borderColor: cfg.chipBorder }]}>
+                                <Text style={[styles.badgeText, { color: cfg.chipText }]}>{cfg.symbol}</Text>
+                              </View>
+                              <Text style={styles.posProduct} numberOfLines={1}>{r.pos.product}</Text>
+                              <Text style={styles.posDuration}>{r.years} an{r.years > 1 ? 's' : ''}</Text>
+                            </View>
+
+                            {/* Row 2 : forfaitaire vs plus-values */}
+                            <View style={{ marginTop: 4 }}>
+                              <View style={styles.taxLineRow}>
+                                <Text style={[
+                                  styles.taxLabel,
+                                  { color: r.bestRegime === 'forfaitaire' ? gold : subtext,
+                                    fontWeight: r.bestRegime === 'forfaitaire' ? '700' : '400' },
+                                ]}>Taxe forfaitaire : {fmtEur(r.tax.forfaitaire)} €</Text>
+                                {r.bestRegime === 'forfaitaire' && (
+                                  <View style={styles.miniBadgeBest}>
+                                    <Text style={styles.miniBadgeBestText}>Le moins taxé</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <View style={styles.taxLineRow}>
+                                <Text style={[
+                                  styles.fiscalLabelPV,
+                                  { color: r.bestRegime === 'plusvalues' ? gold : subtext,
+                                    fontWeight: r.bestRegime === 'plusvalues' ? '700' : '400' },
+                                ]}>Taxe plus-values : {fmtEur(r.tax.plusValuesTax)} €</Text>
+                                {r.bestRegime === 'plusvalues' && (
+                                  <View style={styles.miniBadgeBest}>
+                                    <Text style={styles.miniBadgeBestText}>
+                                      {r.tax.isExempt ? 'Exonéré' : 'Le moins taxé'}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                </>
+              )}
+
+              <Text style={styles.reassuranceLine}>
+                Calcul basé sur les règles fiscales françaises en vigueur
+              </Text>
+
+              {/* Avertissement légal */}
+              <View style={styles.disclaimerBlock}>
+                <Text style={styles.disclaimerShort}>
+                  Estimation indicative — ne constitue pas un conseil fiscal.
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setDisclaimerExpanded(!disclaimerExpanded)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={disclaimerExpanded ? styles.disclaimerToggleClose : styles.disclaimerToggle}>
+                    {disclaimerExpanded ? 'Masquer' : 'Mentions fiscales'}
+                  </Text>
+                </TouchableOpacity>
+                {disclaimerExpanded && (
+                  <Text style={styles.disclaimerFull}>
+                    Cette simulation est fournie à titre purement indicatif et ne constitue pas un conseil fiscal ou juridique. Les règles fiscales applicables aux métaux précieux (art. 150 VI du CGI) peuvent évoluer. Consultez un conseiller fiscal ou la Direction générale des finances publiques (DGFiP) pour votre situation personnelle.
+                  </Text>
+                )}
               </View>
+
+              <TouchableOpacity
+                style={styles.exitCta}
+                onPress={() => router.navigate('/(tabs)/portefeuille')}
+                activeOpacity={0.7}
+                accessibilityLabel="Retour au portefeuille"
+              >
+                <Text style={styles.exitCtaText}>← Retour au portefeuille</Text>
+              </TouchableOpacity>
             </>
           )}
 
@@ -488,7 +544,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   recapColBest: {
-    borderColor: gold,
+    borderColor: 'rgba(76,175,80,0.4)',
+    backgroundColor: 'rgba(76,175,80,0.06)',
   },
   recapColTitle: {
     fontSize: 12,
@@ -496,15 +553,22 @@ const styles = StyleSheet.create({
     color: subtext,
     marginBottom: 6,
   },
-  recapColTax: {
-    fontSize: 18,
+  recapColNetAmount: {
+    fontSize: 20,
     fontWeight: '800',
-    color: white,
+    color: '#4CAF50',
     marginBottom: 2,
   },
-  recapColNet: {
-    fontSize: 11,
+  recapColNetLabel: {
+    fontSize: 10,
     color: subtext,
+    marginBottom: 6,
+  },
+  recapColTaxLine: {
+    fontSize: 13,
+    fontWeight: '400',
+    color: subtext,
+    opacity: 0.7,
     marginBottom: 8,
   },
 
@@ -598,18 +662,84 @@ const styles = StyleSheet.create({
     color: '#E0A060',
   },
 
-  // Legal
-  legalCard: {
-    backgroundColor: cardColor,
-    borderRadius: 10,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: border,
-    marginTop: 4,
+  detailToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    marginTop: 8,
+    marginBottom: 8,
+    borderTopWidth: 1,
+    borderTopColor: border,
   },
-  legalText: {
+  detailToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: gold,
+  },
+  savingsBanner: {
+    backgroundColor: 'rgba(76,175,80,0.08)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    marginVertical: 8,
+  },
+  savingsBannerText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#4CAF50',
+  },
+
+  reassuranceLine: {
     fontSize: 11,
     color: subtext,
-    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  exitCta: {
+    backgroundColor: cardColor,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: gold,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 16,
+    marginBottom: 20,
+  },
+  exitCtaText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: gold,
+  },
+
+  // Disclaimer
+  disclaimerBlock: {
+    marginTop: 16,
+  },
+  disclaimerShort: {
+    fontSize: 11,
+    color: subtext,
+    textAlign: 'center',
+  },
+  disclaimerToggle: {
+    fontSize: 11,
+    color: gold,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  disclaimerToggleClose: {
+    fontSize: 11,
+    color: subtext,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  disclaimerFull: {
+    fontSize: 11,
+    color: subtext,
+    marginTop: 8,
+    lineHeight: 16,
   },
 });

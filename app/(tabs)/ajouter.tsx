@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  Animated,
   Dimensions,
+  InteractionManager,
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
@@ -36,11 +36,11 @@ export type Position = {
   id: string;
   metal: MetalType;
   product: string;
-  weightG: number;      // grammes par unité
+  weightG: number;
   quantity: number;
-  purchasePrice: number; // € par unité
-  purchaseDate: string;  // JJ/MM/AAAA
-  createdAt: string;     // ISO
+  purchasePrice: number;
+  purchaseDate: string;
+  createdAt: string;
   note?: string;
 };
 
@@ -50,8 +50,6 @@ export const STORAGE_KEY = '@ortrack:positions';
 const OZ_TO_G = 31.10435;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHIP_WIDTH = (SCREEN_WIDTH - 40 - 8) / 2;
-// 40 = padding total (20 gauche + 20 droite)
-// 8 = gap entre les 2 colonnes
 
 type Product = {
   label: string;
@@ -108,13 +106,28 @@ const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CO
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtEur(n: number): string {
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/**
+ * Formate un nombre en format monétaire français (déterministe, safe Hermes).
+ * 3837.59 → "3 837,59"  ·  716.83 → "716,83"  ·  0 → "0,00"  ·  NaN → "—"
+ */
+function fmtEur(value: number | null | undefined): string {
+  if (value == null || isNaN(value) || !isFinite(value)) return '—';
+  const abs = Math.abs(value);
+  const fixed = abs.toFixed(2);
+  const [integer, decimal] = fixed.split('.');
+  const withSpaces = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0');
+  const sign = value < 0 ? '-' : '';
+  return `${sign}${withSpaces},${decimal}`;
 }
 
 function fmtG(g: number): string {
-  if (g >= 1000) return `${(g / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 })} kg`;
-  return `${g % 1 === 0 ? g : g.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} g`;
+  if (g >= 1000) {
+    const val = g / 1000;
+    const fixed = val % 1 === 0 ? String(val) : val.toFixed(3).replace(/\.?0+$/, '');
+    return `${fixed.replace('.', ',')} kg`;
+  }
+  if (g % 1 === 0) return `${g} g`;
+  return `${g.toFixed(2).replace('.', ',')} g`;
 }
 
 function toNum(s: string): number {
@@ -132,9 +145,17 @@ function autoFormatDate(raw: string): string {
   return digits;
 }
 
+function formatDateDMY(d: Date): string {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getFullYear()}`;
+}
+
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function AjouterScreen() {
+  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  const isEditMode = editId != null && editId !== '' && editId !== 'undefined';
   const { prices, currencySymbol, refresh } = useSpotPrices();
   const { canAddPosition, showPaywall } = usePremium();
 
@@ -144,21 +165,13 @@ export default function AjouterScreen() {
     }, [refresh])
   );
 
-  useFocusEffect(
-    useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
-        const list: Position[] = raw ? JSON.parse(raw) : [];
-        if (!canAddPosition(list.length)) {
-          showPaywall();
-        }
-      });
-    }, [canAddPosition, showPaywall])
-  );
+  // ── States ──────────────────────────────────────────────────────────────
 
   const scrollRef = useRef<ScrollView>(null);
   const formYRef = useRef<number>(0);
   const spotInfoCardYRef = useRef<number>(0);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const justTappedContinue = useRef(false);
 
   const [metal, setMetal] = useState<MetalType>('or');
   const [product, setProduct] = useState<Product | null>(null);
@@ -171,11 +184,75 @@ export default function AjouterScreen() {
   const [showAllBars, setShowAllBars] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [isStep2Active, setIsStep2Active] = useState(false);
+  const [coinSearch, setCoinSearch] = useState('');
 
   const dateRef = useRef(purchaseDate);
   dateRef.current = purchaseDate;
 
-  const ctaOpacity = useRef(new Animated.Value(0.4)).current;
+  // ── Focus effect : load or reset ────────────────────────────────────────
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isEditMode) {
+        AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+          if (!raw) return;
+          const positions: Position[] = JSON.parse(raw);
+          const existing = positions.find(p => p.id === editId);
+          if (!existing) {
+            Alert.alert('Erreur', 'Position introuvable');
+            router.navigate('/(tabs)/portefeuille');
+            return;
+          }
+          setMetal(existing.metal);
+          const matchedProduct = PRODUCTS[existing.metal].find(p => p.label === existing.product) ?? null;
+          if (matchedProduct) {
+            setProduct(matchedProduct);
+            if (matchedProduct.weightG === null) {
+              setCustomWeight(String(existing.weightG));
+            }
+          } else {
+            const autre = PRODUCTS[existing.metal].find(p => p.category === 'autre') ?? null;
+            setProduct(autre);
+            setCustomWeight(String(existing.weightG));
+          }
+          setQuantity(String(existing.quantity));
+          setPurchasePrice(
+            typeof existing.purchasePrice === 'number'
+              ? existing.purchasePrice.toFixed(2)
+              : String(existing.purchasePrice).replace(/[\s\u00A0]/g, '').replace(/,/g, '.')
+          );
+          setPurchaseDate(existing.purchaseDate);
+          setNote(existing.note ?? '');
+          setShowAllPieces(false);
+          setShowAllBars(false);
+          setConfirmed(false);
+          setIsStep2Active(true);
+          setCoinSearch('');
+        }).catch(() => {});
+      } else {
+        setMetal('or');
+        setProduct(null);
+        setCustomWeight('');
+        setQuantity('');
+        setPurchasePrice('');
+        setPurchaseDate('');
+        setNote('');
+        setShowAllPieces(false);
+        setShowAllBars(false);
+        setConfirmed(false);
+        setIsStep2Active(false);
+        setCoinSearch('');
+
+        AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+          const list: Position[] = raw ? JSON.parse(raw) : [];
+          if (!canAddPosition(list.length)) {
+            showPaywall();
+          }
+        });
+      }
+    }, [isEditMode, editId, canAddPosition, showPaywall])
+  );
 
   // Cleanup timeout
   useEffect(() => {
@@ -184,16 +261,7 @@ export default function AjouterScreen() {
     };
   }, []);
 
-  // CTA opacity animation
-  useEffect(() => {
-    Animated.timing(ctaOpacity, {
-      toValue: product ? 1 : 0.4,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [product, ctaOpacity]);
-
-  // ── Métal → reset produit ──────────────────────────────────────────────────
+  // ── Métal → reset produit + replie grille ──────────────────────────────
 
   const handleMetalChange = useCallback((m: MetalType) => {
     setMetal(m);
@@ -202,19 +270,16 @@ export default function AjouterScreen() {
     setPurchasePrice('');
     setShowAllPieces(false);
     setShowAllBars(false);
+    setIsStep2Active(false);
+    setCoinSearch('');
   }, []);
 
-  // ── Calculs temps réel ────────────────────────────────────────────────────
+  // ── Calculs temps réel ────────────────────────────────────────────────
 
   const effectiveWeightG = product?.weightG ?? toNum(customWeight);
   const qty = toNum(quantity);
   const price = toNum(purchasePrice);
   const spotEur = getSpot(metal, prices);
-
-  const popularProducts = useMemo(() =>
-    PRODUCTS[metal].filter(p => p.popular),
-    [metal]
-  );
 
   const estimatedValue = useMemo(() => {
     if (spotEur === null || effectiveWeightG <= 0) return null;
@@ -245,11 +310,56 @@ export default function AjouterScreen() {
     return { priceMatchesSpot: matches, showPriceReference: showRef };
   }, [purchasePrice, estimatedValue]);
 
-  // ── Toggles ──────────────────────────────────────────────────────────────
+  // ── Grille pièces — scission en 2 useMemo (correction 8) ─────────────
+
+  const allCoinsForMetal = useMemo(() => {
+    const coins = PRODUCTS[metal].filter(p => p.category === 'piece');
+    return [...coins].sort((a, b) => (b.popular ? 1 : 0) - (a.popular ? 1 : 0));
+  }, [metal]);
+
+  const visiblePieces = useMemo(() => {
+    let coins = allCoinsForMetal;
+    // Filter by search when expanded and search is non-empty
+    if (showAllPieces && coinSearch.trim()) {
+      coins = coins.filter(c =>
+        c.label.toLowerCase().includes(coinSearch.trim().toLowerCase())
+      );
+    }
+    if (!showAllPieces) {
+      const top4 = coins.slice(0, 4);
+      if (product && product.category === 'piece' && !top4.some(p => p.label === product.label)) {
+        const selected = coins.find(p => p.label === product.label);
+        if (selected) top4.push(selected);
+      }
+      return top4;
+    }
+    return coins;
+  }, [allCoinsForMetal, showAllPieces, coinSearch, product]);
+
+  const showExpandPiecesButton = allCoinsForMetal.length > 4;
+  const hasPopularPieces = allCoinsForMetal.some(p => p.popular);
+
+  const visibleLingots = useMemo(() => {
+    const allLingots = PRODUCTS[metal].filter(p => p.category === 'lingot' || p.category === 'autre');
+    if (showAllBars) return allLingots;
+    const top4 = allLingots.slice(0, 4);
+    if (product && (product.category === 'lingot' || product.category === 'autre') && !top4.some(p => p.label === product.label)) {
+      const selected = allLingots.find(p => p.label === product.label);
+      if (selected) top4.push(selected);
+    }
+    return top4;
+  }, [metal, showAllBars, product]);
+
+  const totalLingots = PRODUCTS[metal].filter(p => p.category === 'lingot' || p.category === 'autre').length;
+
+  // ── Toggles ──────────────────────────────────────────────────────────
 
   const toggleShowAllPieces = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setShowAllPieces(prev => !prev);
+    setShowAllPieces(prev => {
+      if (prev) setCoinSearch(''); // reset search on collapse
+      return !prev;
+    });
   }, []);
 
   const toggleShowAllBars = useCallback(() => {
@@ -257,17 +367,14 @@ export default function AjouterScreen() {
     setShowAllBars(prev => !prev);
   }, []);
 
-  // ── Sélection produit ──────────────────────────────────────────────────
+  // ── Sélection produit ─────────────────────────────────────────────────
 
   const handleProductSelect = useCallback((p: Product) => {
-    // Animation d'apparition du formulaire
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
-    // B1. Sélection
     setProduct(p);
     setCustomWeight('');
 
-    // B2. Pré-remplir le prix
     const w = p.weightG ?? 0;
     const spot = getSpot(metal, prices);
     if (spot !== null && w > 0) {
@@ -281,46 +388,22 @@ export default function AjouterScreen() {
       setPurchasePrice('');
     }
 
-    // B3. Pré-remplir la date
     if (!dateRef.current) {
-      const now = new Date();
-      const dd = String(now.getDate()).padStart(2, '0');
-      const mm = String(now.getMonth() + 1).padStart(2, '0');
-      const yyyy = now.getFullYear();
-      setPurchaseDate(`${dd}/${mm}/${yyyy}`);
+      setPurchaseDate(formatDateDMY(new Date()));
     }
 
-    // B4. Cancel double-tap
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+  }, [metal, prices]);
 
-    // B5. Collapse + scroll
-    if (showAllPieces || showAllBars) {
-      scrollTimeoutRef.current = setTimeout(() => {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setShowAllPieces(false);
-        setShowAllBars(false);
-        scrollTimeoutRef.current = setTimeout(() => {
-          if (spotInfoCardYRef.current > 0) {
-            scrollRef.current?.scrollTo({
-              y: spotInfoCardYRef.current - 20,
-              animated: true,
-            });
-          }
-        }, 400);
-      }, 300);
-    } else {
-      scrollTimeoutRef.current = setTimeout(() => {
-        if (spotInfoCardYRef.current > 0) {
-          scrollRef.current?.scrollTo({
-            y: spotInfoCardYRef.current - 20,
-            animated: true,
-          });
-        }
-      }, 150);
-    }
-  }, [showAllPieces, showAllBars, metal, prices]);
+  // ── "Continuer" handler ───────────────────────────────────────────────
 
-  // ── Validation ────────────────────────────────────────────────────────────
+  const handleContinue = useCallback(() => {
+    setIsStep2Active(true);
+    setCoinSearch('');
+    justTappedContinue.current = true;
+  }, []);
+
+  // ── Validation ────────────────────────────────────────────────────────
 
   const canSave = useMemo(() =>
     product !== null &&
@@ -331,22 +414,98 @@ export default function AjouterScreen() {
     [product, qty, price, purchaseDate, effectiveWeightG]
   );
 
-  // ── Sauvegarde ────────────────────────────────────────────────────────────
+  // ── Help text contextuel ──────────────────────────────────────────────
+
+  const helpText = useMemo(() => {
+    if (product === null) return 'Choisissez un produit pour continuer';
+    if (!(effectiveWeightG > 0)) return 'Renseignez le poids du produit';
+    if (!(qty > 0)) return 'Renseignez la quantité';
+    if (!(price > 0)) return 'Ajoutez un prix d\'achat';
+    if (purchaseDate.length !== 10) return 'Complétez la date d\'achat';
+    return 'Complétez les champs requis';
+  }, [product, effectiveWeightG, qty, price, purchaseDate]);
+
+  // ── Highlighted field ─────────────────────────────────────────────────
+
+  const highlightedField = useMemo(() => {
+    if (!isStep2Active || canSave) return null;
+    if (product === null) return null;
+    if (!(effectiveWeightG > 0)) return 'weight';
+    if (!(qty > 0)) return 'quantity';
+    if (!(price > 0)) return 'price';
+    if (purchaseDate.length !== 10) return 'date';
+    return null;
+  }, [isStep2Active, canSave, product, effectiveWeightG, qty, price, purchaseDate]);
+
+  // ── CTA config centralisé ─────────────────────────────────────────────
+
+  const ctaConfig = useMemo(() => {
+    if (confirmed) {
+      return {
+        text: isEditMode ? '✓  Position mise à jour !' : '✓  Position ajoutée !',
+        disabled: true,
+        bgColor: '#2E7D32',
+        textColor: '#F5F0E8',
+        action: 'none' as const,
+      };
+    }
+    if (saving) {
+      return {
+        text: 'Enregistrement…',
+        disabled: true,
+        bgColor: '#C9A84C',
+        textColor: '#12110F',
+        action: 'none' as const,
+      };
+    }
+    if (!product && !isStep2Active) {
+      return {
+        text: 'Choisissez un produit',
+        disabled: true,
+        bgColor: '#2A2620',
+        textColor: '#7A7060',
+        action: 'none' as const,
+      };
+    }
+    if (product && !isStep2Active) {
+      return {
+        text: 'Continuer',
+        disabled: false,
+        bgColor: '#C9A84C',
+        textColor: '#12110F',
+        showChevron: true,
+        action: 'scrollToStep2' as const,
+      };
+    }
+    if (!canSave) {
+      return {
+        text: helpText,
+        disabled: true,
+        bgColor: '#2A2620',
+        textColor: '#7A7060',
+        action: 'none' as const,
+      };
+    }
+    return {
+      text: isEditMode ? 'Mettre à jour la position' : 'Ajouter au portefeuille',
+      disabled: false,
+      bgColor: '#C9A84C',
+      textColor: '#12110F',
+      action: 'save' as const,
+    };
+  }, [product, isStep2Active, canSave, isEditMode, helpText, confirmed, saving]);
+
+  // ── Sauvegarde ────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     if (!canSave || saving) return;
     setSaving(true);
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
-      const positions: Position[] = raw ? JSON.parse(raw) : [];
+      let positions: Position[] = raw ? JSON.parse(raw) : [];
 
-      if (!canAddPosition(positions.length)) {
-        showPaywall();
-        return;
-      }
-
-      positions.push({
-        id: Date.now().toString(),
+      const newPosition: Position = {
+        id: isEditMode ? editId! : Date.now().toString(),
         metal,
         product: product!.label,
         weightG: effectiveWeightG,
@@ -355,7 +514,21 @@ export default function AjouterScreen() {
         purchaseDate: purchaseDate.trim(),
         createdAt: new Date().toISOString(),
         note: note.trim() || undefined,
-      });
+      };
+
+      if (isEditMode) {
+        positions = positions.map(p =>
+          p.id === editId
+            ? { ...newPosition, id: editId!, createdAt: p.createdAt }
+            : p
+        );
+      } else {
+        if (!canAddPosition(positions.length)) {
+          showPaywall();
+          return;
+        }
+        positions.push(newPosition);
+      }
 
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(positions));
 
@@ -369,7 +542,11 @@ export default function AjouterScreen() {
       setConfirmed(true);
       setTimeout(() => {
         setConfirmed(false);
-        router.navigate('/(tabs)/portefeuille');
+        if (isEditMode) {
+          router.replace('/(tabs)/portefeuille');
+        } else {
+          router.navigate('/(tabs)/portefeuille');
+        }
       }, 1400);
     } catch {
       Alert.alert('Erreur', 'Impossible de sauvegarder la position.');
@@ -378,9 +555,19 @@ export default function AjouterScreen() {
     }
   };
 
-  // ── Render chip helper (grille dépliée) ────────────────────────────────
+  // ── CTA handler ───────────────────────────────────────────────────────
 
-  const renderChip = (p: Product) => {
+  const handleCtaPress = useCallback(() => {
+    if (ctaConfig.action === 'scrollToStep2') {
+      handleContinue();
+    } else if (ctaConfig.action === 'save') {
+      handleSave();
+    }
+  }, [ctaConfig.action, handleContinue, handleSave]);
+
+  // ── Render chip helper ────────────────────────────────────────────────
+
+  const renderChip = (p: Product, compact = false) => {
     const active = product?.label === p.label;
     return (
       <TouchableOpacity
@@ -389,6 +576,7 @@ export default function AjouterScreen() {
         activeOpacity={0.75}
         style={[
           styles.productChip,
+          compact && styles.productChipCompact,
           active && styles.productChipActive,
         ]}>
         {active && (
@@ -396,15 +584,16 @@ export default function AjouterScreen() {
             <Ionicons name="checkmark" size={14} color={OrTrackColors.white} />
           </View>
         )}
-        {p.popular && !active && (
-          <View style={styles.popularBadge}>
-            <Text style={styles.popularBadgeText}>
-              ⭐ Populaire
+        {p.popular && (
+          <View style={[styles.popularBadge, compact && styles.popularBadgeCompact]}>
+            <Text style={[styles.popularBadgeText, compact && { fontSize: 8 }]}>
+              Populaire
             </Text>
           </View>
         )}
         <Text style={[
           styles.productChipLabel,
+          compact && styles.productChipLabelCompact,
           active && styles.productChipLabelActive,
         ]}>
           {p.label}
@@ -425,7 +614,7 @@ export default function AjouterScreen() {
     );
   };
 
-  // ── Indicateurs pour boutons expand ──────────────────────────────────────
+  // ── Indicateurs pour boutons expand ────────────────────────────────────
 
   const selectedNonPopularPiece = PRODUCTS[metal].some(
     p => p.category === 'piece' && !p.popular && p.label === product?.label
@@ -434,7 +623,7 @@ export default function AjouterScreen() {
     p => (p.category === 'lingot' || p.category === 'autre') && p.label === product?.label
   );
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView style={styles.container}>
@@ -447,10 +636,22 @@ export default function AjouterScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}>
 
-          {/* En-tête */}
-          <Text style={styles.headerTitle}>Nouvelle position</Text>
+          {/* ── Titre + sous-titre (corrections 1, 4) ─────────────────── */}
+          <Text style={styles.headerTitle}>
+            {isEditMode ? 'Modifier la position' : 'Ajouter une position'}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            {isEditMode
+              ? 'Modifiez les détails de votre position'
+              : 'Choisissez votre produit, puis renseignez votre achat'}
+          </Text>
+          {!isEditMode && !isStep2Active && (
+            <Text style={styles.progressIndicator}>
+              Étape 1 · Choisissez votre produit
+            </Text>
+          )}
 
-          {/* ── Sélection métal ─────────────────────────────────────────── */}
+          {/* ── Sélection métal ─────────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Métal</Text>
             <ScrollView
@@ -482,172 +683,113 @@ export default function AjouterScreen() {
                 );
               })}
             </ScrollView>
+
+            <Text style={styles.spotInline}>
+              {spotEur !== null
+                ? `Cours spot : ${fmtEur(spotEur)} ${currencySymbol}/oz`
+                : 'Cours spot : —'}
+            </Text>
           </View>
 
-          {/* ── Sélection produit ───────────────────────────────────────── */}
+          {/* ── Sélection produit (correction 3 — "CHOISISSEZ UN PRODUIT") ── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Produit</Text>
+            <Text style={styles.sectionTitle}>Choisissez un produit</Text>
 
-            {popularProducts.length >= 2 ? (
+            {/* Pièces */}
+            {allCoinsForMetal.length > 0 && (
               <>
-                {/* Chips populaires horizontales */}
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={{ marginHorizontal: -20 }}
-                  contentContainerStyle={{
-                    paddingLeft: 20,
-                    paddingRight: 40,
-                    gap: 8,
-                  }}>
-                  {popularProducts.map(p => {
-                    const active = product?.label === p.label;
-                    return (
-                      <TouchableOpacity
-                        key={p.label}
-                        onPress={() => handleProductSelect(p)}
-                        activeOpacity={0.75}
-                        accessibilityLabel={`Sélectionner ${p.label}`}
-                        style={[
-                          styles.popularChip,
-                          active && styles.popularChipActive,
-                        ]}>
-                        <Text style={[
-                          styles.popularChipLabel,
-                          active && { color: OrTrackColors.gold },
-                        ]}>
-                          {p.label}
-                        </Text>
-                        {p.weightG !== null && (
-                          <Text style={styles.popularChipWeight}>
-                            {fmtG(p.weightG)}
-                          </Text>
-                        )}
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-
-                {/* Voir toutes les pièces */}
-                {PRODUCTS[metal].some(p => p.category === 'piece') && (
-                  <>
-                    <TouchableOpacity
-                      onPress={toggleShowAllPieces}
-                      activeOpacity={0.7}
-                      style={styles.expandButton}>
-                      <Text style={styles.expandButtonText}>
-                        Voir toutes les pièces
-                        {!showAllPieces && selectedNonPopularPiece
-                          ? ` · ${product?.label} ✓`
-                          : ''}
-                      </Text>
-                      <Ionicons
-                        name={showAllPieces ? 'chevron-down' : 'chevron-forward'}
-                        size={14}
-                        color={OrTrackColors.gold}
-                      />
-                    </TouchableOpacity>
-                    {showAllPieces && (
-                      <View style={styles.productGrid}>
-                        {PRODUCTS[metal]
-                          .filter(p => p.category === 'piece')
-                          .map(p => renderChip(p))}
-                      </View>
-                    )}
-                  </>
+                {/* Mini-header "POPULAIRES" (correction 5) */}
+                {hasPopularPieces && coinSearch.trim() === '' && (
+                  <Text style={styles.popularSectionHeader}>POPULAIRES</Text>
                 )}
 
-                {/* Voir tous les lingots */}
-                {PRODUCTS[metal].some(p => p.category === 'lingot' || p.category === 'autre') && (
-                  <>
-                    <TouchableOpacity
-                      onPress={toggleShowAllBars}
-                      activeOpacity={0.7}
-                      style={styles.expandButton}>
-                      <Text style={styles.expandButtonText}>
-                        Voir tous les lingots
-                        {!showAllBars && selectedInLingots
-                          ? ` · ${product?.label} ✓`
-                          : ''}
-                      </Text>
-                      <Ionicons
-                        name={showAllBars ? 'chevron-down' : 'chevron-forward'}
-                        size={14}
-                        color={OrTrackColors.gold}
-                      />
-                    </TouchableOpacity>
-                    {showAllBars && (
-                      <View style={styles.productGrid}>
-                        {PRODUCTS[metal]
-                          .filter(p => p.category === 'lingot' || p.category === 'autre')
-                          .map(p => renderChip(p))}
-                      </View>
-                    )}
-                  </>
+                {/* Search field when expanded (correction 9) */}
+                {showAllPieces && (
+                  <TextInput
+                    placeholder="Rechercher une pièce..."
+                    placeholderTextColor={OrTrackColors.subtext}
+                    value={coinSearch}
+                    onChangeText={setCoinSearch}
+                    autoFocus={false}
+                    accessibilityLabel="Rechercher une pièce"
+                    style={styles.searchInput}
+                  />
+                )}
+
+                {/* No results message */}
+                {showAllPieces && coinSearch.trim() !== '' && visiblePieces.length === 0 && (
+                  <Text style={styles.noResultText}>Aucun produit trouvé</Text>
+                )}
+
+                <View style={styles.productGrid}>
+                  {visiblePieces.map(p => renderChip(p, showAllPieces))}
+                </View>
+                {showExpandPiecesButton && (
+                  <TouchableOpacity
+                    onPress={toggleShowAllPieces}
+                    activeOpacity={0.7}
+                    style={styles.expandButton}>
+                    <Text style={styles.expandButtonText}>
+                      {showAllPieces ? 'Réduire la liste' : 'Voir plus de pièces'}
+                      {!showAllPieces && selectedNonPopularPiece
+                        ? ` · ${product?.label} ✓`
+                        : ''}
+                    </Text>
+                    <Ionicons
+                      name={showAllPieces ? 'chevron-up' : 'chevron-forward'}
+                      size={14}
+                      color={OrTrackColors.gold}
+                    />
+                  </TouchableOpacity>
                 )}
               </>
-            ) : (
-              /* Fallback : grille actuelle */
+            )}
+
+            {/* Lingots */}
+            {totalLingots > 0 && (
               <>
-                {PRODUCTS[metal].some(p => p.category === 'piece') && (
+                {allCoinsForMetal.length > 0 && (
                   <>
-                    <View style={styles.categoryHeader}>
-                      <Text style={[styles.categoryLabel, { marginBottom: 0 }]}>
-                        Pièces
-                      </Text>
-                      {PRODUCTS[metal].filter(p => p.category === 'piece').length > 4 && (
-                        <TouchableOpacity
-                          onPress={toggleShowAllPieces}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.categoryToggle}>
-                            {showAllPieces ? 'Voir moins' : 'Voir tout'}
-                          </Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                    <View style={styles.productGrid}>
-                      {PRODUCTS[metal]
-                        .filter(p => p.category === 'piece')
-                        .filter((p, i) => showAllPieces || p.popular || i < 4 || p.label === product?.label)
-                        .map(p => renderChip(p))}
-                    </View>
+                    <View style={styles.lingotsSeparator} />
+                    <Text style={[styles.sectionTitle, { marginTop: 0 }]}>Lingots</Text>
                   </>
                 )}
-
-                {PRODUCTS[metal].some(p => p.category === 'lingot') && (
-                  <>
-                    <Text style={[styles.categoryLabel, { marginTop: 12 }]}>
-                      Lingots
+                <View style={styles.productGrid}>
+                  {visibleLingots.map(p => renderChip(p))}
+                </View>
+                {totalLingots > 4 && (
+                  <TouchableOpacity
+                    onPress={toggleShowAllBars}
+                    activeOpacity={0.7}
+                    style={styles.expandButton}>
+                    <Text style={styles.expandButtonText}>
+                      {showAllBars ? 'Réduire la liste' : 'Voir plus de lingots'}
+                      {!showAllBars && selectedInLingots
+                        ? ` · ${product?.label} ✓`
+                        : ''}
                     </Text>
-                    <View style={styles.productGrid}>
-                      {PRODUCTS[metal]
-                        .filter(p => p.category === 'lingot')
-                        .map(p => renderChip(p))}
-                    </View>
-                  </>
-                )}
-
-                {PRODUCTS[metal].some(p => p.category === 'autre') && (
-                  <View style={{ marginTop: 8 }}>
-                    {PRODUCTS[metal]
-                      .filter(p => p.category === 'autre')
-                      .map(p => renderChip(p))}
-                  </View>
+                    <Ionicons
+                      name={showAllBars ? 'chevron-up' : 'chevron-forward'}
+                      size={14}
+                      color={OrTrackColors.gold}
+                    />
+                  </TouchableOpacity>
                 )}
               </>
             )}
           </View>
 
-          {/* ── Texte incitatif (aucun produit sélectionné) ────────── */}
-          {product === null && (
-            <Text style={styles.hintText}>Touchez une pièce pour commencer</Text>
+          {/* Feedback sélection sous la grille */}
+          {product !== null && !isStep2Active && estimatedValue !== null && (
+            <Text style={styles.selectionFeedback}>
+              {'✓ '}{product.label} · {product.weightG !== null ? fmtG(product.weightG) : fmtG(toNum(customWeight))} · ~{fmtEur(estimatedValue)} €
+            </Text>
           )}
 
-          {/* ── Contenu conditionnel (produit sélectionné) ────────── */}
+          {/* ── Contenu étape 2 (conditionnel sur product) ─────────── */}
           {product !== null && (
             <>
-              {/* ── Poids personnalisé (Autre) ──────────────────────── */}
+              {/* Poids personnalisé (Autre) */}
               {product.weightG === null && (
                 <View style={styles.section}>
                   <Text style={styles.sectionTitle}>Poids unitaire</Text>
@@ -665,7 +807,7 @@ export default function AjouterScreen() {
                 </View>
               )}
 
-              {/* ── Cours actuel du produit ──────────────────────── */}
+              {/* Cours actuel du produit */}
               {spotEur !== null && effectiveWeightG > 0 && (
                 <View
                   collapsable={false}
@@ -694,106 +836,149 @@ export default function AjouterScreen() {
                 </View>
               )}
 
-              {/* ── Formulaire ──────────────────────────────────────── */}
-              <View
-                style={styles.section}
-                onLayout={(e) => { formYRef.current = e.nativeEvent.layout.y; }}
-              >
-                <Text style={styles.sectionTitle}>Détails de l'achat</Text>
-                <View style={styles.fieldGroup}>
-
-                  <View style={styles.field}>
-                    <Text style={styles.fieldLabel}>Quantité</Text>
-                    <View style={styles.inputWrapper}>
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="decimal-pad"
-                        placeholder="1"
-                        placeholderTextColor={OrTrackColors.tabIconDefault}
-                        value={quantity}
-                        onChangeText={setQuantity}
-                      />
-                      <Text style={styles.inputSuffix}>pièce(s)</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.field}>
-                    <View style={styles.fieldLabelRow}>
-                      <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
-                      {!priceAnalysis.priceMatchesSpot && estimatedValue !== null && estimatedValue > 0 ? (
-                        <TouchableOpacity
-                          onPress={() => setPurchasePrice(estimatedValue!.toFixed(2))}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={[styles.quickFillBtn, { fontSize: 13 }]}>Utiliser le cours actuel</Text>
-                        </TouchableOpacity>
-                      ) : estimatedValue === null || estimatedValue <= 0 ? (
-                        <Text style={styles.priceRefUnavailable}>Cours indisponible</Text>
-                      ) : null}
-                    </View>
-                    <View style={styles.inputWrapper}>
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="decimal-pad"
-                        placeholder="Ex : 1 700"
-                        placeholderTextColor={OrTrackColors.tabIconDefault}
-                        value={purchasePrice}
-                        onChangeText={setPurchasePrice}
-                      />
-                      <Text style={styles.inputSuffix}>{currencySymbol}</Text>
-                    </View>
-                    {priceAnalysis.showPriceReference && (
-                      <Text style={styles.priceRef}>
-                        Cours actuel : {estimatedValue!.toFixed(2)} €
+              {/* ── Stepper étape 2 + Formulaire (corrections 6, 7, 10) ── */}
+              {isStep2Active && (
+                <View
+                  style={styles.section}
+                  onLayout={() => {
+                    if (justTappedContinue.current) {
+                      InteractionManager.runAfterInteractions(() => {
+                        scrollRef.current?.scrollToEnd({ animated: true });
+                      });
+                      justTappedContinue.current = false;
+                    }
+                  }}
+                >
+                  <Text style={styles.progressIndicator}>
+                    Étape 2 · Détails de l'achat
+                  </Text>
+                  <Text style={styles.sectionTitle}>Détails de l'achat</Text>
+                  {product && (
+                    <View>
+                      <Text style={styles.miniRecapText}>
+                        {product.label} · {product.weightG !== null ? fmtG(product.weightG) : fmtG(toNum(customWeight))}
                       </Text>
-                    )}
-                  </View>
-
-                  <View style={styles.field}>
-                    <View style={styles.fieldLabelRow}>
-                      <Text style={styles.fieldLabel}>Date d'achat</Text>
-                      <TouchableOpacity
-                        onPress={() => {
-                          const now = new Date();
-                          const dd = String(now.getDate()).padStart(2, '0');
-                          const mm = String(now.getMonth() + 1).padStart(2, '0');
-                          const yyyy = now.getFullYear();
-                          setPurchaseDate(`${dd}/${mm}/${yyyy}`);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.quickFillBtn}>Aujourd'hui</Text>
-                      </TouchableOpacity>
+                      <View style={styles.miniRecapSeparator} />
                     </View>
-                    <TextInput
-                      style={styles.input}
-                      keyboardType="numeric"
-                      placeholder="JJ/MM/AAAA"
-                      placeholderTextColor={OrTrackColors.tabIconDefault}
-                      value={purchaseDate}
-                      onChangeText={(t) => setPurchaseDate(autoFormatDate(t))}
-                      maxLength={10}
-                    />
-                  </View>
+                  )}
+                  <View style={styles.fieldGroup}>
 
-                  <View style={styles.field}>
-                    <Text style={styles.fieldLabel}>Note (optionnel)</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Ex : héritage, cadeau, enchères..."
-                      multiline={false}
-                      placeholderTextColor={OrTrackColors.tabIconDefault}
-                      value={note}
-                      onChangeText={setNote}
-                      maxLength={120}
-                    />
-                  </View>
+                    <View style={styles.field}>
+                      <Text style={[styles.fieldLabel, highlightedField === 'quantity' && { color: OrTrackColors.gold }]}>Quantité</Text>
+                      <View style={styles.inputWrapper}>
+                        <TextInput
+                          style={styles.input}
+                          keyboardType="decimal-pad"
+                          placeholder="1"
+                          placeholderTextColor={OrTrackColors.tabIconDefault}
+                          value={quantity}
+                          onChangeText={setQuantity}
+                        />
+                        <Text style={styles.inputSuffix}>pièce(s)</Text>
+                      </View>
+                    </View>
 
+                    <View style={styles.field}>
+                      <View style={styles.fieldLabelRow}>
+                        <Text style={[styles.fieldLabel, highlightedField === 'price' && { color: OrTrackColors.gold }]}>Prix d'achat unitaire</Text>
+                        {/* Correction 7 — Raccourci "Cours du jour" */}
+                        {estimatedValue !== null && estimatedValue > 0 && (
+                          <TouchableOpacity
+                            onPress={() => {
+                              // NOTE: estimatedValue is computed from spot price at load time.
+                              // If the user stays on screen for a long time, this value may be stale.
+                              // Consider refreshing on "Cours du jour" tap in a future version.
+                              setPurchasePrice(estimatedValue!.toFixed(2));
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.quickFillBtn}>Cours du jour</Text>
+                          </TouchableOpacity>
+                        )}
+                      </View>
+                      <View style={styles.inputWrapper}>
+                        <TextInput
+                          style={styles.input}
+                          keyboardType="decimal-pad"
+                          placeholder="Ex : 1 700"
+                          placeholderTextColor={OrTrackColors.tabIconDefault}
+                          value={purchasePrice}
+                          onChangeText={(text) => {
+                            let n = text.replace(/[\s\u00A0]/g, '');
+                            n = n.replace(/,/g, '.');
+                            n = n.replace(/[^0-9.]/g, '');
+                            const dot = n.indexOf('.');
+                            if (dot !== -1) {
+                              n = n.slice(0, dot + 1) + n.slice(dot + 1).replace(/\./g, '');
+                            }
+                            const parts = n.split('.');
+                            if (parts.length === 2 && parts[1].length > 2) {
+                              n = parts[0] + '.' + parts[1].slice(0, 2);
+                            }
+                            setPurchasePrice(n);
+                          }}
+                        />
+                        <Text style={styles.inputSuffix}>{currencySymbol}</Text>
+                      </View>
+                      {priceAnalysis.showPriceReference && (
+                        <Text style={styles.priceRef}>
+                          Cours actuel : {estimatedValue!.toFixed(2)} €
+                        </Text>
+                      )}
+                    </View>
+
+                    <View style={styles.field}>
+                      <View style={styles.fieldLabelRow}>
+                        <Text style={[styles.fieldLabel, highlightedField === 'date' && { color: OrTrackColors.gold }]}>Date d'achat</Text>
+                        <View style={styles.dateShortcuts}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              const yesterday = new Date();
+                              yesterday.setDate(yesterday.getDate() - 1);
+                              setPurchaseDate(formatDateDMY(yesterday));
+                            }}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.quickFillBtn}>Hier</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => setPurchaseDate(formatDateDMY(new Date()))}
+                            activeOpacity={0.7}
+                          >
+                            <Text style={styles.quickFillBtn}>Aujourd'hui</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <TextInput
+                        style={styles.input}
+                        keyboardType="numeric"
+                        placeholder="JJ/MM/AAAA"
+                        placeholderTextColor={OrTrackColors.tabIconDefault}
+                        value={purchaseDate}
+                        onChangeText={(t) => setPurchaseDate(autoFormatDate(t))}
+                        maxLength={10}
+                      />
+                    </View>
+
+                    <View style={styles.field}>
+                      <Text style={styles.fieldLabel}>Note (optionnel)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Ajoutez un contexte si utile"
+                        multiline={false}
+                        placeholderTextColor={OrTrackColors.tabIconDefault}
+                        value={note}
+                        onChangeText={setNote}
+                        maxLength={120}
+                      />
+                    </View>
+
+                  </View>
                 </View>
-              </View>
+              )}
 
-              {/* ── Estimation temps réel ───────────────────────────── */}
-              {currentValue !== null && (
+              {/* Estimation temps réel */}
+              {isStep2Active && currentValue !== null && (
                 <View style={styles.estimationCard}>
                   <Text style={styles.estimationTitle}>Estimation actuelle</Text>
 
@@ -802,17 +987,25 @@ export default function AjouterScreen() {
                     <Text style={styles.estimationValue}>{fmtEur(currentValue)} €</Text>
                   </View>
 
-                  {gainLoss !== null && (
-                    <View style={styles.estimationRow}>
-                      <Text style={styles.estimationLabel}>Plus/moins-value</Text>
-                      <Text style={[
-                        styles.estimationGainLoss,
-                        gainLoss >= 0 ? styles.positive : styles.negative,
-                      ]}>
-                        {gainLoss >= 0 ? '+' : ''}{fmtEur(gainLoss)} €
-                      </Text>
-                    </View>
-                  )}
+                  {gainLoss !== null && (() => {
+                    const rounded = Math.round(gainLoss * 100) / 100;
+                    const display = rounded === 0 ? 0 : rounded;
+                    return (
+                      <View style={styles.estimationRow}>
+                        <Text style={styles.estimationLabel}>Plus/moins-value</Text>
+                        <Text style={[
+                          styles.estimationGainLoss,
+                          display === 0
+                            ? { color: OrTrackColors.subtext }
+                            : display > 0 ? styles.positive : styles.negative,
+                        ]}>
+                          {display === 0
+                            ? '0,00 €'
+                            : `${display > 0 ? '+' : ''}${fmtEur(display)} €`}
+                        </Text>
+                      </View>
+                    );
+                  })()}
 
                   {spotEur !== null && (
                     <Text style={styles.estimationHint}>
@@ -822,36 +1015,37 @@ export default function AjouterScreen() {
                 </View>
               )}
 
-              {/* Spacer pour ne pas masquer le contenu sous le CTA sticky */}
+              {/* Spacer */}
               <View style={{ height: 80 }} />
             </>
           )}
 
         </ScrollView>
 
-        {/* ── CTA sticky ──────────────────────────────────────────────── */}
+        {/* ── CTA sticky ─────────────────────────────────────────────── */}
         <View style={styles.stickyCtaContainer}>
-          <Animated.View style={{ opacity: ctaOpacity }}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.ctaButton,
-                pressed && !!product && styles.ctaButtonPressed,
-                confirmed && styles.ctaButtonConfirmed,
-              ]}
-              onPress={handleSave}
-              disabled={!product || saving || confirmed}
-              accessibilityLabel="Ajouter au portefeuille"
-            >
-              <Text style={styles.ctaText}>
-                {confirmed
-                  ? '✓  Position ajoutée !'
-                  : saving
-                  ? 'Enregistrement…'
-                  : 'Ajouter au portefeuille'}
+          <Pressable
+            style={[
+              styles.ctaButton,
+              { backgroundColor: ctaConfig.bgColor },
+            ]}
+            onPress={handleCtaPress}
+            disabled={ctaConfig.disabled}
+            accessibilityLabel={ctaConfig.text}
+            accessibilityState={{ disabled: ctaConfig.disabled }}
+          >
+            <View style={styles.ctaButtonInner}>
+              <Text style={[styles.ctaText, { color: ctaConfig.textColor }]}>
+                {ctaConfig.text}
               </Text>
-            </Pressable>
-          </Animated.View>
-          <Text style={styles.ctaReassurance}>Supprimable depuis votre portfolio</Text>
+              {ctaConfig.showChevron && (
+                <Ionicons name="chevron-forward" size={18} color={ctaConfig.textColor} />
+              )}
+            </View>
+          </Pressable>
+          {isStep2Active && !isEditMode && (
+            <Text style={styles.ctaReassurance}>Modifiable à tout moment</Text>
+          )}
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -876,7 +1070,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: OrTrackColors.white,
-    marginBottom: 20,
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    color: OrTrackColors.subtext,
+    fontSize: 14,
+    marginTop: 4,
+    marginBottom: 8,
   },
 
   // Sections
@@ -901,41 +1101,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
 
-  // Popular chips (horizontal)
-  popularChip: {
-    borderRadius: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+  // Spot inline
+  spotInline: {
+    fontSize: 13,
+    color: OrTrackColors.subtext,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+
+  // Popular section header (correction 5)
+  popularSectionHeader: {
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.5,
+    color: OrTrackColors.subtext,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+    marginTop: 4,
+  },
+
+  // Search input (correction 9)
+  searchInput: {
     backgroundColor: OrTrackColors.card,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
-    alignItems: 'center',
-    minWidth: 120,
-  },
-  popularChipActive: {
-    borderWidth: 2,
-    borderColor: OrTrackColors.gold,
-    backgroundColor: 'rgba(201,168,76,0.15)',
-  },
-  popularChipLabel: {
-    fontSize: 14,
-    fontWeight: '600',
+    borderRadius: 8,
     color: OrTrackColors.white,
+    fontSize: 15,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 12,
   },
-  popularChipWeight: {
-    fontSize: 11,
+  noResultText: {
     color: OrTrackColors.subtext,
-    marginTop: 2,
+    fontSize: 14,
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 
-  // Check badge (sélection)
+  // Check badge
   checkBadge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     backgroundColor: OrTrackColors.gold,
     alignItems: 'center',
     justifyContent: 'center',
@@ -961,24 +1172,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    marginTop: 8,
   },
   productChip: {
     borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: OrTrackColors.card,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
     alignItems: 'center',
     width: CHIP_WIDTH,
-    minHeight: 72,
+    minHeight: 64,
+    overflow: 'hidden',
   },
   productChipActive: {
+    borderWidth: 1,
     borderColor: OrTrackColors.gold,
-    backgroundColor: '#1F1B0A',
+    backgroundColor: '#C9A84C14',
   },
   productChipLabel: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '500',
     color: OrTrackColors.white,
   },
@@ -988,7 +1202,7 @@ const styles = StyleSheet.create({
   },
   productChipWeight: {
     fontSize: 10,
-    color: OrTrackColors.tabIconDefault,
+    color: OrTrackColors.label,
     marginTop: 2,
   },
   productChipWeightActive: {
@@ -1001,17 +1215,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: 8,
-  },
-  categoryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  categoryToggle: {
-    fontSize: 12,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
   },
   popularBadge: {
     backgroundColor: 'rgba(201, 168, 76, 0.15)',
@@ -1026,12 +1229,50 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Hint text (no product selected)
-  hintText: {
-    fontSize: 13,
+  // Mini-récap produit (correction 3)
+  miniRecapText: {
+    color: OrTrackColors.white,
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  miniRecapSeparator: {
+    borderBottomWidth: 1,
+    borderBottomColor: OrTrackColors.border,
+    marginBottom: 16,
+  },
+
+  // Lingots separator (correction 4)
+  lingotsSeparator: {
+    borderTopWidth: 1,
+    borderTopColor: OrTrackColors.border,
+    marginTop: 12,
+    marginBottom: 12,
+  },
+
+  // Compact cards (correction 5)
+  productChipCompact: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    minHeight: 52,
+  },
+  productChipLabelCompact: {
+    fontSize: 10,
+  },
+  popularBadgeCompact: {
+    paddingVertical: 1,
+    paddingHorizontal: 5,
+    marginBottom: 2,
+  },
+
+  // Selection feedback (correction 8)
+  selectionFeedback: {
     color: OrTrackColors.subtext,
+    fontSize: 13,
     textAlign: 'center',
-    marginTop: 24,
+    marginTop: 8,
+    marginBottom: 4,
   },
 
   // Separator
@@ -1049,14 +1290,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  dateShortcuts: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   quickFillBtn: {
-    fontSize: 12,
+    fontSize: 14,
     color: OrTrackColors.gold,
     fontWeight: '600',
   },
   fieldLabel: {
     fontSize: 13,
-    color: OrTrackColors.subtext,
+    color: OrTrackColors.label,
     fontWeight: '500',
     marginLeft: 2,
   },
@@ -1125,7 +1370,7 @@ const styles = StyleSheet.create({
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.2)',
+    borderColor: '#C9A84C40',
     padding: 16,
     marginBottom: 24,
     gap: 10,
@@ -1148,7 +1393,7 @@ const styles = StyleSheet.create({
     color: OrTrackColors.subtext,
   },
   estimationValue: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '700',
     color: OrTrackColors.white,
   },
@@ -1174,20 +1419,17 @@ const styles = StyleSheet.create({
     borderTopColor: OrTrackColors.border,
   },
   ctaButton: {
-    backgroundColor: OrTrackColors.gold,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  ctaButtonPressed: {
-    backgroundColor: '#B8982F',
-  },
-  ctaButtonConfirmed: {
-    backgroundColor: '#2E7D32',
+  ctaButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   ctaText: {
-    color: OrTrackColors.background,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -1196,5 +1438,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     marginTop: 8,
+  },
+  progressIndicator: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    marginBottom: 12,
   },
 });

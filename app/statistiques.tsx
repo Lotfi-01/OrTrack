@@ -34,6 +34,12 @@ type Position = {
 const STORAGE_KEY = '@ortrack:positions';
 const OZ_TO_G = 31.10435;
 
+const PREMIUM_STATS_FEATURES = [
+  { icon: '🏆', title: 'Vos positions les plus rentables', sub: 'Voyez ce qui vous rapporte le plus aujourd\'hui' },
+  { icon: '📊', title: 'Votre rendement réel', sub: 'Combien vous gagnez sur chaque position' },
+  { icon: '💡', title: 'Forces et risques de votre portefeuille', sub: 'Identifiez déséquilibres et opportunités' },
+];
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fmtEur(n: number): string {
@@ -109,6 +115,12 @@ export default function StatistiquesScreen() {
   const sorted = [...positionsWithPerf].sort((a, b) => (b.gainPct ?? 0) - (a.gainPct ?? 0));
   const best = sorted[0] ?? null;
   const worst = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+
+  const bestSpot = best ? getSpot(best.metal, prices) : null;
+  const bestCurrentValue = best && bestSpot !== null
+    ? best.quantity * (best.weightG / OZ_TO_G) * bestSpot : null;
+  const bestCost = best ? best.quantity * best.purchasePrice : 0;
+  const bestGainEur = bestCurrentValue !== null ? bestCurrentValue - bestCost : null;
 
   // Métriques par métal
   const metalMetrics = metalKeys.map((m) => {
@@ -457,71 +469,94 @@ export default function StatistiquesScreen() {
               </>
             ) : (
               <>
-                {/* Placeholder premium avec aperçu */}
-                <View style={styles.premiumPreviewContainer}>
-                  <View pointerEvents="none">
-
-                    {/* Placeholder Positions */}
-                    <View style={[styles.card, { opacity: 0.25 }]}>
-                      <View style={styles.podiumRow}>
-                        <View style={styles.rankBadge}>
-                          <Text style={styles.rankBadgeText}>1</Text>
-                        </View>
-                        <View style={styles.podiumInfo}>
-                          <Text style={styles.podiumProduct}>Position</Text>
-                          <Text style={styles.podiumMetal}>—</Text>
-                        </View>
-                        <Text style={styles.placeholderText}>+XX,X %</Text>
-                      </View>
-                      <View style={styles.divider} />
-                      <View style={styles.podiumRow}>
-                        <View style={[styles.rankBadge, styles.rankBadgeSilver]}>
-                          <Text style={[styles.rankBadgeText, styles.rankBadgeTextSilver]}>2</Text>
-                        </View>
-                        <View style={styles.podiumInfo}>
-                          <Text style={styles.podiumProduct}>Position</Text>
-                          <Text style={styles.podiumMetal}>—</Text>
-                        </View>
-                        <Text style={styles.placeholderText}>+XX,X %</Text>
-                      </View>
+                <Text style={styles.sectionTitle}>ANALYSES PREMIUM</Text>
+                {best && (
+                  <View style={{
+                    backgroundColor: OrTrackColors.card,
+                    borderRadius: 12,
+                    borderWidth: 1,
+                    borderColor: OrTrackColors.border,
+                    padding: 16,
+                    marginBottom: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                  }}>
+                    <Text style={{ fontSize: 20, marginRight: 10 }}>🥇</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{
+                        fontSize: 13,
+                        fontWeight: '600',
+                        color: OrTrackColors.white,
+                      }}>
+                        Meilleure position : {best.product}
+                      </Text>
+                      <Text style={{
+                        fontSize: 16,
+                        fontWeight: '700',
+                        color: '#4CAF50',
+                        marginTop: 4,
+                      }}>
+                        +{bestGainEur !== null ? fmtEur(bestGainEur) : '0,00'} €
+                      </Text>
+                      <Text style={{
+                        fontSize: 12,
+                        color: OrTrackColors.subtext,
+                        marginTop: 2,
+                      }}>
+                        +{fmtPct(best.gainPct ?? 0)} %
+                      </Text>
+                      <Text style={{
+                        fontSize: 12,
+                        color: OrTrackColors.gold,
+                        fontWeight: '500',
+                        marginTop: 8,
+                      }}>
+                        Vendre maintenant ou attendre ?
+                      </Text>
                     </View>
-
-                    {/* Placeholder Métriques */}
-                    <View style={[styles.grid, { marginTop: 12 }]}>
-                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
-                        <Text style={styles.gridLabel}>COÛT MOYEN</Text>
-                        <Text style={styles.placeholderValue}>— €</Text>
-                      </View>
-                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
-                        <Text style={styles.gridLabel}>POIDS TOTAL</Text>
-                        <Text style={styles.placeholderValue}>— g</Text>
-                      </View>
-                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
-                        <Text style={styles.gridLabel}>ANCIENNETÉ</Text>
-                        <Text style={styles.placeholderValue}>— ans</Text>
-                      </View>
-                      <View style={[styles.gridCard, { opacity: 0.25 }]}>
-                        <Text style={styles.gridLabel}>ALLOCATION</Text>
-                        <Text style={styles.placeholderValue}>— : —</Text>
-                      </View>
-                    </View>
-
+                    <Ionicons name="lock-closed" size={16} color={OrTrackColors.gold} />
                   </View>
-
-                  {/* Overlay cadenas + CTA */}
-                  <View style={styles.premiumOverlay}>
-                    <Ionicons name="lock-closed" size={24} color={OrTrackColors.gold} />
-                    <Text style={styles.premiumOverlayTitle}>Statistiques détaillées</Text>
-                    <TouchableOpacity
-                      style={styles.premiumCtaButton}
-                      onPress={showPaywall}
-                      activeOpacity={0.7}
-                      accessibilityLabel="Débloquer les statistiques détaillées"
+                )}
+                <View style={styles.card}>
+                  {PREMIUM_STATS_FEATURES.map((item, index) => (
+                    <View
+                      key={item.title}
+                      style={[
+                        styles.premiumFeatureRow,
+                        index < PREMIUM_STATS_FEATURES.length - 1 && {
+                          borderBottomWidth: 1,
+                          borderBottomColor: OrTrackColors.border,
+                        },
+                      ]}
+                      accessibilityLabel={`${item.title} — fonctionnalité premium`}
                     >
-                      <Text style={styles.premiumCtaText}>Débloquer</Text>
-                    </TouchableOpacity>
-                  </View>
+                      <View style={styles.premiumFeatureIcon}>
+                        <Text style={{ fontSize: 20 }}>{item.icon}</Text>
+                      </View>
+                      <View style={styles.premiumFeatureText}>
+                        <Text style={styles.premiumFeatureTitle}>{item.title}</Text>
+                        <Text style={styles.premiumFeatureSub}>{item.sub}</Text>
+                      </View>
+                      <Ionicons name="lock-closed" size={16} color={OrTrackColors.gold} />
+                    </View>
+                  ))}
                 </View>
+                <TouchableOpacity
+                  style={styles.premiumCtaButton}
+                  onPress={showPaywall}
+                  activeOpacity={0.7}
+                  accessibilityLabel="Voir combien je gagne réellement"
+                >
+                  <Text style={styles.premiumCtaText}>Voir combien je gagne réellement</Text>
+                </TouchableOpacity>
+                <Text style={{
+                  fontSize: 12,
+                  color: OrTrackColors.subtext,
+                  textAlign: 'center',
+                  marginTop: 6,
+                }}>
+                  Accès immédiat · 3 analyses disponibles
+                </Text>
               </>
             )}
 
@@ -851,36 +886,29 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Premium placeholder
-  premiumPreviewContainer: {
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  placeholderText: {
-    color: OrTrackColors.subtext,
-    fontSize: 14,
-  },
-  placeholderValue: {
-    color: OrTrackColors.subtext,
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  premiumOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    justifyContent: 'center',
+  // Premium features list
+  premiumFeatureRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(18, 17, 15, 0.85)',
+    paddingVertical: 12,
   },
-  premiumOverlayTitle: {
+  premiumFeatureIcon: {
+    width: 36,
+    alignItems: 'center',
+  },
+  premiumFeatureText: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  premiumFeatureTitle: {
+    fontSize: 14,
+    fontWeight: '600',
     color: OrTrackColors.white,
-    fontSize: 18,
-    fontWeight: '700',
-    marginTop: 12,
-    marginBottom: 16,
+  },
+  premiumFeatureSub: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    marginTop: 2,
   },
   premiumCtaButton: {
     backgroundColor: OrTrackColors.gold,

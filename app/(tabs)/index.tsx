@@ -47,6 +47,7 @@ type PricePoint = {
 const STORAGE_KEY = '@ortrack:positions';
 const HIDE_VALUE_KEY = '@ortrack:hide_portfolio_value';
 const OZ_TO_G = 31.10435;
+const TAUX_FORFAITAIRE = 0.115; // TMP 11,5%
 
 // ─── Date française (fiable Android/Hermes) ──────────────────────────────────
 
@@ -243,10 +244,15 @@ export default function TableauDeBordScreen() {
         ? (totalGainLoss / totalCost) * 100
         : null;
 
+    // Net global estimé (forfaitaire)
+    const totalNetEstime = (totalGainLoss !== null && totalGainLoss > 0)
+      ? totalValue - (totalValue * TAUX_FORFAITAIRE) - totalCost
+      : totalGainLoss;
+
     return {
       goldTotalG, silverTotalG, platinumTotalG, palladiumTotalG, copperTotalG,
       goldPieces, silverPieces, platinumPieces, palladiumPieces, copperPieces,
-      totalValue, totalCost, totalGainLoss, totalGainLossPct,
+      totalValue, totalCost, totalGainLoss, totalGainLossPct, totalNetEstime,
     };
   }, [positions, prices]);
 
@@ -263,9 +269,19 @@ export default function TableauDeBordScreen() {
       const spotKey = METAL_SPOT_KEY[m.key];
       const spot = spotKey ? prices[spotKey] : null;
       const value = spot && m.totalG ? (m.totalG / OZ_TO_G) * spot : null;
-      return { ...m, value };
+
+      // Net estimé par métal
+      const cost = positions
+        .filter(p => p.metal === m.key)
+        .reduce((s, p) => s + p.quantity * p.purchasePrice, 0);
+      const gain = value !== null ? value - cost : null;
+      const netEstime = (value !== null && gain !== null && gain > 0)
+        ? value - (value * TAUX_FORFAITAIRE) - cost
+        : gain;
+
+      return { ...m, value, netEstime };
     }),
-    [portfolio, prices]
+    [portfolio, prices, positions]
   );
 
   const selectedMetalConfig = useMemo(() =>
@@ -313,7 +329,7 @@ export default function TableauDeBordScreen() {
         {/* ── 2. Hero card — valeur totale ── */}
         <View style={styles.heroCard}>
           <View style={styles.heroLabelRow}>
-            <Text style={styles.heroLabel}>VALEUR TOTALE ESTIMÉE</Text>
+            <Text style={styles.heroLabel}>VALEUR DE VOTRE PORTEFEUILLE</Text>
             <TouchableOpacity
               onPress={toggleHideValue}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -366,13 +382,52 @@ export default function TableauDeBordScreen() {
                   )}
                 </View>
               )}
+              {portfolio.totalNetEstime !== null && !hideValue &&
+               portfolio.totalGainLoss !== null && portfolio.totalGainLoss > 0 && (
+                <View style={styles.netGlobalRow}
+                  accessibilityLabel={`Si vous vendez aujourd'hui, environ ${formatEur(portfolio.totalNetEstime ?? 0)} euros nets`}
+                >
+                  <Text style={styles.netGlobalLabel}>
+                    GAIN NET ESTIMÉ
+                  </Text>
+                  <Text style={styles.netGlobalValue}>
+                    ~{formatEur(portfolio.totalNetEstime)} {currencySymbol}
+                  </Text>
+                  <Text style={styles.netGlobalSub}>
+                    Estimation après impôts
+                  </Text>
+                  <View style={styles.reassuranceRow}>
+                    <Text style={styles.reassuranceItem}>Calcul instantané</Text>
+                    <Text style={styles.reassuranceDot}>·</Text>
+                    <Text style={styles.reassuranceItem}>Données privées</Text>
+                  </View>
+                </View>
+              )}
+              {portfolio.totalGainLoss !== null && portfolio.totalGainLoss <= 0 && !hideValue && (
+                <Text style={styles.netGlobalNoTax}>
+                  Aucun impôt si vente en régime plus-values
+                </Text>
+              )}
             </>
           )}
           {/* TODO: sparkline */}
         </View>
 
+        {/* CTA Simuler mes ventes */}
+        {hasPositions && pricesReady && (
+          <TouchableOpacity
+            style={styles.simulerCta}
+            onPress={() => router.push('/fiscalite-globale' as never)}
+            activeOpacity={0.7}
+            accessibilityLabel="Voir combien je récupère"
+          >
+            <Ionicons name="calculator-outline" size={18} color={OrTrackColors.gold} />
+            <Text style={styles.simulerCtaText}>Voir combien je récupère →</Text>
+          </TouchableOpacity>
+        )}
+
         {/* ── 3. MARCHÉS — chips horizontales ── */}
-        <Text style={styles.sectionTitle}>MARCHÉS</Text>
+        <Text style={[styles.sectionTitle, { marginTop: 8 }]}>MARCHÉS</Text>
 
         {error && !loading && (
           <View style={styles.errorBanner}>
@@ -423,7 +478,7 @@ export default function TableauDeBordScreen() {
                   accessibilityLabel={`${m.name} ${displayPrice !== null ? formatEur(displayPrice) + ' ' + unitLabel : ''}`}
                   style={[
                     styles.marketChip,
-                    active && { borderWidth: 1.5, borderColor: m.color, backgroundColor: `${m.color}26` },
+                    active && { borderColor: m.color, backgroundColor: `${m.color}15` },
                   ]}>
                   <Text style={styles.marketChipName}>{m.name}</Text>
                   {displayPrice !== null ? (
@@ -460,9 +515,9 @@ export default function TableauDeBordScreen() {
                 <TouchableOpacity
                   onPress={navigateToPortfolio}
                   activeOpacity={0.7}
-                  accessibilityLabel="Voir tout le portfolio"
+                  accessibilityLabel="Voir mes positions"
                 >
-                  <Text style={styles.detentionViewAll}>Voir tout ›</Text>
+                  <Text style={styles.detentionViewAll}>Voir mes positions ›</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -489,7 +544,19 @@ export default function TableauDeBordScreen() {
                       </View>
                       <View style={styles.detentionRight}>
                         {m.value !== null && (
-                          <Text style={styles.detentionValue}>{formatEur(m.value)} {currencySymbol}</Text>
+                          <View style={styles.detentionValues}>
+                            <Text style={styles.detentionValue}>
+                              {formatEur(m.value)} {currencySymbol}
+                            </Text>
+                            {m.netEstime !== null && (m.netEstime ?? 0) > 0 && (
+                              <Text style={[
+                                styles.detentionNet,
+                                styles.changePositive,
+                              ]}>
+                                Gain net : +{formatEur(m.netEstime)} {currencySymbol}
+                              </Text>
+                            )}
+                          </View>
                         )}
                         <Text style={styles.detentionChevron}>›</Text>
                       </View>
@@ -556,7 +623,7 @@ export default function TableauDeBordScreen() {
           accessibilityLabel="Configurer les alertes de prix"
         >
           <View style={styles.alertCardInner}>
-            <Ionicons name="notifications-outline" size={18} color={OrTrackColors.gold} />
+            <Ionicons name="notifications-outline" size={18} color={OrTrackColors.gold} style={{ opacity: 0.75 }} />
             <Text style={styles.alertCardText}>Configurer mes alertes de prix</Text>
           </View>
           <Text style={styles.alertCardChevron}>›</Text>
@@ -602,7 +669,7 @@ const styles = StyleSheet.create({
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
     padding: 14,
-    marginBottom: 8,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: 'rgba(201,168,76,0.2)',
   },
@@ -649,17 +716,95 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 8,
+    marginBottom: 4,
   },
   gainValue: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
   },
   gainPct: {
-    fontSize: 14,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '400',
   },
   changePositive: { color: '#4CAF50' },
   changeNegative: { color: '#E07070' },
+
+  // Net global dans la hero card
+  netGlobalRow: {
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: OrTrackColors.border,
+  },
+  netGlobalLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: OrTrackColors.gold,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  netGlobalValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#4CAF50',
+  },
+  netGlobalSub: {
+    fontSize: 11,
+    color: OrTrackColors.subtext,
+    marginTop: 2,
+  },
+  reassuranceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 6,
+  },
+  reassuranceItem: {
+    fontSize: 10,
+    color: OrTrackColors.subtext,
+  },
+  reassuranceDot: {
+    fontSize: 10,
+    color: OrTrackColors.subtext,
+  },
+  netGlobalNoTax: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    marginTop: 8,
+  },
+
+  // CTA Simuler
+  simulerCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: OrTrackColors.card,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: OrTrackColors.gold,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    marginTop: 8,
+    marginBottom: 16,
+    gap: 8,
+  },
+  simulerCtaText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
+  },
+
+  // Net dans détention
+  detentionValues: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  detentionNet: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 0,
+  },
 
   // Section title (shared)
   sectionTitle: {
@@ -674,20 +819,20 @@ const styles = StyleSheet.create({
 
   // 3. MARCHÉS chips
   marketChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: OrTrackColors.card,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
   },
   marketChipName: {
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '500',
     color: OrTrackColors.white,
   },
   marketChipPrice: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '700',
     color: OrTrackColors.white,
     marginTop: 2,
@@ -737,7 +882,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 10,
   },
   detentionLeft: {
     flexDirection: 'row',
@@ -833,11 +978,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: OrTrackColors.card,
-    borderRadius: 14,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: OrTrackColors.border,
-    padding: 16,
-    marginTop: 16,
+    padding: 14,
+    marginTop: 12,
   },
   alertCardInner: {
     flexDirection: 'row',
@@ -845,9 +990,10 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   alertCardText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
     color: OrTrackColors.white,
+    opacity: 0.75,
   },
   alertCardChevron: {
     fontSize: 20,

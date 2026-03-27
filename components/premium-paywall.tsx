@@ -1,495 +1,501 @@
-import React, { useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useRef, useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Animated, StyleSheet } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
-import Ionicons from '@expo/vector-icons/Ionicons';
 
+import { CrownIcon } from '@/components/crown-icon';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 
-type FeatureRow = {
-  feature: string;
-  free: string;
-  premium: string;
-  icon: keyof typeof Ionicons.glyphMap;
-  freeIsCheck?: boolean;
-  premiumIsCheck?: boolean;
-};
+// ─── Constantes ──────────────────────────────────────────────────────────────
 
-const FEATURES: FeatureRow[] = [
-  { feature: 'Positions',         free: '3 max',       premium: 'Illimit\u00e9',   icon: 'layers-outline' },
-  { feature: 'Historique',        free: '1 an',        premium: '20 ans',           icon: 'trending-up-outline' },
-  { feature: 'Alertes',           free: '2 max',       premium: 'Illimit\u00e9es', icon: 'notifications-outline' },
-  { feature: 'Actualit\u00e9s m\u00e9taux', free: '2 sources', premium: '6+',     icon: 'newspaper-outline' },
-  { feature: 'Fiscalit\u00e9',   free: 'Forfaitaire', premium: '2 r\u00e9gimes',  icon: 'business-outline' },
-  { feature: 'Export CSV',        free: '\u2014',       premium: 'check',           icon: 'download-outline', premiumIsCheck: true },
-  { feature: 'Statistiques',      free: '\u2014',       premium: 'check',           icon: 'stats-chart-outline', premiumIsCheck: true },
+const BENEFITS = [
+  { icon: '\uD83C\uDFDB\uFE0F', text: "Payez moins d'impôts sur vos ventes", sub: 'Identifiez le régime le moins taxé' },
+  { icon: '\uD83E\uDD47', text: 'Portefeuille illimité', sub: 'Napoléons, Krugerrands, lingots…' },
+  { icon: '\uD83D\uDCC8', text: 'Suivez vos gains en temps réel', sub: 'Historique 20 ans + stats détaillées' },
 ];
 
-export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
-  const { offerings, isPurchasing, handlePurchase, handleRestore, retryLoadOfferings, isPremium } = usePremium();
-  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
-  const [isRestoring, setIsRestoring] = useState(false);
-  const [isRetrying, setIsRetrying] = useState(false);
+const FEATURES = [
+  { icon: '\uD83E\uDD47', name: 'Positions', free: '3 max', premium: 'Illimité', hl: false },
+  { icon: '\uD83C\uDFDB\uFE0F', name: 'Fiscalité', free: 'Forfaitaire', premium: 'Comparatif', hl: true },
+  { icon: '\uD83D\uDCC8', name: 'Historique', free: '1 an', premium: '20 ans', hl: false },
+  { icon: '\uD83D\uDD14', name: 'Alertes', free: '2 max', premium: 'Illimitées', hl: false },
+  { icon: '\uD83D\uDCF0', name: 'Actualités', free: '2 sources', premium: 'Toutes', hl: false },
+  { icon: '\uD83D\uDCCA', name: 'Statistiques', free: '—', premium: '✓', hl: false },
+  { icon: '\uD83D\uDCCB', name: 'Export CSV', free: '—', premium: '✓', hl: false },
+];
 
-  // Guard : d\u00e9j\u00e0 Premium
+// ─── Animation helper ────────────────────────────────────────────────────────
+
+const useStaggerAnim = (delay: number) => {
+  const fade = useRef(new Animated.Value(0)).current;
+  const slide = useRef(new Animated.Value(14)).current;
+  useEffect(() => {
+    const anim = Animated.parallel([
+      Animated.timing(fade, { toValue: 1, duration: 550, delay, useNativeDriver: true }),
+      Animated.timing(slide, { toValue: 0, duration: 550, delay, useNativeDriver: true }),
+    ]);
+    anim.start();
+    return () => anim.stop();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return { fade, slide };
+};
+
+// ─── Composant ───────────────────────────────────────────────────────────────
+
+export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
+  const { isPremium } = usePremium();
+  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
+
+  // Stagger groups
+  const animA = useStaggerAnim(0);
+  const animB = useStaggerAnim(60);
+  const animC = useStaggerAnim(100);
+  const animD = useStaggerAnim(160);
+  const animE = useStaggerAnim(320);
+
+  // Glow (couronne)
+  const glowAnim = useRef(new Animated.Value(0)).current;
+
+  // Pulse (CTA)
+  const pulseAnim = useRef(new Animated.Value(0.15)).current;
+
+  useEffect(() => {
+    const glowAnimation = Animated.timing(glowAnim, {
+      toValue: 0.3, duration: 1000, useNativeDriver: true,
+    });
+    glowAnimation.start();
+
+    const pulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 0.5, duration: 1250, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 0.15, duration: 1250, useNativeDriver: true }),
+      ])
+    );
+    pulseLoop.start();
+
+    return () => {
+      glowAnimation.stop();
+      pulseLoop.stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // v1.1: this guard will work when RevenueCat is enabled
   if (isPremium) {
     return (
-      <SafeAreaView style={{ backgroundColor: 'transparent', flex: 1 }} edges={['top']}>
-        <View style={styles.premiumDoneContainer}>
-          <Ionicons name="checkmark-circle" size={48} color={OrTrackColors.gold} />
-          <Text style={styles.premiumDoneTitle}>Vous \u00eates Premium !</Text>
-          <TouchableOpacity style={styles.premiumDoneButton} onPress={onClose} activeOpacity={0.8}>
-            <Text style={styles.premiumDoneButtonText}>Fermer</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <View style={s.premiumDoneContainer}>
+        <Text style={{ fontSize: 48 }}>{'✅'}</Text>
+        <Text style={s.premiumDoneTitle}>Vous êtes Premium !</Text>
+        <TouchableOpacity style={s.premiumDoneButton} onPress={onClose} activeOpacity={0.8}>
+          <Text style={s.premiumDoneButtonText}>Fermer</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
-  const hasOfferings = offerings.monthly !== null || offerings.annual !== null;
-  const selectedPkg = selectedPlan === 'annual' ? offerings.annual : offerings.monthly;
-
-  const handleSubscribe = () => {
-    if (!selectedPkg) return;
-    handlePurchase(selectedPkg);
-  };
-
-  const handleRestorePress = async () => {
-    setIsRestoring(true);
-    const restored = await handleRestore();
-    setIsRestoring(false);
-    if (!restored) {
-      Alert.alert('Aucun abonnement trouv\u00e9', "Aucun achat Premium n'a \u00e9t\u00e9 trouv\u00e9 sur ce compte.");
-    }
-  };
-
-  const handleRetry = async () => {
-    setIsRetrying(true);
-    await retryLoadOfferings();
-    setIsRetrying(false);
-  };
-
-  const ctaDisabled = isPurchasing;
-
   return (
-    <SafeAreaView style={{ backgroundColor: 'transparent' }} edges={['top']}>
-      {/* Bouton fermer */}
+    <ScrollView
+      style={{ backgroundColor: OrTrackColors.background }}
+      contentContainerStyle={{ paddingBottom: 50 }}
+      showsVerticalScrollIndicator={false}
+      bounces={false}
+      overScrollMode="never"
+      keyboardShouldPersistTaps="handled"
+    >
+      {/* 1. Bouton fermer */}
       <TouchableOpacity
-        onPress={isPurchasing ? undefined : onClose}
-        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-        style={[styles.closeButton, isPurchasing && { opacity: 0.4 }]}
-        disabled={isPurchasing}
+        style={s.closeButton}
+        onPress={onClose}
+        accessibilityLabel="Fermer"
+        accessibilityRole="button"
       >
-        <Ionicons name="close" size={22} color={OrTrackColors.subtext} />
+        <View style={s.closeCircle}>
+          <Text style={s.closeText}>{'✕'}</Text>
+        </View>
       </TouchableOpacity>
 
-      <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 52, paddingBottom: 80 }}
-        showsVerticalScrollIndicator={false}
-        bounces={false}
-        overScrollMode="never"
+      {/* 2. Glow effect */}
+      <Animated.View
+        pointerEvents="none"
+        style={{ position: 'absolute', top: 8, left: 0, right: 0, alignItems: 'center', opacity: glowAnim }}
       >
-        {/* Couronne */}
-        <View style={styles.crownContainer}>
-          <Svg width={48} height={48} viewBox="0 0 24 24" fill="none">
-            <Path
-              d="M2 8l4 12h12l4-12-5 4-5-8-5 8-5-4z"
-              fill={OrTrackColors.gold}
-              opacity={0.9}
-            />
-            <Path
-              d="M6 20h12v2H6z"
-              fill={OrTrackColors.gold}
-              opacity={0.7}
-            />
-          </Svg>
-        </View>
+        <View style={s.glowOrb} />
+      </Animated.View>
 
-        {/* Titre + sous-titre */}
-        <Text style={styles.title}>OrTrack Premium</Text>
-        <Text style={styles.subtitle}>Tout votre patrimoine m{'\u00e9'}taux. Sans limite.</Text>
+      {/* 3. Hero */}
+      <Animated.View style={[s.heroContainer, { opacity: animA.fade, transform: [{ translateY: animA.slide }] }]}>
+        <CrownIcon />
+        <Text style={s.heroTitle}>Suivez votre or. Vendez au bon moment.</Text>
+        <Text style={s.heroSubtitle}>OrTrack Premium</Text>
+      </Animated.View>
 
-        {/* Entete tableau */}
-        <View style={styles.tableHeader}>
-          <View style={styles.featureCol}>
-            <View style={{ width: 22 }} />
-            <Text style={styles.headerLabel}>Fonctionnalit{'\u00e9'}</Text>
-          </View>
-          <Text style={styles.headerLabelCenter}>Gratuit</Text>
-          <Text style={[styles.headerLabelCenter, { color: OrTrackColors.gold }]}>Premium</Text>
-        </View>
-
-        {/* Section Avantages Premium */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionHeaderText}>
-            AVANTAGES PREMIUM
-          </Text>
-        </View>
-
-        {/* Lignes du tableau */}
-        {FEATURES.map((item, index) => (
-          <View
-            key={index}
-            style={[
-              styles.tableRow,
-              index % 2 === 0 && styles.tableRowEven,
-            ]}
-          >
-            <View style={styles.featureCol}>
-              <View style={styles.iconCell}>
-                <Ionicons name={item.icon} size={20} color={OrTrackColors.gold} />
-              </View>
-              <Text style={styles.featureText}>{item.feature}</Text>
-            </View>
-            {item.freeIsCheck ? (
-              <View style={styles.checkCell}>
-                <Ionicons name="checkmark" size={16} color={OrTrackColors.subtext} />
-              </View>
-            ) : (
-              <Text style={styles.freeText}>{item.free}</Text>
-            )}
-            {item.premiumIsCheck ? (
-              <View style={styles.checkCell}>
-                <Ionicons name="checkmark" size={16} color={OrTrackColors.gold} />
-              </View>
-            ) : (
-              <Text style={styles.premiumText}>{item.premium}</Text>
-            )}
-          </View>
-        ))}
-
-        {/* Reassurance */}
-        <Text style={styles.reassuranceText}>
-          Sans engagement {'\u00b7'} Annulez {'\u00e0'} tout moment {'\u00b7'} Donn{'\u00e9'}es priv{'\u00e9'}es
+      {/* 4. Preuve sociale */}
+      <Animated.View style={{ opacity: animB.fade, transform: [{ translateY: animB.slide }] }}>
+        <Text style={s.socialProof}>
+          Pour investisseurs en métaux physiques · France, Belgique, Suisse
         </Text>
+      </Animated.View>
 
-        {/* Cards tarification */}
-        <View style={styles.pricingRow}>
+      {/* 5. Bloc 3 bénéfices */}
+      <Animated.View style={[s.benefitsOuter, { opacity: animC.fade, transform: [{ translateY: animC.slide }] }]}>
+        <LinearGradient
+          colors={['#1C1A17', 'rgba(201,168,76,0.06)']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={s.benefitsGradient}
+        >
+          {BENEFITS.map((b, i) => (
+            <View key={i} style={[s.benefitRow, i < BENEFITS.length - 1 && s.benefitRowBorder]}>
+              <View style={s.benefitIconBox}>
+                <Text style={s.benefitEmoji}>{b.icon}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.benefitText}>{b.text}</Text>
+                <Text style={s.benefitSub}>{b.sub}</Text>
+              </View>
+            </View>
+          ))}
+        </LinearGradient>
+      </Animated.View>
+
+      {/* 6. Bloc fiscal killer */}
+      <Animated.View style={[s.fiscalOuter, { opacity: animD.fade, transform: [{ translateY: animD.slide }] }]}>
+        <LinearGradient
+          colors={['rgba(201,168,76,0.10)', 'rgba(201,168,76,0.03)']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={s.fiscalGradient}
+        >
+          <Text style={{ fontSize: 24, flexShrink: 0 }}>💰</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.fiscalTitle}>Évitez de payer trop d'impôts</Text>
+            <Text style={s.fiscalSub}>
+              Jusqu'à plusieurs centaines d'euros d'écart entre les régimes. Trouvez le moins taxé en 1 clic.
+            </Text>
+          </View>
+          <View style={s.fiscalBadge}>
+            <Text style={s.fiscalBadgeText}>Exclu</Text>
+          </View>
+        </LinearGradient>
+      </Animated.View>
+
+      {/* 7-12. Table + pricing + CTA */}
+      <Animated.View style={{ opacity: animE.fade, transform: [{ translateY: animE.slide }] }}>
+
+        {/* 7. Titre table */}
+        <Text style={s.tableTitle}>Débloquez tout :</Text>
+
+        {/* 8. Table comparative */}
+        <View style={s.tableHeaderRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.tableHeaderLabel}>Fonctionnalité</Text>
+          </View>
+          <Text style={s.tableHeaderFree}>Gratuit</Text>
+          <Text style={s.tableHeaderPremium}>Premium</Text>
+        </View>
+
+        {FEATURES.map((f, i) => {
+          const isLast = i === FEATURES.length - 1;
+          return (
+            <View key={i} style={[s.featureRow, !isLast && s.featureRowBorder, f.hl && s.featureRowHl]}>
+              <View style={s.featureNameCol}>
+                <Text style={s.featureEmoji}>{f.icon}</Text>
+                <Text style={[s.featureName, f.hl && s.featureNameHl]}>{f.name}</Text>
+              </View>
+              <Text style={[s.featureFree, f.free === '—' && s.featureFreeDash]}>{f.free}</Text>
+              <View style={s.featurePremiumCol}>
+                {f.premium === '✓' ? (
+                  <Svg width={15} height={15} viewBox="0 0 18 18" fill="none">
+                    <Path d="M4 9.5L7.5 13L14 5.5" stroke="#C9A84C" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
+                ) : (
+                  <Text style={s.featurePremiumText}>{f.premium}</Text>
+                )}
+              </View>
+            </View>
+          );
+        })}
+
+        {/* 9. Réassurance */}
+        <Text style={s.reassurance}>Sans engagement {'·'} Annulez {'à'} tout moment {'·'} Fiscalité française officielle 2025</Text>
+
+        {/* 10. Pricing cards */}
+        <View style={s.pricingRow}>
           {/* Mensuel */}
           <TouchableOpacity
-            style={[
-              styles.pricingCard,
-              selectedPlan === 'monthly' && styles.pricingCardSelected,
-            ]}
             onPress={() => setSelectedPlan('monthly')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
+            style={{ flex: 1 }}
+            accessibilityLabel="Plan mensuel, 2 euros 99 par mois"
           >
-            <Text style={styles.pricingLabel}>Mensuel</Text>
-            <Text style={styles.pricingPrice}>
-              {offerings.monthly?.product.priceString ?? '2,99\u20AC'}
-            </Text>
-            <Text style={styles.pricingSub}>/mois</Text>
+            {selectedPlan === 'monthly' ? (
+              <LinearGradient
+                colors={['rgba(201,168,76,0.10)', 'rgba(201,168,76,0.03)']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={s.pricingCardSelected}
+              >
+                <Text style={s.pricingLabel}>Mensuel</Text>
+                <Text style={s.pricingPriceGold}>2,99€</Text>
+                <Text style={s.pricingSub}>/mois</Text>
+              </LinearGradient>
+            ) : (
+              <View style={s.pricingCard}>
+                <Text style={s.pricingLabel}>Mensuel</Text>
+                <Text style={s.pricingPrice}>2,99€</Text>
+                <Text style={s.pricingSub}>/mois</Text>
+              </View>
+            )}
           </TouchableOpacity>
 
           {/* Annuel */}
           <TouchableOpacity
-            style={[
-              styles.pricingCard,
-              styles.pricingCardAnnual,
-              selectedPlan === 'annual' && styles.pricingCardSelected,
-            ]}
             onPress={() => setSelectedPlan('annual')}
-            activeOpacity={0.7}
+            activeOpacity={0.8}
+            style={{ flex: 1 }}
+            accessibilityLabel="Plan annuel recommandé, 14 euros 99 par an, soit 1 euro 25 par mois"
           >
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{'\u221221\u20AC/an'}</Text>
-            </View>
-            <Text style={[styles.pricingLabel, { color: OrTrackColors.gold }]}>Annuel</Text>
-            <Text style={styles.pricingPrice}>
-              {offerings.annual?.product.priceString ?? '14,99\u20AC'}
-            </Text>
-            <Text style={styles.pricingSub}>/an</Text>
-            <Text style={styles.pricingEquiv}>{'soit 1,25\u20AC/mois'}</Text>
+            {selectedPlan === 'annual' ? (
+              <LinearGradient
+                colors={['rgba(201,168,76,0.13)', 'rgba(201,168,76,0.04)']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={s.pricingCardAnnualSelected}
+              >
+                <View style={s.badgeDiscount}><Text style={s.badgeDiscountText}>{'−21€/an'}</Text></View>
+                <Text style={[s.pricingLabel, { color: OrTrackColors.gold }]}>Annuel</Text>
+                <Text style={s.pricingPriceGold}>14,99€</Text>
+                <Text style={s.pricingSub}>/an {'·'} soit 1,25€/mois</Text>
+                <Text style={s.pricingMostChosen}>Le plus choisi</Text>
+              </LinearGradient>
+            ) : (
+              <View style={s.pricingCardAnnual}>
+                <View style={s.badgeDiscount}><Text style={s.badgeDiscountText}>{'−21€/an'}</Text></View>
+                <Text style={s.pricingLabel}>Annuel</Text>
+                <Text style={s.pricingPrice}>14,99€</Text>
+                <Text style={s.pricingSub}>/an {'·'} soit 1,25€/mois</Text>
+                <Text style={s.pricingMostChosen}>Le plus choisi</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
-        {/* CTA S'abonner */}
-        <View style={{ marginTop: 20 }}>
-          {hasOfferings ? (
-            <TouchableOpacity
-              style={[styles.ctaButton, ctaDisabled && { opacity: 0.6 }]}
-              onPress={ctaDisabled ? undefined : handleSubscribe}
-              disabled={ctaDisabled}
-              activeOpacity={0.8}
+        {/* 11. CTA */}
+        <View style={s.ctaContainer}>
+          <Animated.View
+            pointerEvents="none"
+            style={[s.ctaGlow, { opacity: pulseAnim }]}
+          />
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => {}}
+            accessibilityLabel="Bientôt disponible"
+            accessibilityRole="button"
+          >
+            <LinearGradient
+              colors={['#C9A84C', '#A8872E']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={s.ctaGradient}
             >
-              {isPurchasing && !isRestoring ? (
-                <ActivityIndicator color="#12110F" />
-              ) : (
-                <Text style={styles.ctaText}>
-                  S'abonner {'\u00b7'} {selectedPlan === 'annual'
-                    ? (offerings.annual?.product.priceString ?? '14,99\u20AC') + ' / an'
-                    : (offerings.monthly?.product.priceString ?? '2,99\u20AC') + ' / mois'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.ctaRetryButton, isRetrying && { opacity: 0.6 }]}
-              onPress={isRetrying ? undefined : handleRetry}
-              disabled={isRetrying}
-              activeOpacity={0.8}
-            >
-              {isRetrying ? (
-                <ActivityIndicator color={OrTrackColors.gold} />
-              ) : (
-                <Text style={styles.ctaRetryText}>R{'\u00e9'}essayer</Text>
-              )}
-            </TouchableOpacity>
-          )}
+              <Text style={s.ctaText}>Bientôt disponible</Text>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
 
-        {/* Restaurer */}
-        <TouchableOpacity
-          style={styles.restoreButton}
-          onPress={ctaDisabled ? undefined : handleRestorePress}
-          disabled={ctaDisabled}
-          activeOpacity={0.7}
-        >
-          <Text style={[styles.restoreText, (isRestoring || ctaDisabled) && { opacity: 0.6 }]}>
-            {isRestoring ? 'Restauration...' : 'Restaurer mes achats'}
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+        {/* 12. Sous-texte CTA */}
+        <Text style={s.ctaSubtext}>
+          Profitez de toutes les fonctionnalités gratuitement pendant le lancement
+        </Text>
+
+      </Animated.View>
+    </ScrollView>
   );
 }
 
-const styles = StyleSheet.create({
+// ─── Styles ──────────────────────────────────────────────────────────────────
+
+const s = StyleSheet.create({
+  // Close
   closeButton: {
-    position: 'absolute',
-    top: 16,
-    right: 16,
-    zIndex: 10,
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 18,
+    position: 'absolute', top: 14, right: 14, zIndex: 10,
   },
-  crownContainer: {
-    alignItems: 'center',
-    marginTop: 8,
+  closeCircle: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center', justifyContent: 'center',
   },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    textAlign: 'center',
-    marginTop: 12,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-    marginTop: 4,
-    marginBottom: 20,
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: OrTrackColors.border,
-    marginBottom: 4,
-  },
-  headerLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: OrTrackColors.subtext,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    flex: 1,
-  },
-  headerLabelCenter: {
-    width: 72,
-    fontSize: 10,
-    fontWeight: '700',
-    color: OrTrackColors.subtext,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  sectionHeader: {
-    marginTop: 8,
-    marginBottom: 6,
-    paddingVertical: 6,
-  },
-  sectionHeaderText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(42,38,32,0.5)',
-  },
-  tableRowEven: {
-    backgroundColor: 'rgba(201,168,76,0.04)',
-  },
-  featureCol: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  iconCell: {
-    width: 22,
-    alignItems: 'center',
-  },
-  featureText: {
-    fontSize: 13,
-    color: OrTrackColors.white,
-    flex: 1,
-  },
-  freeText: {
-    width: 72,
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-  },
-  premiumText: {
-    width: 72,
-    fontSize: 12,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-    textAlign: 'center',
-  },
-  checkCell: {
-    width: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reassuranceText: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 20,
-    lineHeight: 16,
-  },
-  pricingRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  pricingCard: {
-    flex: 1,
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-    padding: 16,
-    alignItems: 'center',
-  },
-  pricingCardAnnual: {
-    overflow: 'visible',
-  },
-  pricingCardSelected: {
-    borderColor: OrTrackColors.gold,
+  closeText: { fontSize: 18, color: OrTrackColors.subtext },
+
+  // Glow
+  glowOrb: {
+    width: 170, height: 170, borderRadius: 85,
     backgroundColor: 'rgba(201,168,76,0.06)',
   },
-  badge: {
-    position: 'absolute',
-    top: -10,
-    right: -8,
-    backgroundColor: OrTrackColors.gold,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  badgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#12110F',
-  },
-  pricingLabel: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  pricingPrice: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: OrTrackColors.white,
-  },
-  pricingSub: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
-  pricingEquiv: {
-    fontSize: 12,
-    color: OrTrackColors.gold,
-    marginTop: 4,
-  },
-  ctaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: OrTrackColors.gold,
-    borderRadius: 14,
-    paddingVertical: 16,
-  },
-  ctaText: {
-    color: '#12110F',
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  ctaRetryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 14,
-    paddingVertical: 16,
-    borderWidth: 1.5,
-    borderColor: OrTrackColors.gold,
-  },
-  ctaRetryText: {
-    color: OrTrackColors.gold,
-    fontWeight: 'bold',
-    fontSize: 16,
-  },
-  restoreButton: {
-    alignItems: 'center',
+
+  // Hero
+  heroContainer: { alignItems: 'center', paddingTop: 38 },
+  heroTitle: {
+    fontSize: 23, fontWeight: '700', color: OrTrackColors.white,
+    letterSpacing: -0.3, lineHeight: 29, textAlign: 'center',
     marginTop: 12,
-    paddingVertical: 8,
   },
-  restoreText: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
+  heroSubtitle: {
+    fontSize: 12, fontWeight: '600', color: OrTrackColors.gold,
+    letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 5,
   },
-  premiumDoneContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 32,
+
+  // Social proof
+  socialProof: {
+    textAlign: 'center', paddingTop: 12, paddingHorizontal: 20,
+    fontSize: 12, color: OrTrackColors.subtext,
   },
-  premiumDoneTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: OrTrackColors.gold,
-    marginTop: 16,
+
+  // Benefits
+  benefitsOuter: { marginHorizontal: 20, marginTop: 14 },
+  benefitsGradient: {
+    borderWidth: 1, borderColor: OrTrackColors.border, borderRadius: 14,
+    paddingTop: 12, paddingBottom: 12, paddingHorizontal: 14,
   },
-  premiumDoneButton: {
+  benefitRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 8,
+  },
+  benefitRowBorder: {
+    borderBottomWidth: 1, borderBottomColor: 'rgba(42,38,32,0.5)',
+  },
+  benefitIconBox: {
+    width: 38, height: 38, borderRadius: 10,
+    backgroundColor: 'rgba(201,168,76,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  benefitEmoji: { fontSize: 21 },
+  benefitText: {
+    fontSize: 13.5, fontWeight: '600', color: OrTrackColors.white, lineHeight: 18,
+  },
+  benefitSub: { fontSize: 11.5, color: OrTrackColors.subtext, marginTop: 1 },
+
+  // Fiscal
+  fiscalOuter: { marginHorizontal: 20, marginTop: 10 },
+  fiscalGradient: {
+    borderWidth: 1, borderColor: 'rgba(201,168,76,0.35)', borderRadius: 12,
+    paddingTop: 13, paddingBottom: 13, paddingHorizontal: 14,
+    flexDirection: 'row', alignItems: 'center', gap: 11,
+  },
+  fiscalTitle: {
+    fontSize: 13, fontWeight: '700', color: OrTrackColors.gold, lineHeight: 17,
+  },
+  fiscalSub: {
+    fontSize: 11.5, color: OrTrackColors.subtext, marginTop: 3, lineHeight: 16,
+  },
+  fiscalBadge: {
+    backgroundColor: OrTrackColors.gold, paddingTop: 3, paddingBottom: 3,
+    paddingHorizontal: 8, borderRadius: 14, flexShrink: 0,
+  },
+  fiscalBadgeText: {
+    fontSize: 10, fontWeight: '700', color: OrTrackColors.background,
+    letterSpacing: 0.3, textTransform: 'uppercase',
+  },
+
+  // Table
+  tableTitle: {
+    marginHorizontal: 20, marginTop: 14, marginBottom: 10,
+    fontSize: 12, fontWeight: '600', color: OrTrackColors.white,
+  },
+  tableHeaderRow: {
+    flexDirection: 'row', paddingBottom: 7, marginHorizontal: 20,
+    borderBottomWidth: 1, borderBottomColor: OrTrackColors.border, marginBottom: 2,
+  },
+  tableHeaderLabel: {
+    fontSize: 10, fontWeight: '600', color: OrTrackColors.subtext,
+    textTransform: 'uppercase', letterSpacing: 0.7,
+  },
+  tableHeaderFree: {
+    width: 62, textAlign: 'center',
+    fontSize: 10, fontWeight: '500', color: OrTrackColors.subtext,
+    textTransform: 'uppercase', letterSpacing: 0.4,
+  },
+  tableHeaderPremium: {
+    width: 78, textAlign: 'center',
+    fontSize: 10, fontWeight: '700', color: OrTrackColors.gold,
+    textTransform: 'uppercase', letterSpacing: 0.4,
+  },
+  featureRow: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 8, marginHorizontal: 20,
+  },
+  featureRowBorder: {
+    borderBottomWidth: 1, borderBottomColor: 'rgba(42,38,32,0.3)',
+  },
+  featureNameCol: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 7 },
+  featureEmoji: { fontSize: 15 },
+  featureName: { fontSize: 12.5, fontWeight: '400', color: OrTrackColors.white },
+  featureNameHl: { fontWeight: '600', color: OrTrackColors.gold },
+  featureFree: { width: 62, textAlign: 'center', fontSize: 11.5, color: OrTrackColors.subtext },
+  featureFreeDash: { color: '#5A5040' },
+  featurePremiumCol: { width: 78, alignItems: 'center', justifyContent: 'center' },
+  featurePremiumText: { fontSize: 11.5, fontWeight: '600', color: OrTrackColors.gold, textAlign: 'center' },
+  featureRowHl: {
+    backgroundColor: 'rgba(201,168,76,0.06)', borderRadius: 6,
+  },
+
+  // Reassurance
+  reassurance: {
+    textAlign: 'center', paddingTop: 10, paddingBottom: 10, paddingHorizontal: 20,
+    fontSize: 11, color: OrTrackColors.subtext,
+  },
+
+  // Pricing
+  pricingRow: { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 14, gap: 10 },
+  pricingCard: {
+    borderRadius: 12, borderWidth: 1, borderColor: OrTrackColors.border,
+    backgroundColor: OrTrackColors.card,
+    paddingTop: 14, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+  },
+  pricingCardSelected: {
+    borderRadius: 12, borderWidth: 2, borderColor: OrTrackColors.gold,
+    paddingTop: 14, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+  },
+  pricingCardAnnual: {
+    borderRadius: 12, borderWidth: 1, borderColor: OrTrackColors.border,
+    backgroundColor: OrTrackColors.card,
+    paddingTop: 20, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+  },
+  pricingCardAnnualSelected: {
+    borderRadius: 12, borderWidth: 2, borderColor: OrTrackColors.gold,
+    paddingTop: 20, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+  },
+  pricingLabel: { fontSize: 11, fontWeight: '500', color: OrTrackColors.subtext, marginBottom: 3 },
+  pricingPrice: { fontSize: 24, fontWeight: '700', color: OrTrackColors.white },
+  pricingPriceGold: { fontSize: 24, fontWeight: '700', color: OrTrackColors.gold },
+  pricingSub: { fontSize: 11, color: OrTrackColors.subtext, marginTop: 2 },
+  pricingMostChosen: { fontSize: 10, color: OrTrackColors.gold, opacity: 0.7, marginTop: 4 },
+  badgeDiscount: {
+    position: 'absolute', top: -9, right: -4,
     backgroundColor: OrTrackColors.gold,
-    borderRadius: 14,
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    marginTop: 24,
+    paddingTop: 2, paddingBottom: 2, paddingHorizontal: 8, borderRadius: 14,
   },
-  premiumDoneButtonText: {
-    color: '#12110F',
-    fontWeight: 'bold',
-    fontSize: 16,
+  badgeDiscountText: { fontSize: 10, fontWeight: '700', color: OrTrackColors.background },
+
+  // CTA
+  ctaContainer: { marginHorizontal: 20, marginTop: 6 },
+  ctaGlow: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: 'rgba(201,168,76,0.3)', borderRadius: 12,
   },
+  ctaGradient: { borderRadius: 12, paddingTop: 14, paddingBottom: 14, alignItems: 'center' },
+  ctaText: { fontSize: 15, fontWeight: '700', color: OrTrackColors.background },
+
+  // CTA subtext
+  ctaSubtext: {
+    textAlign: 'center', marginTop: 8, paddingHorizontal: 20, paddingBottom: 10,
+    fontSize: 11.5, color: OrTrackColors.subtext, lineHeight: 16,
+  },
+
+  // Premium done
+  premiumDoneContainer: {
+    flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32,
+    backgroundColor: OrTrackColors.background,
+  },
+  premiumDoneTitle: { fontSize: 22, fontWeight: 'bold', color: OrTrackColors.gold, marginTop: 16 },
+  premiumDoneButton: {
+    backgroundColor: OrTrackColors.gold, borderRadius: 14,
+    paddingTop: 16, paddingBottom: 16, paddingHorizontal: 48, marginTop: 24,
+  },
+  premiumDoneButtonText: { color: OrTrackColors.background, fontWeight: 'bold', fontSize: 16 },
 });

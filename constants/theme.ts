@@ -10,6 +10,7 @@ export const OrTrackColors = {
   card: '#1C1A17',
   border: '#2A2620',
   subtext: '#7A7060',
+  label: '#8A806A',
   goldBadge: 'rgba(201,168,76,0.12)',
 };
 

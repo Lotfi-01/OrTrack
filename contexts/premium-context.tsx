@@ -1,7 +1,6 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PurchasesPackage } from 'react-native-purchases';
 
 import PremiumPaywall from '@/components/premium-paywall';
 import { OrTrackColors } from '@/constants/theme';
@@ -11,10 +10,12 @@ import {
   getOfferings,
   purchasePackage,
   restorePurchases,
-  addPurchaseListener,
   initWithTimeout,
   RC_INIT_TIMEOUT_MS,
 } from '@/services/revenuecat';
+
+// v1.1: replace with import { PurchasesPackage } from 'react-native-purchases'
+type PurchasesPackage = { identifier: string; product: { priceString: string } };
 
 // ─── Limites freemium ────────────────────────────────────────────────────────
 
@@ -56,7 +57,8 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
   const [offerings, setOfferings] = useState<{ monthly: PurchasesPackage | null; annual: PurchasesPackage | null }>({ monthly: null, annual: null });
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [sdkReady, setSdkReady] = useState(false);
-  const purchaseInProgress = useRef(false);
+  // v1.1: uncomment when RevenueCat is enabled
+  // const purchaseInProgress = useRef(false);
 
   // ── Initialisation RevenueCat ────────────────────────────────────────────
 
@@ -104,15 +106,14 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
     return () => { mounted = false; };
   }, []);
 
-  // ── Listener pour les mises \u00e0 jour de statut ──────────────────────────
-
-  useEffect(() => {
-    if (!sdkReady) return;
-    const unsubscribe = addPurchaseListener((premium) => {
-      setIsPremium(premium);
-    });
-    return unsubscribe;
-  }, [sdkReady]);
+  // v1.1: uncomment when RevenueCat is enabled
+  // useEffect(() => {
+  //   if (!sdkReady) return;
+  //   const unsubscribe = addPurchaseListener((premium) => {
+  //     setIsPremium(premium);
+  //   });
+  //   return unsubscribe;
+  // }, [sdkReady]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
@@ -124,26 +125,22 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const handlePurchase = useCallback(async (pkg: PurchasesPackage) => {
-    if (purchaseInProgress.current) return;
-    purchaseInProgress.current = true;
+  const handlePurchase = useCallback(async (_pkg: PurchasesPackage) => {
+    // v1.1: enable when RevenueCat is active
     setIsPurchasing(true);
     try {
-      const result = await purchasePackage(pkg);
+      const result = await purchasePackage(_pkg);
       if (result.isPremium) {
         setIsPremium(true);
         setShowPaywallModal(false);
       }
     } finally {
-      purchaseInProgress.current = false;
       setIsPurchasing(false);
     }
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleRestore = useCallback(async (): Promise<boolean> => {
-    if (purchaseInProgress.current) return false;
-    purchaseInProgress.current = true;
     setIsPurchasing(true);
     try {
       const restored = await restorePurchases();
@@ -153,7 +150,6 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
       }
       return restored;
     } finally {
-      purchaseInProgress.current = false;
       setIsPurchasing(false);
     }
   }, []);
