@@ -30,7 +30,20 @@
       "Bash(grep -Pn '[^\\\\x00-\\\\x7F]{2,}' components/premium-paywall.tsx)",
       "Bash(grep:*)",
       "Bash(grep -c \"''premium''\" services/revenuecat.ts)",
-      "Bash(find assets/ -name *.png -o -name *.jpg)"
+      "Bash(find assets/ -name *.png -o -name *.jpg)",
+      "Bash(FILE=\"app/statistiques.tsx\" echo \"=== Résidus placeholder ===\" grep -n \"opacity: 0.25\\\\|premiumOverlay\\\\|placeholderText\\\\|placeholderValue\\\\|premiumPreviewContainer\" $FILE echo \"=== Constante ===\" grep -n \"PREMIUM_STATS_FEATURES\" $FILE echo \"=== Styles supprimés ===\" grep -n \"premiumOverlay\\\\b\\\\|placeholderText\\\\b\\\\|placeholderValue\\\\b\\\\|premiumPreviewContainer\\\\b\" $FILE echo \"=== CTA ===\" grep -n \"Voir OrTrack Premium\" $FILE echo \"=== TypeScript ===\" npx tsc --noEmit)",
+      "Bash(ls \"app/\\(tabs\\)/portfolio.tsx\")",
+      "Bash(ls \"app/\\(tabs\\)/portefeuille.tsx\")",
+      "Bash(wc:*)",
+      "Bash(FILE=\"app/\\(tabs\\)/portefeuille.tsx\" echo \"=== 1. Doublons fiscal ===\" grep -c \"computeFiscalCountdown\" $FILE echo \"=== 2. Props ===\" grep -n \"isPremium\\\\|showPaywall\" $FILE)",
+      "Bash(FILE=\"app/\\(tabs\\)/portefeuille.tsx\")",
+      "Bash(for style:*)",
+      "Bash(do)",
+      "Bash(echo \"=== $style ===\")",
+      "Read(//c/Users/sawss/Desktop/OrTrack/**)",
+      "Bash(grep -v \"posCompactGainSmall\" echo \"---\" grep -n \"styles\\\\.posCompactCurrentValue\" \"app/\\(tabs\\)/portefeuille.tsx\" echo \"---\" grep -n \"styles\\\\.posCompactGainText\" \"app/\\(tabs\\)/portefeuille.tsx\" echo \"---\" grep -n \"styles\\\\.posCompactNetLabel\" \"app/\\(tabs\\)/portefeuille.tsx\" echo \"---\" grep -n \"styles\\\\.posCompactNetValue\" \"app/\\(tabs\\)/portefeuille.tsx\")",
+      "Bash(cat:*)",
+      "Bash(FILE=\"app/\\(tabs\\)/index.tsx\" echo \"=== 1. Net global ===\" grep -n \"vendez aujourd''''hui\\\\|totalNetEstime\" $FILE)"
     ]
   }
 }

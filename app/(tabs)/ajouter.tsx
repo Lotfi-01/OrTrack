@@ -141,6 +141,7 @@ export default function AjouterScreen() {
   useFocusEffect(
     useCallback(() => {
       refresh();
+      setIsPriceFocused(false);
     }, [refresh])
   );
 
@@ -171,6 +172,7 @@ export default function AjouterScreen() {
   const [showAllBars, setShowAllBars] = useState(false);
   const [saving, setSaving] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [isPriceFocused, setIsPriceFocused] = useState(false);
 
   const dateRef = useRef(purchaseDate);
   dateRef.current = purchaseDate;
@@ -200,6 +202,7 @@ export default function AjouterScreen() {
     setProduct(null);
     setCustomWeight('');
     setPurchasePrice('');
+    setIsPriceFocused(false);
     setShowAllPieces(false);
     setShowAllBars(false);
   }, []);
@@ -280,6 +283,7 @@ export default function AjouterScreen() {
     } else {
       setPurchasePrice('');
     }
+    setIsPriceFocused(false);
 
     // B3. Pré-remplir la date
     if (!dateRef.current) {
@@ -364,6 +368,7 @@ export default function AjouterScreen() {
       setPurchasePrice('');
       setPurchaseDate('');
       setNote('');
+      setIsPriceFocused(false);
       setShowAllPieces(false);
 
       setConfirmed(true);
@@ -722,7 +727,7 @@ export default function AjouterScreen() {
                       <Text style={styles.fieldLabel}>Prix d'achat unitaire</Text>
                       {!priceAnalysis.priceMatchesSpot && estimatedValue !== null && estimatedValue > 0 ? (
                         <TouchableOpacity
-                          onPress={() => setPurchasePrice(estimatedValue!.toFixed(2))}
+                          onPress={() => { setPurchasePrice(estimatedValue!.toFixed(2)); setIsPriceFocused(false); }}
                           activeOpacity={0.7}
                         >
                           <Text style={[styles.quickFillBtn, { fontSize: 13 }]}>Utiliser le cours actuel</Text>
@@ -737,8 +742,10 @@ export default function AjouterScreen() {
                         keyboardType="decimal-pad"
                         placeholder="Ex : 1 700"
                         placeholderTextColor={OrTrackColors.tabIconDefault}
-                        value={purchasePrice}
+                        value={isPriceFocused ? purchasePrice : purchasePrice.replace(/\./g, ',')}
                         onChangeText={setPurchasePrice}
+                        onFocus={() => setIsPriceFocused(true)}
+                        onBlur={() => setIsPriceFocused(false)}
                       />
                       <Text style={styles.inputSuffix}>{currencySymbol}</Text>
                     </View>
