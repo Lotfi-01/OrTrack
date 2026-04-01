@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
@@ -9,7 +9,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
@@ -18,7 +17,7 @@ import { formatEuro, formatG } from '@/utils/format';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { usePositions } from '@/hooks/use-positions';
 
 const PREMIUM_STATS_FEATURES = [
   { icon: '🏆', title: 'Vos positions les plus rentables', sub: 'Voyez ce qui vous rapporte le plus aujourd\'hui' },
@@ -35,16 +34,14 @@ function fmtPct(value: number, decimals = 2): string {
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function StatistiquesScreen() {
-  const [positions, setPositions] = useState<Position[]>([]);
+  const { positions, reloadPositions } = usePositions();
   const { prices, currencySymbol } = useSpotPrices();
   const { isPremium, showPaywall } = usePremium();
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEYS.positions)
-        .then((raw) => setPositions(raw ? JSON.parse(raw) : []))
-        .catch(() => setPositions([]));
-    }, [])
+      reloadPositions();
+    }, [reloadPositions])
   );
 
   // ── Calculs ───────────────────────────────────────────────────────────────
