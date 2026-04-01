@@ -1,11 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { savePricePoint } from './use-metal-history';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
-const CACHE_KEY = '@ortrack:spot_cache';
 const CACHE_TTL_MS = 29 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10000;
 
@@ -131,14 +131,14 @@ export function useSpotPrices(): UseSpotPricesResult {
     setError(null);
 
     try {
-      const raw = await AsyncStorage.getItem('@ortrack:settings');
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.settings);
       const savedCurrency = raw ? (JSON.parse(raw).currency ?? 'EUR') : 'EUR';
       setCurrency(savedCurrency);
       setCurrencySymbol(getCurrencySymbol(savedCurrency));
 
       // Cache valide → mise à jour silencieuse des états, aucun loading
       if (!forceRefresh) {
-        const cached = await AsyncStorage.getItem(CACHE_KEY);
+        const cached = await AsyncStorage.getItem(STORAGE_KEYS.spotCache);
         if (cached) {
           const entry: CacheEntry = JSON.parse(cached);
           const age = Date.now() - entry.timestamp;
@@ -172,7 +172,7 @@ export function useSpotPrices(): UseSpotPricesResult {
       const now = Date.now();
       setLastUpdated(new Date(now));
 
-      await AsyncStorage.setItem(CACHE_KEY, JSON.stringify({
+      await AsyncStorage.setItem(STORAGE_KEYS.spotCache, JSON.stringify({
         prices: fetched,
         pricesUsd,
         currency: savedCurrency,
@@ -185,7 +185,7 @@ export function useSpotPrices(): UseSpotPricesResult {
     } catch (err) {
       // Fallback cache expiré
       try {
-        const cached = await AsyncStorage.getItem(CACHE_KEY);
+        const cached = await AsyncStorage.getItem(STORAGE_KEYS.spotCache);
         if (cached) {
           const entry: CacheEntry = JSON.parse(cached);
           setPrices(entry.prices);

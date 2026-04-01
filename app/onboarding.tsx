@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
 import { OrTrackColors } from '@/constants/theme'
+import { STORAGE_KEYS } from '@/constants/storage-keys'
 
 const { width } = Dimensions.get('window')
 
@@ -63,7 +64,7 @@ const SLIDES: Slide[] = [
 ]
 
 async function completeOnboarding() {
-  await AsyncStorage.setItem('@ortrack:onboarding_complete', 'true')
+  await AsyncStorage.setItem(STORAGE_KEYS.onboardingComplete, 'true')
   router.replace('/(tabs)')
 }
 

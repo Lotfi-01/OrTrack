@@ -4,6 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import PremiumPaywall from '@/components/premium-paywall';
 import { OrTrackColors } from '@/constants/theme';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import {
   initRevenueCat,
   checkPremiumStatus,
@@ -86,12 +87,12 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
           // Migration du flag "Me pr\u00e9venir au lancement"
           // TODO: supprimer ce bloc apr\u00e8s 2-3 mois en production
           if (premiumStatus) {
-            AsyncStorage.removeItem('@ortrack:premium_notify').catch(() => {});
+            AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(() => {});
           } else {
-            const notifyFlag = await AsyncStorage.getItem('@ortrack:premium_notify');
+            const notifyFlag = await AsyncStorage.getItem(STORAGE_KEYS.premiumNotify);
             if (notifyFlag === 'true') {
               setShowPaywallModal(true);
-              AsyncStorage.removeItem('@ortrack:premium_notify').catch(() => {});
+              AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(() => {});
             }
           }
         }

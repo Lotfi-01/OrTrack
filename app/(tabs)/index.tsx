@@ -87,7 +87,7 @@ export default function TableauDeBordScreen() {
   useFocusEffect(
     useCallback(() => {
       async function checkCacheAndRefresh() {
-        const cached = await AsyncStorage.getItem('@ortrack:spot_cache');
+        const cached = await AsyncStorage.getItem(STORAGE_KEYS.spotCache);
         if (!cached) {
           refresh();
         }

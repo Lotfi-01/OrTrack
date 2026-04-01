@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
+import { formatDateShortFR } from '@/utils/format';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -86,11 +87,8 @@ function formatDate(dateStr: string): string {
   if (!dateStr) return '';
   try {
     const d = new Date(dateStr);
-    return d.toLocaleDateString('fr-FR', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-    });
+    if (isNaN(d.getTime())) return '';
+    return formatDateShortFR(d);
   } catch {
     return '';
   }

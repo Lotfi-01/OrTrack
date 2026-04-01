@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
-const CACHE_PREFIX = '@ortrack:history_cache_';
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const VALID_METALS = ['gold', 'silver', 'platinum', 'palladium', 'copper'] as const;
 
@@ -43,7 +43,7 @@ export async function loadPriceHistory(
   metal?: string
 ): Promise<PricePoint[]> {
   const effectiveCurrency = LONG_TERM_PERIODS.includes(period) ? 'USD' : currency;
-  const cacheKey = `${CACHE_PREFIX}${period}_${effectiveCurrency}${metal ? '_' + metal : ''}`;
+  const cacheKey = `${STORAGE_KEYS.historyCachePrefix}${period}_${effectiveCurrency}${metal ? '_' + metal : ''}`;
 
   try {
     const cached = await AsyncStorage.getItem(cacheKey);
@@ -138,10 +138,9 @@ export async function savePricePoint(prices: {
   palladium: number | null;
   copper: number | null;
 }): Promise<void> {
-  const STORAGE_KEY = '@ortrack:price_history';
   const MAX_POINTS = 200;
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(STORAGE_KEYS.priceHistory);
     const history: PricePoint[] = raw ? JSON.parse(raw) : [];
     history.push({
       timestamp: Date.now(),
@@ -153,6 +152,6 @@ export async function savePricePoint(prices: {
       copper: prices.copper ?? 0,
     });
     const trimmed = history.length > MAX_POINTS ? history.slice(-MAX_POINTS) : history;
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
+    await AsyncStorage.setItem(STORAGE_KEYS.priceHistory, JSON.stringify(trimmed));
   } catch {}
 }

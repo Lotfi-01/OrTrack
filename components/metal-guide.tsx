@@ -6,6 +6,7 @@ import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import { OZ_TO_G } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { formatEuro } from '@/utils/format';
 
 const PRICE_KEY: Record<string, 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper'> = {
   or: 'gold',
@@ -24,15 +25,9 @@ function getDisplayPrice(key: string, prices: SpotPrices): string | null {
   if (spot === null) return null;
   if (key === 'cuivre') {
     const kgPrice = spot * (1000 / OZ_TO_G);
-    return kgPrice.toLocaleString('fr-FR', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }) + ' \u20AC/kg';
+    return formatEuro(kgPrice) + ' \u20AC/kg';
   }
-  return spot.toLocaleString('fr-FR', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }) + ' \u20AC/oz';
+  return formatEuro(spot) + ' \u20AC/oz';
 }
 
 const metalWithPrep: Record<string, string> = {

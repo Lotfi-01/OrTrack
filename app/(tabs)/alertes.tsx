@@ -31,6 +31,8 @@ import {
 import { OrTrackColors } from '../../constants/theme'
 import { usePremium } from '../../contexts/premium-context'
 import { useSpotPrices } from '../../hooks/use-spot-prices'
+import { formatEuro } from '@/utils/format'
+import { STORAGE_KEYS } from '@/constants/storage-keys'
 
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre']
 
@@ -51,7 +53,7 @@ export default function AlertesScreen() {
   useEffect(() => {
     async function init() {
       setTokenLoading(true)
-      const token = await AsyncStorage.getItem('@ortrack:push_token')
+      const token = await AsyncStorage.getItem(STORAGE_KEYS.pushToken)
       setPushToken(token)
       setTokenLoading(false)
       if (token) loadAlerts(token)
@@ -291,8 +293,7 @@ export default function AlertesScreen() {
                     {(() => {
                       if (currentPrice == null) return (
                         <Text style={styles.alertPrice}>
-                          Seuil : {alert.target_price.toLocaleString('fr-FR',
-                            { maximumFractionDigits: 2 })} {'€'}/oz
+                          Seuil : {formatEuro(alert.target_price)} {'€'}/oz
                         </Text>
                       )
 
@@ -309,16 +310,14 @@ export default function AlertesScreen() {
                             <View style={styles.priceGridItem}>
                               <Text style={styles.priceGridLabel}>Cours actuel</Text>
                               <Text style={styles.priceGridValue}>
-                                {currentPrice.toLocaleString('fr-FR',
-                                  { maximumFractionDigits: 2 })} {'€'}/oz
+                                {formatEuro(currentPrice)} {'€'}/oz
                               </Text>
                             </View>
                             <View style={styles.priceGridItem}>
                               <Text style={styles.priceGridLabel}>Seuil cible</Text>
                               <Text style={[styles.priceGridValue,
                                 { color: OrTrackColors.gold }]}>
-                                {alert.target_price.toLocaleString('fr-FR',
-                                  { maximumFractionDigits: 2 })} {'€'}/oz
+                                {formatEuro(alert.target_price)} {'€'}/oz
                               </Text>
                             </View>
                           </View>
@@ -329,7 +328,7 @@ export default function AlertesScreen() {
                               : (gap < 0 ? OrTrackColors.subtext : '#F44336'),
                           }]}>
                             Écart : {gap > 0 ? '+' : ''}
-                            {gap.toLocaleString('fr-FR', { maximumFractionDigits: 2 })}
+                            {formatEuro(gap)}
                             {' €'} ({gapPct > 0 ? '+' : ''}
                             {gapPct.toFixed(1)} %)
                           </Text>
@@ -496,8 +495,7 @@ export default function AlertesScreen() {
                     <Text style={styles.spotHintText}>
                       Cours actuel :{' '}
                       <Text style={{ color: OrTrackColors.white, fontWeight: '700' }}>
-                        {spot.toLocaleString('fr-FR',
-                          { maximumFractionDigits: 2 })} {'€'}/oz
+                        {formatEuro(spot)} {'€'}/oz
                       </Text>
                     </Text>
                   </View>

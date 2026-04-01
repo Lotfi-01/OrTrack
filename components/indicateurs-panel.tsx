@@ -4,6 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { formatInt } from '@/utils/format';
 
 type Indicator = {
   label: string;
@@ -119,7 +120,7 @@ function IndicatorCard({ ind }: { ind: Indicator }) {
 
 function fmtSpot(v: number | null): string {
   if (v === null) return '—';
-  return v.toLocaleString('fr-FR', { maximumFractionDigits: 0 });
+  return formatInt(v);
 }
 
 export function IndicateursPanel() {

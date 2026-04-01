@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod, LONG_TERM_PERIODS } from '@/hooks/use-metal-history';
+import { formatEuro, formatShortDateFR, formatMonthShortFR } from '@/utils/format';
 
 type Metal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
 type Period = HistoryPeriod;
@@ -42,10 +43,10 @@ const PADDING = { top: 10, bottom: 40, left: 55, right: 20 };
 function formatLabel(ts: number, period: Period): string {
   const d = new Date(ts);
   if (period === '1S' || period === '1M' || period === '3M') {
-    return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    return formatShortDateFR(d);
   }
   if (period === '1A') {
-    const month = d.toLocaleDateString('fr-FR', { month: 'short' });
+    const month = formatMonthShortFR(d);
     const year = d.getFullYear().toString().slice(-2);
     return `${month} ${year}`;
   }
@@ -225,7 +226,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
     const deltaPct = prixPoint !== 0 ? (delta / prixPoint) * 100 : 0;
     const signe = delta >= 0 ? '+' : '';
     const label = signe +
-      delta.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+      formatEuro(delta) +
       ' ' + currencySymbol + ' (' + signe + deltaPct.toFixed(2).replace('.', ',') + ' %)';
     return { label, couleur: delta >= 0 ? '#4CAF50' : '#F44336' };
   })() : null;
@@ -298,7 +299,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
           <View style={styles.tooltipCompact}>
             <View style={styles.tooltipLine1}>
               <Text style={styles.tooltipCompactPrice}>
-                {displayPoint.y.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {currencySymbol}
+                {formatEuro(displayPoint.y)} {currencySymbol}
               </Text>
               {touchIndex === null && pinnedIndex !== null && (
                 <TouchableOpacity onPress={() => setPinnedIndex(null)} style={styles.tooltipClose}>
@@ -422,10 +423,10 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
             return (
               <View style={styles.minMaxRow}>
                 <Text style={styles.minMaxMin}>
-                  MIN {dataMin.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {currencySymbol}
+                  MIN {formatEuro(dataMin)} {currencySymbol}
                 </Text>
                 <Text style={styles.minMaxMax}>
-                  MAX {dataMax.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {currencySymbol}
+                  MAX {formatEuro(dataMax)} {currencySymbol}
                 </Text>
               </View>
             );

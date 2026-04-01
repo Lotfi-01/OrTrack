@@ -188,7 +188,7 @@ export default function ReglagesScreen() {
         const compatible = await LocalAuthentication.hasHardwareAsync();
         const enrolled = await LocalAuthentication.isEnrolledAsync();
         setBiometricAvailable(compatible && enrolled);
-        const stored = await AsyncStorage.getItem('@ortrack:biometric_enabled');
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.biometricEnabled);
         setBiometricEnabled(stored === 'true');
       } catch {
         setBiometricAvailable(false);
@@ -204,7 +204,7 @@ export default function ReglagesScreen() {
     setSettings(next);
     await AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next));
     if (patch.currency && patch.currency !== settings.currency) {
-      await AsyncStorage.removeItem('@ortrack:spot_cache');
+      await AsyncStorage.removeItem(STORAGE_KEYS.spotCache);
       const periods = ['1M', '3M', '1A', '5A', '10A', '20A'];
       const currencies = ['EUR', 'USD', 'CHF'];
       const metals = ['gold', 'silver', 'platinum', 'palladium', 'copper'];
@@ -212,12 +212,12 @@ export default function ReglagesScreen() {
         // Nouveau format avec métal
         ...periods.flatMap(p =>
           currencies.flatMap(c =>
-            metals.map(m => `@ortrack:history_cache_${p}_${c}_${m}`)
+            metals.map(m => `${STORAGE_KEYS.historyCachePrefix}${p}_${c}_${m}`)
           )
         ),
         // Ancien format sans métal (nettoyage des clés obsolètes)
         ...periods.flatMap(p =>
-          currencies.map(c => `@ortrack:history_cache_${p}_${c}`)
+          currencies.map(c => `${STORAGE_KEYS.historyCachePrefix}${p}_${c}`)
         ),
       ];
       await Promise.all(histCacheKeys.map(k => AsyncStorage.removeItem(k)));
@@ -227,7 +227,7 @@ export default function ReglagesScreen() {
   async function toggleBiometric(value: boolean) {
     setBiometricEnabled(value);
     await AsyncStorage.setItem(
-      '@ortrack:biometric_enabled',
+      STORAGE_KEYS.biometricEnabled,
       value ? 'true' : 'false'
     );
   }
@@ -556,7 +556,7 @@ export default function ReglagesScreen() {
               style={styles.row}
               activeOpacity={0.7}
               onPress={async () => {
-                await AsyncStorage.removeItem('@ortrack:onboarding_complete');
+                await AsyncStorage.removeItem(STORAGE_KEYS.onboardingComplete);
                 setTimeout(() => router.replace('/onboarding'), 0);
               }}>
               <View style={styles.actionRowInner}>

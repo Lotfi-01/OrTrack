@@ -42,3 +42,26 @@ export function formatDateFR(date: Date): string {
 export function formatLongDateFR(date: Date): string {
   return `${JOURS_FR[date.getDay()]} ${date.getDate()} ${MOIS_FR[date.getMonth()]} ${date.getFullYear()}`;
 }
+
+export function formatInt(value: number): string {
+  const rounded = Math.round(value);
+  return String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, '\u202F');
+}
+
+const MOIS_COURT_FR = [
+  'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+];
+export { MOIS_COURT_FR };
+
+export function formatShortDateFR(date: Date): string {
+  return `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+export function formatMonthShortFR(date: Date): string {
+  return MOIS_COURT_FR[date.getMonth()];
+}
+
+export function formatDateShortFR(date: Date): string {
+  return `${String(date.getDate()).padStart(2, '0')} ${MOIS_COURT_FR[date.getMonth()]} ${date.getFullYear()}`;
+}
