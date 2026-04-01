@@ -39,12 +39,9 @@ function csvEscape(value: unknown): string {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type Currency = 'EUR' | 'USD' | 'CHF';
-type RefreshInterval = 5 | 15 | 30;
 
 type AppSettings = {
   currency: Currency;
-  autoRefresh: boolean;
-  refreshInterval: RefreshInterval;
   notifPriceAlert: boolean;
   notifDailyVariation: boolean;
   notifWeeklyReport: boolean;
@@ -52,8 +49,6 @@ type AppSettings = {
 
 const DEFAULT_SETTINGS: AppSettings = {
   currency: 'EUR',
-  autoRefresh: true,
-  refreshInterval: 15,
   notifPriceAlert: false,
   notifDailyVariation: false,
   notifWeeklyReport: false,
@@ -397,30 +392,6 @@ export default function ReglagesScreen() {
               }}
             />
 
-            <ItemSeparator />
-
-            <ToggleRow
-              label="Rafraîchissement auto"
-              sublabel="Mise à jour des cours en arrière-plan"
-              value={settings.autoRefresh}
-              onChange={(v) => updateSettings({ autoRefresh: v })}
-            />
-
-            {settings.autoRefresh && (
-              <>
-                <ItemSeparator />
-                <SegmentRow
-                  label="Intervalle"
-                  options={[
-                    { label: '5 min', value: 5 as RefreshInterval },
-                    { label: '15 min', value: 15 as RefreshInterval },
-                    { label: '30 min', value: 30 as RefreshInterval },
-                  ]}
-                  value={settings.refreshInterval}
-                  onChange={(v) => updateSettings({ refreshInterval: v })}
-                />
-              </>
-            )}
           </View>
 
           {/* ── NOTIFICATIONS ──────────────────────────────────────────── */}

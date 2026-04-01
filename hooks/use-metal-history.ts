@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const CACHE_TTL_MS = 60 * 60 * 1000;
 const VALID_METALS = ['gold', 'silver', 'platinum', 'palladium', 'copper'] as const;
 
@@ -46,6 +46,8 @@ export async function loadPriceHistory(
   const cacheKey = `${STORAGE_KEYS.historyCachePrefix}${period}_${effectiveCurrency}${metal ? '_' + metal : ''}`;
 
   try {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return [];
+
     const cached = await AsyncStorage.getItem(cacheKey);
     if (cached) {
       const entry: CacheEntry = JSON.parse(cached);

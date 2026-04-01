@@ -84,12 +84,11 @@ export default function RootLayout() {
     }
   }, [ready]);
 
-  // Créer le canal Android pour les notifications
+  // Créer le canal Android pour les notifications (après onboarding)
   useEffect(() => {
-    if (!ready) return;
-
+    if (!ready || needsOnboarding.current) return;
     if (Platform.OS === 'android') {
-      Notifications.setNotificationChannelAsync('price-alerts', {
+      Notifications.setNotificationChannelAsync('alerts', {
         name: 'Alertes de cours',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
@@ -97,15 +96,15 @@ export default function RootLayout() {
     }
   }, [ready]);
 
-  // Enregistrer le push token auprès de Supabase
+  // Enregistrer le push token (après onboarding)
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || needsOnboarding.current) return;
     registerForPushNotifications().catch(() => {});
   }, [ready]);
 
-  // Tracker l'installation dans Supabase
+  // Tracker l'installation (après onboarding)
   useEffect(() => {
-    if (!ready) return;
+    if (!ready || needsOnboarding.current) return;
     trackInstall();
   }, [ready]);
 

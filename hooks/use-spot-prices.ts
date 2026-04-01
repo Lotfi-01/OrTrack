@@ -3,8 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { savePricePoint } from './use-metal-history';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
+const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const REFRESH_INTERVAL_MS = 30 * 60 * 1000;
 const CACHE_TTL_MS = 29 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10000;
@@ -59,6 +59,9 @@ function getPriceForCurrency(row: SpotRow, currency: string): number {
 async function fetchSpotFromSupabase(
   currency: string
 ): Promise<{ prices: SpotPrices; pricesUsd: SpotPrices }> {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error('Supabase not configured');
+  }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 

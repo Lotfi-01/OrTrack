@@ -18,7 +18,7 @@ import { PriceChart } from '@/components/price-chart';
 import { OrTrackColors } from '@/constants/theme';
 import { loadPriceHistory } from '@/hooks/use-metal-history';
 import { type SpotPrices, useSpotPrices } from '@/hooks/use-spot-prices';
-import { OZ_TO_G } from '@/constants/metals';
+import { type MetalType, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { formatEuro, formatG, formatPct, formatQty, formatTimeFR, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { Position } from '@/types/position';
@@ -26,8 +26,6 @@ import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { usePositions } from '@/hooks/use-positions';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
-
-type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
 
 type PricePoint = {
   timestamp: number;

@@ -4,6 +4,7 @@ import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { Position } from '@/types/position';
 
 let memoryCache: Position[] | null = null;
+let writePromise: Promise<void> = Promise.resolve();
 
 // Exposé pour wipeAllUserData() dans reglages.tsx.
 // Remet le cache à null — le prochain usePositions rechargera les positions.
@@ -44,19 +45,23 @@ export function usePositions() {
     }
   }, []);
 
-  // Optimistic update avec rollback si AsyncStorage échoue.
+  // Sérialise les writes — chaque mutation attend que la précédente soit finie
   const persist = useCallback(async (next: Position[]) => {
-    const previous = memoryCache ?? [];
-    memoryCache = next;
-    setPositions(next);
+    writePromise = writePromise.then(async () => {
+      const previous = memoryCache ?? [];
+      memoryCache = next;
+      setPositions(next);
 
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.positions, JSON.stringify(next));
-    } catch (error) {
-      memoryCache = previous;
-      setPositions(previous);
-      throw error;
-    }
+      try {
+        await AsyncStorage.setItem(STORAGE_KEYS.positions, JSON.stringify(next));
+      } catch (error) {
+        memoryCache = previous;
+        setPositions(previous);
+        throw error;
+      }
+    });
+
+    return writePromise;
   }, []);
 
   useEffect(() => {
