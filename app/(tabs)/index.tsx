@@ -23,6 +23,7 @@ import { TAX } from '@/constants/tax';
 import { formatEuro, formatG, formatQty, formatTimeFR, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { usePositions } from '@/hooks/use-positions';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,8 +65,8 @@ const METAL_SPOT_KEY: Record<string, keyof SpotPrices> = {
 
 export default function TableauDeBordScreen() {
   const { prices, pricesUsd, loading, refreshing, error, lastUpdated, refresh, currency, currencySymbol } = useSpotPrices();
-  const [positions, setPositions] = useState<Position[]>([]);
-  const [positionsLoaded, setPositionsLoaded] = useState(false);
+  const { positions, loading: positionsLoading, reloadPositions } = usePositions();
+  const positionsLoaded = !positionsLoading;
   const [selectedChartMetal, setSelectedChartMetal] = useState<ChartMetal>('gold');
   const [change24h, setChange24h] = useState<Partial<Record<string, number>>>({});
   const [hideValue, setHideValue] = useState(false);
@@ -82,16 +83,8 @@ export default function TableauDeBordScreen() {
   // Recharge positions à chaque activation de l'onglet
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEYS.positions)
-        .then((raw) => {
-          setPositions(raw ? JSON.parse(raw) : []);
-          setPositionsLoaded(true);
-        })
-        .catch(() => {
-          setPositions([]);
-          setPositionsLoaded(true);
-        });
-    }, [])
+      reloadPositions();
+    }, [reloadPositions])
   );
 
   useFocusEffect(
