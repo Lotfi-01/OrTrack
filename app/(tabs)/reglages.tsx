@@ -29,8 +29,6 @@ import { supabase } from '@/lib/supabase';
 
 // ─── Clés AsyncStorage ────────────────────────────────────────────────────────
 
-const PROFILE_KEY = '@ortrack:profil';
-const SETTINGS_KEY = '@ortrack:settings';
 
 // RFC 4180 — échappe les virgules, guillemets et retours à la ligne
 function csvEscape(value: unknown): string {
@@ -178,7 +176,7 @@ export default function ReglagesScreen() {
   // ── Chargement initial ────────────────────────────────────────────────────
 
   useEffect(() => {
-    AsyncStorage.getItem(SETTINGS_KEY).then((raw) => {
+    AsyncStorage.getItem(STORAGE_KEYS.settings).then((raw) => {
       if (!raw) return;
       setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
     });
@@ -204,7 +202,7 @@ export default function ReglagesScreen() {
   const updateSettings = async (patch: Partial<AppSettings>) => {
     const next = { ...settings, ...patch };
     setSettings(next);
-    await AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    await AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next));
     if (patch.currency && patch.currency !== settings.currency) {
       await AsyncStorage.removeItem('@ortrack:spot_cache');
       const periods = ['1M', '3M', '1A', '5A', '10A', '20A'];
@@ -287,8 +285,8 @@ export default function ReglagesScreen() {
       STORAGE_KEYS.installTracked,
       STORAGE_KEYS.premiumNotify,
       STORAGE_KEYS.legacyPriceAlerts,
-      PROFILE_KEY,
-      SETTINGS_KEY,
+      STORAGE_KEYS.profil,
+      STORAGE_KEYS.settings,
     ];
 
     // 3. Nettoyage local — clés dynamiques (caches historiques)

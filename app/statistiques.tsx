@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatG } from '@/utils/format';
+import { formatEuro, formatG, formatPct } from '@/utils/format';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
@@ -25,11 +25,6 @@ const PREMIUM_STATS_FEATURES = [
   { icon: '💡', title: 'Forces et risques de votre portefeuille', sub: 'Identifiez déséquilibres et opportunités' },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtPct(value: number, decimals = 2): string {
-  return value.toFixed(decimals).replace('.', ',');
-}
 
 // ─── Composant ────────────────────────────────────────────────────────────────
 
@@ -163,7 +158,7 @@ export default function StatistiquesScreen() {
       ? (metalValues.find(m => m.metal === 'or')?.value ?? 0) / totalValue * 100
       : 0;
     if (goldPct > 80) return {
-      text: `Votre portefeuille est concentré à ${fmtPct(goldPct)}% sur l'or. Les experts recommandent de diversifier avec de l'argent (ratio 1:10) pour réduire le risque.`,
+      text: `Votre portefeuille est concentré à ${formatPct(goldPct, 2)} sur l'or. Les experts recommandent de diversifier avec de l'argent (ratio 1:10) pour réduire le risque.`,
       type: 'warning',
     };
     if (goldG > 0 && silverG === 0) return {
@@ -171,7 +166,7 @@ export default function StatistiquesScreen() {
       type: 'info',
     };
     if (totalGainLossPct !== null && totalGainLossPct > 50) return {
-      text: `Excellente performance ! Votre portefeuille a progressé de +${fmtPct(totalGainLossPct)}%. Pensez à la simulation fiscale avant toute cession.`,
+      text: `Excellente performance ! Votre portefeuille a progressé de +${formatPct(totalGainLossPct, 2)}. Pensez à la simulation fiscale avant toute cession.`,
       type: 'good',
     };
     return {
@@ -229,7 +224,7 @@ export default function StatistiquesScreen() {
                     ? styles.positive : styles.negative,
                 ]}>
                   {totalGainLoss !== null && totalGainLoss >= 0 ? '+' : ''}
-                  {fmtPct(totalGainLossPct)} %
+                  {formatPct(totalGainLossPct, 2)}
                 </Text>
               )}
               <View style={styles.heroRow}>
@@ -295,7 +290,7 @@ export default function StatistiquesScreen() {
                           {cfg.name}
                         </Text>
                       </View>
-                      <Text style={styles.barPct}>{fmtPct(pct, 1)} %</Text>
+                      <Text style={styles.barPct}>{formatPct(pct, 1)}</Text>
                     </View>
                     <View style={styles.barTrack}>
                       <View style={[
@@ -331,7 +326,7 @@ export default function StatistiquesScreen() {
                             </Text>
                           </View>
                           <Text style={styles.positive}>
-                            +{fmtPct(best.gainPct ?? 0)} %
+                            +{formatPct(best.gainPct ?? 0, 2)}
                           </Text>
                         </View>
                       )}
@@ -353,7 +348,7 @@ export default function StatistiquesScreen() {
                                 ? styles.positive : styles.negative
                             }>
                               {(sorted[1].gainPct ?? 0) >= 0 ? '+' : ''}
-                              {fmtPct(sorted[1].gainPct ?? 0)} %
+                              {formatPct(sorted[1].gainPct ?? 0, 2)}
                             </Text>
                           </View>
                         </>
@@ -380,7 +375,7 @@ export default function StatistiquesScreen() {
                                 ? styles.positive : styles.negative
                             }>
                               {(worst.gainPct ?? 0) >= 0 ? '+' : ''}
-                              {fmtPct(worst.gainPct ?? 0)} %
+                              {formatPct(worst.gainPct ?? 0, 2)}
                             </Text>
                           </View>
                         </>
@@ -477,7 +472,7 @@ export default function StatistiquesScreen() {
                         color: OrTrackColors.subtext,
                         marginTop: 2,
                       }}>
-                        +{fmtPct(best.gainPct ?? 0)} %
+                        +{formatPct(best.gainPct ?? 0, 2)}
                       </Text>
                       <Text style={{
                         fontSize: 12,

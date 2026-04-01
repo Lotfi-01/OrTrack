@@ -16,7 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
-import { formatEuro, formatG, formatQty } from '@/utils/format';
+import { formatEuro, formatG, formatPct, formatQty } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -24,11 +24,6 @@ import { usePositions } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtPct(value: number, decimals = 2): string {
-  return value.toFixed(decimals).replace('.', ',');
-}
 
 const getPositionMetal = (p: Position): MetalType => p.metal;
 
@@ -205,7 +200,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
             ]}>
               {gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol}
               {gainLossPct !== null && (
-                `  (${gainLoss >= 0 ? '+' : ''}${fmtPct(gainLossPct)} %)`
+                `  (${gainLoss >= 0 ? '+' : ''}${formatPct(gainLossPct, 2)})`
               )}
             </Text>
           )}
@@ -252,7 +247,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
               </Text>
               {gainLossPct !== null && (
                 <Text style={[styles.posGainPct, gainLoss >= 0 ? styles.positive : styles.negative]}>
-                  {'  '}({gainLoss >= 0 ? '+' : ''}{fmtPct(gainLossPct)} %)
+                  {'  '}({gainLoss >= 0 ? '+' : ''}{formatPct(gainLossPct, 2)})
                 </Text>
               )}
             </View>
@@ -583,7 +578,7 @@ export default function PortefeuilleScreen() {
               <Text style={[styles.compactGain, totalGainLoss >= 0 ? styles.positive : styles.negative]}>
                 {totalGainLoss >= 0 ? '+' : ''}{formatEuro(totalGainLoss)} {currencySymbol}
                 {totalGainLossPct !== null && (
-                  `  (${totalGainLoss >= 0 ? '+' : ''}${fmtPct(totalGainLossPct)} %)`
+                  `  (${totalGainLoss >= 0 ? '+' : ''}${formatPct(totalGainLossPct, 2)})`
                 )}
               </Text>
             )}

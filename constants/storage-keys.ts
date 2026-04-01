@@ -11,4 +11,5 @@ export const STORAGE_KEYS = {
   installTracked: '@ortrack:install_tracked',
   premiumNotify: '@ortrack:premium_notify',
   legacyPriceAlerts: '@ortrack:price_alerts',
+  profil: '@ortrack:profil',
 } as const;

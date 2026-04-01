@@ -119,6 +119,8 @@ function formatDateDMY(d: Date): string {
 export default function AjouterScreen() {
   const { editId } = useLocalSearchParams<{ editId?: string }>();
   const isEditMode = editId != null && editId !== '' && editId !== 'undefined';
+  const [staleEditId, setStaleEditId] = useState<string | null>(null);
+  const effectiveEditMode = isEditMode && editId !== staleEditId;
   const { prices, currencySymbol, refresh } = useSpotPrices();
   const { canAddPosition, showPaywall } = usePremium();
   const { positions, reloadPositions, addPosition, updatePosition } = usePositions();
@@ -166,11 +168,23 @@ export default function AjouterScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (isEditMode) {
+      if (effectiveEditMode) {
         const existing = positions.find(p => p.id === editId);
         if (positions.length > 0 && !existing) {
-          Alert.alert('Erreur', 'Position introuvable');
-          router.navigate('/(tabs)/portefeuille');
+          setStaleEditId(editId!);
+          setMetal('or');
+          setProduct(null);
+          setCustomWeight('');
+          setQuantity('');
+          setPurchasePrice('');
+          setPurchaseDate('');
+          setNote('');
+          setShowAllPieces(false);
+          setShowAllBars(false);
+          setConfirmed(false);
+          setIsStep2Active(false);
+          setCoinSearch('');
+          setIsPriceFocused(false);
           return;
         }
         if (!existing) return;
@@ -219,7 +233,7 @@ export default function AjouterScreen() {
           showPaywall();
         }
       }
-    }, [isEditMode, editId, positions, canAddPosition, showPaywall])
+    }, [effectiveEditMode, editId, positions, canAddPosition, showPaywall])
   );
 
   // Cleanup timeout
@@ -414,7 +428,7 @@ export default function AjouterScreen() {
   const ctaConfig = useMemo(() => {
     if (confirmed) {
       return {
-        text: isEditMode ? '✓  Position mise à jour !' : '✓  Position ajoutée !',
+        text: effectiveEditMode ? '✓  Position mise à jour !' : '✓  Position ajoutée !',
         disabled: true,
         bgColor: '#2E7D32',
         textColor: '#F5F0E8',
@@ -459,13 +473,13 @@ export default function AjouterScreen() {
       };
     }
     return {
-      text: isEditMode ? 'Mettre à jour la position' : 'Ajouter au portefeuille',
+      text: effectiveEditMode ? 'Mettre à jour la position' : 'Ajouter au portefeuille',
       disabled: false,
       bgColor: '#C9A84C',
       textColor: '#12110F',
       action: 'save' as const,
     };
-  }, [product, isStep2Active, canSave, isEditMode, helpText, confirmed, saving]);
+  }, [product, isStep2Active, canSave, effectiveEditMode, helpText, confirmed, saving]);
 
   // ── Sauvegarde ────────────────────────────────────────────────────────
 
@@ -474,7 +488,7 @@ export default function AjouterScreen() {
     setSaving(true);
     try {
       const newPosition: Position = {
-        id: isEditMode ? editId! : Date.now().toString(),
+        id: effectiveEditMode ? editId! : Date.now().toString(),
         metal,
         product: product!.label,
         weightG: effectiveWeightG,
@@ -486,7 +500,7 @@ export default function AjouterScreen() {
         spotAtPurchase: estimatedValue ?? undefined,
       };
 
-      if (isEditMode) {
+      if (effectiveEditMode) {
         const existing = positions.find(p => p.id === editId);
         await updatePosition({ ...newPosition, id: editId!, createdAt: existing?.createdAt ?? newPosition.createdAt });
       } else {
@@ -508,7 +522,7 @@ export default function AjouterScreen() {
       setConfirmed(true);
       setTimeout(() => {
         setConfirmed(false);
-        if (isEditMode) {
+        if (effectiveEditMode) {
           router.replace('/(tabs)/portefeuille');
         } else {
           router.navigate('/(tabs)/portefeuille');
@@ -604,14 +618,14 @@ export default function AjouterScreen() {
 
           {/* ── Titre + sous-titre (corrections 1, 4) ─────────────────── */}
           <Text style={styles.headerTitle}>
-            {isEditMode ? 'Modifier la position' : 'Ajouter une position'}
+            {effectiveEditMode ? 'Modifier la position' : 'Ajouter une position'}
           </Text>
           <Text style={styles.headerSubtitle}>
-            {isEditMode
+            {effectiveEditMode
               ? 'Modifiez les détails de votre position'
               : 'Choisissez votre produit, puis renseignez votre achat'}
           </Text>
-          {!isEditMode && !isStep2Active && (
+          {!effectiveEditMode && !isStep2Active && (
             <Text style={styles.progressIndicator}>
               Étape 1 · Choisissez votre produit
             </Text>
@@ -1013,7 +1027,7 @@ export default function AjouterScreen() {
               )}
             </View>
           </Pressable>
-          {isStep2Active && !isEditMode && (
+          {isStep2Active && !effectiveEditMode && (
             <Text style={styles.ctaReassurance}>Modifiable à tout moment</Text>
           )}
         </View>

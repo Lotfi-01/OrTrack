@@ -14,8 +14,8 @@ export function formatEuro(value: number): string {
   return `${spaced},${dec}`;
 }
 
-export function formatPct(value: number): string {
-  return `${value.toFixed(1).replace('.', ',')} %`;
+export function formatPct(value: number, decimals = 1): string {
+  return `${value.toFixed(decimals).replace('.', ',')} %`;
 }
 
 export function formatQty(value: number): string {

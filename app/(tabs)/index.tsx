@@ -20,7 +20,7 @@ import { loadPriceHistory } from '@/hooks/use-metal-history';
 import { type SpotPrices, useSpotPrices } from '@/hooks/use-spot-prices';
 import { OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
-import { formatEuro, formatG, formatQty, formatTimeFR, JOURS_FR, MOIS_FR } from '@/utils/format';
+import { formatEuro, formatG, formatPct, formatQty, formatTimeFR, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { usePositions } from '@/hooks/use-positions';
@@ -40,9 +40,6 @@ type PricePoint = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtPct(value: number, decimals = 2): string {
-  return value.toFixed(decimals).replace('.', ',');
-}
 
 // ─── Config cours & graphique ────────────────────────────────────────────────
 
@@ -330,7 +327,7 @@ export default function TableauDeBordScreen() {
                       portfolio.totalGainLoss >= 0 ? styles.changePositive : styles.changeNegative,
                     ]}>
                       {'  '}{portfolio.totalGainLoss >= 0 ? '+' : ''}
-                      {fmtPct(portfolio.totalGainLossPct)} %
+                      {formatPct(portfolio.totalGainLossPct, 2)}
                     </Text>
                   )}
                 </View>
@@ -444,7 +441,7 @@ export default function TableauDeBordScreen() {
                           change24h[m.metal]! >= 0 ? styles.changePositive : styles.changeNegative,
                         ]}>
                           {change24h[m.metal]! >= 0 ? '▲' : '▼'}{' '}
-                          {fmtPct(Math.abs(change24h[m.metal]!))}%
+                          {formatPct(Math.abs(change24h[m.metal]!), 2)}
                           {'  '}{change24h[m.metal]! >= 0 ? '+' : '-'}
                           {formatEuro(Math.abs(variationEur))}{currencySymbol}
                         </Text>
@@ -555,7 +552,7 @@ export default function TableauDeBordScreen() {
               change24h[selectedChartMetal]! >= 0 ? styles.changePositive : styles.changeNegative,
             ]}>
               {change24h[selectedChartMetal]! >= 0 ? '▲' : '▼'}{' '}
-              {fmtPct(Math.abs(change24h[selectedChartMetal]!))}%
+              {formatPct(Math.abs(change24h[selectedChartMetal]!), 2)}
             </Text>
           )}
         </View>
