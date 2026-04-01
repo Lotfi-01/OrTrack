@@ -20,16 +20,6 @@ import { formatEuro, formatG, formatQty } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-import { useMarketPrime } from '@/hooks/use-market-prime';
-import { formatPct, formatTimeAgo } from '@/utils/format-prime';
-import {
-  computePrimePct,
-  validatePrimePct,
-  computePrimeComparison,
-  getPrimeComparisonText,
-  getPrimeComparisonColor,
-} from '@/utils/prime-helpers';
-import { PRODUCT_TO_MARKET_SLUG } from '@/constants/market-products';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 
@@ -150,12 +140,6 @@ type PositionCardProps = {
 
 function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscalite, currencySymbol, hideValue, isPremium, showPaywall, positionIndex }: PositionCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const { prime } = useMarketPrime(pos.product);
-  const showPrime = prime !== null && (isPremium || positionIndex < 2);
-  const primeComparison = useMemo(() => {
-    if (pos.primeAtPurchase == null || !prime) return null;
-    return computePrimeComparison(prime.primePct, pos.primeAtPurchase);
-  }, [prime?.primePct, pos.primeAtPurchase]);
   const totalWeightG = pos.quantity * pos.weightG;
   const totalCost = pos.quantity * pos.purchasePrice;
 
@@ -416,59 +400,6 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
                 </Text>
               </View>
             </View>
-          )}
-
-          {/* Prime marché */}
-          {prime && showPrime && !hideValue && (
-            <View style={{ marginTop: 16 }}>
-              <Text style={{
-                color: OrTrackColors.gold, fontSize: 11, fontWeight: '600',
-                letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8,
-              }}>
-                PRIME MARCHÉ
-              </Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <Text style={{ color: OrTrackColors.label, fontSize: 13 }}>Actuelle</Text>
-                <Text style={{ color: OrTrackColors.white, fontSize: 13, fontWeight: '600' }}>
-                  {formatPct(prime.primePct)}
-                </Text>
-              </View>
-              {pos.primeAtPurchase != null && (
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-                  <Text style={{ color: OrTrackColors.label, fontSize: 13 }}>À votre achat</Text>
-                  <Text style={{ color: OrTrackColors.white, fontSize: 13, fontWeight: '600' }}>
-                    {formatPct(pos.primeAtPurchase)}
-                  </Text>
-                </View>
-              )}
-              {primeComparison && (
-                <Text style={{
-                  color: getPrimeComparisonColor(primeComparison, {
-                    green: '#4CAF50', red: '#E07070', neutral: OrTrackColors.subtext,
-                  }),
-                  fontSize: 12, marginTop: 6,
-                }}>
-                  {getPrimeComparisonText(primeComparison)}
-                </Text>
-              )}
-              <Text style={{
-                color: prime.signal === 'low' ? '#4CAF50' : prime.signal === 'high' ? '#E07070' : OrTrackColors.subtext,
-                fontSize: 12, marginTop: 4,
-              }}>
-                {prime.signal === 'low' && '● Basse vs historique 90 j'}
-                {prime.signal === 'normal' && '● Normale vs historique 90 j'}
-                {prime.signal === 'high' && '● Élevée vs historique 90 j'}
-                {prime.signal === 'insufficient' && '● Signal en calibrage'}
-              </Text>
-              <Text style={{ color: OrTrackColors.subtext, fontSize: 11, marginTop: 4 }}>
-                {`Basé sur ${prime.dealerCount} vendeur${prime.dealerCount > 1 ? 's' : ''} · médiane du marché · MAJ ${formatTimeAgo(prime.date)}`}
-              </Text>
-            </View>
-          )}
-          {!showPrime && prime && !hideValue && (
-            <Text style={{ color: OrTrackColors.gold, fontSize: 12, marginTop: 8 }}>
-              Prime marché disponible en Premium
-            </Text>
           )}
 
           {/* 7. Footer — Modifier + Supprimer */}
@@ -791,35 +722,6 @@ export default function PortefeuilleScreen() {
           </TouchableOpacity>
         )}
 
-        {/* ── TEMP: Nettoyer backfill faux (supprimer après exécution) ── */}
-        {hasPositions && (
-          <TouchableOpacity
-            style={[styles.statsButton, { borderColor: '#E07070', marginTop: 4 }]}
-            onPress={async () => {
-              try {
-                const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
-                const pos: Position[] = raw ? JSON.parse(raw) : [];
-                let cleaned = 0;
-                for (const p of pos) {
-                  if (p.spotSource === 'backfill') {
-                    p.primeAtPurchase = undefined;
-                    p.spotSource = undefined;
-                    p.spotAtPurchase = undefined;
-                    cleaned++;
-                  }
-                }
-                if (cleaned > 0) {
-                  await AsyncStorage.setItem(STORAGE_KEYS.positions, JSON.stringify(pos));
-                }
-                Alert.alert('Nettoyage terminé', `${cleaned} position(s) nettoyée(s) sur ${pos.length}`);
-                if (cleaned > 0) loadPositions();
-              } catch (e) {
-                Alert.alert('Erreur', String(e));
-              }
-            }}>
-            <Text style={[styles.statsButtonText, { color: '#E07070' }]}>Nettoyer backfill faux (temp) →</Text>
-          </TouchableOpacity>
-        )}
 
       </ScrollView>
     </SafeAreaView>

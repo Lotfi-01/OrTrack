@@ -9,7 +9,6 @@ import {
   InteractionManager,
   KeyboardAvoidingView,
   LayoutAnimation,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -29,10 +28,6 @@ import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
-import { useMarketPrime } from '@/hooks/use-market-prime';
-import { formatPct, formatTimeAgo } from '@/utils/format-prime';
-import { computePrimePct, validatePrimePct } from '@/utils/prime-helpers';
-import { PRODUCT_TO_MARKET_SLUG } from '@/constants/market-products';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
 
@@ -157,7 +152,6 @@ export default function AjouterScreen() {
   const [isStep2Active, setIsStep2Active] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
   const [isPriceFocused, setIsPriceFocused] = useState(false);
-  const [showPrimeInfo, setShowPrimeInfo] = useState(false);
 
   const dateRef = useRef(purchaseDate);
   dateRef.current = purchaseDate;
@@ -284,21 +278,6 @@ export default function AjouterScreen() {
     const showRef = spotValid && purchasePrice.trim() !== '' && !isNaN(numeric) && !matches;
     return { priceMatchesSpot: matches, showPriceReference: showRef };
   }, [purchasePrice, estimatedValue]);
-
-  // ── Prime marché ────────────────────────────────────────────────────
-
-  const { prime } = useMarketPrime(product?.label ?? null);
-
-  useEffect(() => {
-    if (prime) {
-      AsyncStorage.getItem('@ortrack:prime_info_seen').then(seen => {
-        if (!seen) {
-          setShowPrimeInfo(true);
-          AsyncStorage.setItem('@ortrack:prime_info_seen', 'true');
-        }
-      });
-    }
-  }, [prime]);
 
   // ── Grille pièces — scission en 2 useMemo (correction 8) ─────────────
 
@@ -508,14 +487,6 @@ export default function AjouterScreen() {
         createdAt: new Date().toISOString(),
         note: note.trim() || undefined,
         spotAtPurchase: estimatedValue ?? undefined,
-        primeAtPurchase: (() => {
-          const spot = estimatedValue;
-          if (!spot || spot <= 0) return undefined;
-          const rawPrime = computePrimePct(price, spot);
-          const slug = PRODUCT_TO_MARKET_SLUG[product!.label] ?? '';
-          return validatePrimePct(rawPrime, slug, 'save') ?? undefined;
-        })(),
-        spotSource: 'live' as const,
       };
 
       if (isEditMode) {
@@ -836,68 +807,6 @@ export default function AjouterScreen() {
                       </Text>
                     </View>
 
-                    {/* ── Prime actuelle ── */}
-                    {prime && (
-                      <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: OrTrackColors.border }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <Text style={{ color: OrTrackColors.label, fontSize: 13 }}>Prime actuelle</Text>
-                          <Text style={{ color: OrTrackColors.white, fontSize: 14, fontWeight: '600' }}>
-                            {formatPct(prime.primePct)}
-                          </Text>
-                        </View>
-
-                        {/* Badge signal */}
-                        <View style={{
-                          alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center',
-                          backgroundColor: prime.signal === 'low' ? '#4CAF5020'
-                            : prime.signal === 'high' ? '#E0707020'
-                            : prime.signal === 'normal' ? `${OrTrackColors.gold}15`
-                            : `${OrTrackColors.subtext}15`,
-                          borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4, marginTop: 6,
-                        }}>
-                          <View style={{
-                            width: 6, height: 6, borderRadius: 3, marginRight: 6,
-                            backgroundColor: prime.signal === 'low' ? '#4CAF50'
-                              : prime.signal === 'high' ? '#E07070'
-                              : prime.signal === 'normal' ? OrTrackColors.gold
-                              : OrTrackColors.label,
-                          }} />
-                          <Text style={{
-                            fontSize: 12, fontWeight: '600',
-                            color: prime.signal === 'low' ? '#4CAF50'
-                              : prime.signal === 'high' ? '#E07070'
-                              : prime.signal === 'normal' ? OrTrackColors.gold
-                              : OrTrackColors.label,
-                          }}>
-                            {prime.signal === 'low' && 'Basse'}
-                            {prime.signal === 'normal' && 'Normale'}
-                            {prime.signal === 'high' && 'Élevée'}
-                            {prime.signal === 'insufficient' && 'En calibrage'}
-                          </Text>
-                        </View>
-
-                        <Text style={{ color: OrTrackColors.subtext, fontSize: 11, marginTop: 4 }}>
-                          {prime.signal === 'insufficient'
-                            ? 'Moins de 7 jours de données'
-                            : 'vs historique 90 jours'}
-                        </Text>
-
-                        <Text style={{ color: OrTrackColors.subtext, fontSize: 11, marginTop: 4 }}>
-                          {`Basé sur ${prime.dealerCount} vendeur${prime.dealerCount > 1 ? 's' : ''} · médiane du marché · MAJ ${formatTimeAgo(prime.date)}`}
-                        </Text>
-
-                        <TouchableOpacity
-                          onPress={() => setShowPrimeInfo(true)}
-                          accessibilityRole="button"
-                          accessibilityLabel="Comprendre la prime marché"
-                          style={{ marginTop: 4 }}
-                        >
-                          <Text style={{ color: OrTrackColors.gold, fontSize: 12, fontWeight: '500' }}>
-                            Comprendre la prime
-                          </Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
                   </View>
                 </View>
               )}
@@ -1118,45 +1027,6 @@ export default function AjouterScreen() {
         </View>
       </KeyboardAvoidingView>
 
-      {/* Modal — Comprendre la prime */}
-      <Modal
-        visible={showPrimeInfo}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowPrimeInfo(false)}
-      >
-        <Pressable
-          onPress={() => setShowPrimeInfo(false)}
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'flex-end' }}
-        >
-          <Pressable
-            onPress={(e) => e.stopPropagation()}
-            style={{
-              backgroundColor: OrTrackColors.card,
-              borderTopLeftRadius: 16, borderTopRightRadius: 16,
-              padding: 24, paddingBottom: 40,
-            }}
-          >
-            <Text style={{ color: OrTrackColors.white, fontSize: 16, fontWeight: '600', marginBottom: 12 }}>
-              Prime marché
-            </Text>
-            <Text style={{ color: OrTrackColors.label, fontSize: 14, lineHeight: 20 }}>
-              Écart entre le prix observé chez les vendeurs et la valeur métal. Plus la prime est basse, plus le prix est proche du spot.
-            </Text>
-            <Text style={{ color: OrTrackColors.subtext, fontSize: 12, marginTop: 12 }}>
-              Donnée indicative, hors livraison et fiscalité.
-            </Text>
-            <TouchableOpacity
-              onPress={() => setShowPrimeInfo(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Fermer l'explication"
-              style={{ marginTop: 16, alignItems: 'center', paddingVertical: 10, backgroundColor: OrTrackColors.gold, borderRadius: 10 }}
-            >
-              <Text style={{ color: OrTrackColors.background, fontSize: 14, fontWeight: '500' }}>Compris</Text>
-            </TouchableOpacity>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   );
 }
