@@ -43,7 +43,11 @@
       "Read(//c/Users/sawss/Desktop/OrTrack/**)",
       "Bash(grep -v \"posCompactGainSmall\" echo \"---\" grep -n \"styles\\\\.posCompactCurrentValue\" \"app/\\(tabs\\)/portefeuille.tsx\" echo \"---\" grep -n \"styles\\\\.posCompactGainText\" \"app/\\(tabs\\)/portefeuille.tsx\" echo \"---\" grep -n \"styles\\\\.posCompactNetLabel\" \"app/\\(tabs\\)/portefeuille.tsx\" echo \"---\" grep -n \"styles\\\\.posCompactNetValue\" \"app/\\(tabs\\)/portefeuille.tsx\")",
       "Bash(cat:*)",
-      "Bash(FILE=\"app/\\(tabs\\)/index.tsx\" echo \"=== 1. Net global ===\" grep -n \"vendez aujourd''''hui\\\\|totalNetEstime\" $FILE)"
+      "Bash(FILE=\"app/\\(tabs\\)/index.tsx\" echo \"=== 1. Net global ===\" grep -n \"vendez aujourd''''hui\\\\|totalNetEstime\" $FILE)",
+      "Bash(ls services/alerts.ts \"app/\\(tabs\\)/alertes.tsx\")",
+      "Bash(ls app/\\\\\\(tabs\\\\\\)/explore.tsx components/hello-wave.tsx components/parallax-scroll-view.tsx components/themed-text.tsx components/themed-view.tsx components/external-link.tsx hooks/use-color-scheme.ts hooks/use-color-scheme.web.ts hooks/use-theme-color.ts app/modal.tsx)",
+      "Bash(cd:*)",
+      "Bash(ls \"app/\\(tabs\\)/explore.tsx\" components/hello-wave.tsx components/themed-text.tsx)"
     ]
   }
 }

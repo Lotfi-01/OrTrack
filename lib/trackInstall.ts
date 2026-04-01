@@ -2,18 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Application from 'expo-application';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
-
-const INSTALL_TRACKED_KEY = 'ortrack_install_tracked';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 
 export async function trackInstall(): Promise<void> {
   try {
-    const alreadyTracked = await AsyncStorage.getItem(INSTALL_TRACKED_KEY);
+    const alreadyTracked = await AsyncStorage.getItem(STORAGE_KEYS.installTracked);
     if (alreadyTracked === 'true') return;
-
-    if (!supabase) {
-      console.warn('Supabase not initialized, skipping install tracking');
-      return;
-    }
+    if (!supabase) return;
 
     let deviceId: string;
     if (Platform.OS === 'android') {
@@ -31,14 +26,8 @@ export async function trackInstall(): Promise<void> {
       { onConflict: 'device_id' }
     );
 
-    if (error) {
-      console.warn('Track install error:', error.message);
-      return;
-    }
+    if (error) return;
 
-    await AsyncStorage.setItem(INSTALL_TRACKED_KEY, 'true');
-    console.log('✅ Install tracked successfully');
-  } catch (err) {
-    console.warn('Track install failed:', err);
-  }
+    await AsyncStorage.setItem(STORAGE_KEYS.installTracked, 'true');
+  } catch {}
 }

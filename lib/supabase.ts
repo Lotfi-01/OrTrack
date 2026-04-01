@@ -23,11 +23,9 @@ try {
         detectSessionInUrl: false,
       },
     });
-  } else {
-    console.warn('[OrTrack] Supabase disabled: missing or invalid URL/key');
   }
-} catch (e) {
-  console.warn('[OrTrack] Supabase init failed:', e);
+} catch {
+  // Supabase init failed — app runs without backend
 }
 
 export const supabase = supabaseInstance;
