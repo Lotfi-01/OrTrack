@@ -19,8 +19,20 @@ export function usePositions() {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
       const parsed = raw ? JSON.parse(raw) : [];
-      // Garde-fou : un JSON valide mais mal formé (objet au lieu de tableau) ne doit pas passer
-      const safe: Position[] = Array.isArray(parsed) ? parsed : [];
+      // Garde-fou : élimine les entrées corrompues ou mal formées
+      const safe: Position[] = Array.isArray(parsed)
+        ? parsed.filter(
+            (p: any): p is Position =>
+              p != null &&
+              typeof p.id === 'string' &&
+              typeof p.metal === 'string' &&
+              typeof p.product === 'string' &&
+              typeof p.quantity === 'number' &&
+              typeof p.purchasePrice === 'number' &&
+              typeof p.purchaseDate === 'string' &&
+              typeof p.createdAt === 'string'
+          )
+        : [];
       memoryCache = safe;
       setPositions(safe);
     } catch {

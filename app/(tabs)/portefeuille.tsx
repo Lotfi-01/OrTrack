@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
+import { parseDate } from '@/utils/tax-helpers';
 import { formatEuro, formatG, formatPct, formatQty } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
@@ -58,18 +59,9 @@ function computeNetGains(
   return { netForfaitaire, netPlusValues, bestRegime };
 }
 
-function parseDateDMY(dateStr: string): Date | null {
-  const parts = dateStr.split('/');
-  if (parts.length !== 3) return null;
-  const day = parseInt(parts[0], 10);
-  const month = parseInt(parts[1], 10) - 1;
-  const year = parseInt(parts[2], 10);
-  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
-  return new Date(year, month, day);
-}
 
 function computeFiscalCountdown(purchaseDate: string) {
-  const buyDate = parseDateDMY(purchaseDate);
+  const buyDate = parseDate(purchaseDate);
   if (!buyDate) return null;
 
   const now = new Date();
