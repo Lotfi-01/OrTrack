@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
@@ -27,7 +26,7 @@ import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { usePositions } from '@/hooks/use-positions';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
 
@@ -122,6 +121,7 @@ export default function AjouterScreen() {
   const isEditMode = editId != null && editId !== '' && editId !== 'undefined';
   const { prices, currencySymbol, refresh } = useSpotPrices();
   const { canAddPosition, showPaywall } = usePremium();
+  const { positions, reloadPositions, addPosition, updatePosition } = usePositions();
 
   useFocusEffect(
     useCallback(() => {
@@ -160,43 +160,46 @@ export default function AjouterScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      reloadPositions();
+    }, [reloadPositions])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
       if (isEditMode) {
-        AsyncStorage.getItem(STORAGE_KEYS.positions).then((raw) => {
-          if (!raw) return;
-          const positions: Position[] = JSON.parse(raw);
-          const existing = positions.find(p => p.id === editId);
-          if (!existing) {
-            Alert.alert('Erreur', 'Position introuvable');
-            router.navigate('/(tabs)/portefeuille');
-            return;
-          }
-          setMetal(existing.metal);
-          const matchedProduct = PRODUCTS[existing.metal].find(p => p.label === existing.product) ?? null;
-          if (matchedProduct) {
-            setProduct(matchedProduct);
-            if (matchedProduct.weightG === null) {
-              setCustomWeight(String(existing.weightG));
-            }
-          } else {
-            const autre = PRODUCTS[existing.metal].find(p => p.category === 'autre') ?? null;
-            setProduct(autre);
+        const existing = positions.find(p => p.id === editId);
+        if (positions.length > 0 && !existing) {
+          Alert.alert('Erreur', 'Position introuvable');
+          router.navigate('/(tabs)/portefeuille');
+          return;
+        }
+        if (!existing) return;
+        setMetal(existing.metal);
+        const matchedProduct = PRODUCTS[existing.metal].find(p => p.label === existing.product) ?? null;
+        if (matchedProduct) {
+          setProduct(matchedProduct);
+          if (matchedProduct.weightG === null) {
             setCustomWeight(String(existing.weightG));
           }
-          setQuantity(String(existing.quantity));
-          setPurchasePrice(
-            typeof existing.purchasePrice === 'number'
-              ? existing.purchasePrice.toFixed(2)
-              : String(existing.purchasePrice).replace(/[\s\u00A0]/g, '').replace(/,/g, '.')
-          );
-          setPurchaseDate(existing.purchaseDate);
-          setNote(existing.note ?? '');
-          setShowAllPieces(false);
-          setShowAllBars(false);
-          setConfirmed(false);
-          setIsStep2Active(true);
-          setCoinSearch('');
-          setIsPriceFocused(false);
-        }).catch(() => {});
+        } else {
+          const autre = PRODUCTS[existing.metal].find(p => p.category === 'autre') ?? null;
+          setProduct(autre);
+          setCustomWeight(String(existing.weightG));
+        }
+        setQuantity(String(existing.quantity));
+        setPurchasePrice(
+          typeof existing.purchasePrice === 'number'
+            ? existing.purchasePrice.toFixed(2)
+            : String(existing.purchasePrice).replace(/[\s\u00A0]/g, '').replace(/,/g, '.')
+        );
+        setPurchaseDate(existing.purchaseDate);
+        setNote(existing.note ?? '');
+        setShowAllPieces(false);
+        setShowAllBars(false);
+        setConfirmed(false);
+        setIsStep2Active(true);
+        setCoinSearch('');
+        setIsPriceFocused(false);
       } else {
         setMetal('or');
         setProduct(null);
@@ -212,14 +215,11 @@ export default function AjouterScreen() {
         setCoinSearch('');
         setIsPriceFocused(false);
 
-        AsyncStorage.getItem(STORAGE_KEYS.positions).then((raw) => {
-          const list: Position[] = raw ? JSON.parse(raw) : [];
-          if (!canAddPosition(list.length)) {
-            showPaywall();
-          }
-        });
+        if (!canAddPosition(positions.length)) {
+          showPaywall();
+        }
       }
-    }, [isEditMode, editId, canAddPosition, showPaywall])
+    }, [isEditMode, editId, positions, canAddPosition, showPaywall])
   );
 
   // Cleanup timeout
@@ -473,9 +473,6 @@ export default function AjouterScreen() {
     if (!canSave || saving) return;
     setSaving(true);
     try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
-      let positions: Position[] = raw ? JSON.parse(raw) : [];
-
       const newPosition: Position = {
         id: isEditMode ? editId! : Date.now().toString(),
         metal,
@@ -490,20 +487,15 @@ export default function AjouterScreen() {
       };
 
       if (isEditMode) {
-        positions = positions.map(p =>
-          p.id === editId
-            ? { ...newPosition, id: editId!, createdAt: p.createdAt }
-            : p
-        );
+        const existing = positions.find(p => p.id === editId);
+        await updatePosition({ ...newPosition, id: editId!, createdAt: existing?.createdAt ?? newPosition.createdAt });
       } else {
         if (!canAddPosition(positions.length)) {
           showPaywall();
           return;
         }
-        positions.push(newPosition);
+        await addPosition(newPosition);
       }
-
-      await AsyncStorage.setItem(STORAGE_KEYS.positions, JSON.stringify(positions));
 
       setCustomWeight('');
       setQuantity('');
