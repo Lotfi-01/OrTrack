@@ -22,7 +22,8 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
+import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { formatEuro, formatG } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -40,7 +41,6 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
-const OZ_TO_G = 31.10435;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHIP_WIDTH = (SCREEN_WIDTH - 40 - 8) / 2;
 
@@ -98,30 +98,6 @@ const PRODUCTS: Record<MetalType, Product[]> = {
 const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CONFIG[MetalType]][];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Formate un nombre en format monétaire français (déterministe, safe Hermes).
- * 3837.59 → "3 837,59"  ·  716.83 → "716,83"  ·  0 → "0,00"  ·  NaN → "—"
- */
-function fmtEur(value: number | null | undefined): string {
-  if (value == null || isNaN(value) || !isFinite(value)) return '—';
-  const abs = Math.abs(value);
-  const fixed = abs.toFixed(2);
-  const [integer, decimal] = fixed.split('.');
-  const withSpaces = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '\u00A0');
-  const sign = value < 0 ? '-' : '';
-  return `${sign}${withSpaces},${decimal}`;
-}
-
-function fmtG(g: number): string {
-  if (g >= 1000) {
-    const val = g / 1000;
-    const fixed = val % 1 === 0 ? String(val) : val.toFixed(3).replace(/\.?0+$/, '');
-    return `${fixed.replace('.', ',')} kg`;
-  }
-  if (g % 1 === 0) return `${g} g`;
-  return `${g.toFixed(2).replace('.', ',')} g`;
-}
 
 function toNum(s: string): number {
   return parseFloat(s.replace(',', '.')) || 0;
@@ -713,7 +689,7 @@ export default function AjouterScreen() {
 
             <Text style={styles.spotInline}>
               {spotEur !== null
-                ? `Cours spot : ${fmtEur(spotEur)} ${currencySymbol}/oz`
+                ? `Cours spot : ${formatEuro(spotEur)} ${currencySymbol}/oz`
                 : 'Cours spot : —'}
             </Text>
           </View>
@@ -809,7 +785,7 @@ export default function AjouterScreen() {
           {/* Feedback sélection sous la grille */}
           {product !== null && !isStep2Active && estimatedValue !== null && (
             <Text style={styles.selectionFeedback}>
-              {'✓ '}{product.label} · {product.weightG !== null ? fmtG(product.weightG) : fmtG(toNum(customWeight))} · ~{fmtEur(estimatedValue)} €
+              {'✓ '}{product.label} · {product.weightG !== null ? formatG(product.weightG) : formatG(toNum(customWeight))} · ~{formatEuro(estimatedValue)} €
             </Text>
           )}
 
@@ -844,19 +820,19 @@ export default function AjouterScreen() {
                     <View style={styles.spotInfoRow}>
                       <Text style={styles.spotInfoLabel}>Cours actuel</Text>
                       <Text style={styles.spotInfoValue}>
-                        {fmtEur(spotEur)} {currencySymbol}/oz
+                        {formatEuro(spotEur)} {currencySymbol}/oz
                       </Text>
                     </View>
                     <View>
                       <Text style={styles.spotInfoLabel}>Produit sélectionné</Text>
                       <Text style={[styles.spotInfoValue, { marginTop: 2 }]}>
-                        {product.label} · {fmtG(effectiveWeightG)}
+                        {product.label} · {formatG(effectiveWeightG)}
                       </Text>
                     </View>
                     <View style={styles.spotInfoRow}>
                       <Text style={styles.spotInfoLabel}>Valeur unitaire estimée</Text>
                       <Text style={[styles.spotInfoValue, { color: OrTrackColors.gold }]}>
-                        {fmtEur((effectiveWeightG / OZ_TO_G) * spotEur)} {currencySymbol}
+                        {formatEuro((effectiveWeightG / OZ_TO_G) * spotEur)} {currencySymbol}
                       </Text>
                     </View>
 
@@ -946,7 +922,7 @@ export default function AjouterScreen() {
                   {product && (
                     <View>
                       <Text style={styles.miniRecapText}>
-                        {product.label} · {product.weightG !== null ? fmtG(product.weightG) : fmtG(toNum(customWeight))}
+                        {product.label} · {product.weightG !== null ? formatG(product.weightG) : formatG(toNum(customWeight))}
                       </Text>
                       <View style={styles.miniRecapSeparator} />
                     </View>
@@ -1077,7 +1053,7 @@ export default function AjouterScreen() {
 
                   <View style={styles.estimationRow}>
                     <Text style={styles.estimationLabel}>Valeur de marché</Text>
-                    <Text style={styles.estimationValue}>{fmtEur(currentValue)} €</Text>
+                    <Text style={styles.estimationValue}>{formatEuro(currentValue)} €</Text>
                   </View>
 
                   {gainLoss !== null && (() => {
@@ -1094,7 +1070,7 @@ export default function AjouterScreen() {
                         ]}>
                           {display === 0
                             ? '0,00 €'
-                            : `${display > 0 ? '+' : ''}${fmtEur(display)} €`}
+                            : `${display > 0 ? '+' : ''}${formatEuro(display)} €`}
                         </Text>
                       </View>
                     );
@@ -1102,7 +1078,7 @@ export default function AjouterScreen() {
 
                   {spotEur !== null && (
                     <Text style={styles.estimationHint}>
-                      Cours spot : {fmtEur(spotEur)} €/oz · {effectiveWeightG}g par unité
+                      Cours spot : {formatEuro(spotEur)} €/oz · {effectiveWeightG}g par unité
                     </Text>
                   )}
                 </View>

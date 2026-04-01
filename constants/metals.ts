@@ -17,6 +17,8 @@ export const METAL_CONFIG: Record<MetalType, {
   cuivre:    { symbol: 'XCU', name: 'Cuivre',    chipBg: '#1E1510', chipBorder: '#B87333', chipText: '#B87333', spotKey: 'copper' },
 };
 
+export const OZ_TO_G = 31.10435;
+
 export function getSpot(
   metal: MetalType,
   prices: { gold: number | null; silver: number | null; platinum: number | null; palladium: number | null; copper: number | null }

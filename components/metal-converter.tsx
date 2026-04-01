@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import {
   StyleSheet,
@@ -7,10 +8,10 @@ import {
   View,
 } from 'react-native';
 
+import { OZ_TO_G } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
+import { formatEuro } from '@/utils/format';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-
-const OZ_TO_G = 31.10435;
 
 type MetalKey = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
 type Mode = 'weightToEur' | 'eurToWeight';
@@ -24,13 +25,22 @@ const METALS: { key: MetalKey; label: string; symbol: string; color: string }[] 
   { key: 'copper', label: 'Cuivre', symbol: 'XCU', color: '#B87333' },
 ];
 
+const PRESETS: { label: string; value: string; unit: Unit }[] = [
+  { label: '1 g', value: '1', unit: 'g' },
+  { label: '10 g', value: '10', unit: 'g' },
+  { label: '1 oz', value: '1', unit: 'oz' },
+  { label: '100 g', value: '100', unit: 'g' },
+];
+
 function toNum(s: string): number {
   return parseFloat(s.replace(',', '.')) || 0;
 }
 
-function fmtEur(v: number): string {
-  return v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
+const DisclaimerFooter = () => (
+  <Text style={styles.disclaimer}>
+    Données à titre indicatif. Pas un conseil d'investissement.
+  </Text>
+);
 
 export function MetalConverter() {
   const { prices } = useSpotPrices();
@@ -40,7 +50,6 @@ export function MetalConverter() {
   const [unit, setUnit] = useState<Unit>('g');
 
   const spotEur: number | null = prices[selectedMetal] ?? null;
-  const metalColor = METALS.find((m) => m.key === selectedMetal)!.color;
   const num = toNum(inputValue);
 
   const switchMode = (m: Mode) => {
@@ -84,16 +93,52 @@ export function MetalConverter() {
           </View>
         </View>
 
+        {/* Presets */}
+        <View style={styles.presetRow}>
+          {PRESETS.map((preset) => (
+            <TouchableOpacity
+              key={preset.label}
+              onPress={() => {
+                setInputValue(preset.value);
+                setUnit(preset.unit);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Preset ${preset.label}`}
+              style={styles.presetChip}
+            >
+              <Text style={styles.presetText}>{preset.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
         {spotEur === null ? (
           <Text style={styles.unavailable}>Prix indisponible</Text>
         ) : num > 0 && eurValue !== null ? (
           <View style={styles.resultBlock}>
-            <Text style={styles.resultMain}>{fmtEur(eurValue)} €</Text>
+            <Text style={styles.resultMain}>{formatEuro(eurValue)} €</Text>
             <Text style={styles.resultEquiv}>
               = {inOz.toFixed(4).replace('.', ',')} oz · {inG.toFixed(2).replace('.', ',')} g · {inKg.toFixed(6).replace('.', ',')} kg
             </Text>
           </View>
         ) : null}
+
+        {num > 0 && eurValue !== null && (
+          <Text style={styles.spotDisclaimer}>
+            Estimation au cours spot, hors prime et fiscalité.
+          </Text>
+        )}
+
+        {/* CTA — visible when result is positive */}
+        {eurValue !== null && eurValue > 0 && (
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/ajouter')}
+            accessibilityRole="button"
+            accessibilityLabel="Ajouter au portefeuille"
+            style={styles.converterCta}
+          >
+            <Text style={styles.converterCtaText}>Ajouter au portefeuille</Text>
+          </TouchableOpacity>
+        )}
       </>
     );
   };
@@ -124,65 +169,86 @@ export function MetalConverter() {
             <Text style={styles.resultLine}>{inKg.toFixed(6).replace('.', ',')} kg</Text>
           </View>
         ) : null}
+
+        {num > 0 && oz !== null && (
+          <Text style={styles.spotDisclaimer}>
+            Estimation au cours spot, hors prime et fiscalité.
+          </Text>
+        )}
+
+        {oz !== null && oz > 0 && (
+          <TouchableOpacity
+            onPress={() => router.push('/(tabs)/ajouter')}
+            accessibilityRole="button"
+            accessibilityLabel="Ajouter au portefeuille"
+            style={styles.converterCta}
+          >
+            <Text style={styles.converterCtaText}>Ajouter au portefeuille</Text>
+          </TouchableOpacity>
+        )}
       </>
     );
   };
 
   return (
-    <View style={styles.card}>
-      {/* Mode toggle */}
-      <View style={styles.modeRow}>
-        <TouchableOpacity
-          style={[styles.modeBtn, mode === 'weightToEur' && styles.modeBtnActive]}
-          onPress={() => switchMode('weightToEur')}>
-          <Text style={[styles.modeText, mode === 'weightToEur' && styles.modeTextActive]}>
-            Poids → €
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.modeBtn, mode === 'eurToWeight' && styles.modeBtnActive]}
-          onPress={() => switchMode('eurToWeight')}>
-          <Text style={[styles.modeText, mode === 'eurToWeight' && styles.modeTextActive]}>
-            € → Poids
-          </Text>
-        </TouchableOpacity>
-      </View>
+    <View>
+      <View style={styles.card}>
+        {/* Mode toggle */}
+        <View style={styles.modeRow}>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'weightToEur' && styles.modeBtnActive]}
+            onPress={() => switchMode('weightToEur')}>
+            <Text style={[styles.modeText, mode === 'weightToEur' && styles.modeTextActive]}>
+              Poids → €
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.modeBtn, mode === 'eurToWeight' && styles.modeBtnActive]}
+            onPress={() => switchMode('eurToWeight')}>
+            <Text style={[styles.modeText, mode === 'eurToWeight' && styles.modeTextActive]}>
+              € → Poids
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-      {/* Metal selector */}
-      <View style={styles.metalWrap}>
-        {METALS.map((m) => {
-          const active = selectedMetal === m.key;
-          return (
-            <TouchableOpacity
-              key={m.key}
-              style={[
-                styles.metalBtn,
-                active
-                  ? { backgroundColor: m.color }
-                  : { backgroundColor: OrTrackColors.card, borderColor: OrTrackColors.border, borderWidth: 1 },
-              ]}
-              onPress={() => switchMetal(m.key)}>
-              <Text
+        {/* Metal selector */}
+        <View style={styles.metalWrap}>
+          {METALS.map((m) => {
+            const active = selectedMetal === m.key;
+            return (
+              <TouchableOpacity
+                key={m.key}
                 style={[
-                  styles.metalText,
-                  active ? { color: OrTrackColors.background } : { color: OrTrackColors.subtext },
-                ]}>
-                {m.label}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
+                  styles.metalBtn,
+                  active
+                    ? { backgroundColor: m.color }
+                    : { backgroundColor: OrTrackColors.card, borderColor: OrTrackColors.border, borderWidth: 1 },
+                ]}
+                onPress={() => switchMetal(m.key)}>
+                <Text
+                  style={[
+                    styles.metalText,
+                    active ? { color: OrTrackColors.background } : { color: OrTrackColors.subtext },
+                  ]}>
+                  {m.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Content */}
+        {mode === 'weightToEur' ? renderWeightToEur() : renderEurToWeight()}
+
+        {/* Copper note */}
+        {selectedMetal === 'copper' && (
+          <Text style={styles.copperNote}>
+            Le cuivre est coté à ~0,35 €/oz, son prix unitaire est naturellement bas.
+          </Text>
+        )}
       </View>
 
-      {/* Content */}
-      {mode === 'weightToEur' ? renderWeightToEur() : renderEurToWeight()}
-
-      {/* Copper note */}
-      {selectedMetal === 'copper' && (
-        <Text style={styles.copperNote}>
-          Le cuivre est coté à ~0,35 €/oz, son prix unitaire est naturellement bas.
-        </Text>
-      )}
+      <DisclaimerFooter />
     </View>
   );
 }
@@ -274,6 +340,25 @@ const styles = StyleSheet.create({
   unitTextActive: {
     color: OrTrackColors.gold,
   },
+  presetRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+    flexWrap: 'wrap',
+  },
+  presetChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: OrTrackColors.border,
+    backgroundColor: OrTrackColors.card,
+  },
+  presetText: {
+    color: OrTrackColors.white,
+    fontSize: 14,
+    fontWeight: '500',
+  },
   unavailable: {
     fontSize: 14,
     color: OrTrackColors.subtext,
@@ -300,11 +385,34 @@ const styles = StyleSheet.create({
     color: OrTrackColors.subtext,
     marginTop: 2,
   },
+  spotDisclaimer: {
+    color: OrTrackColors.subtext,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  converterCta: {
+    paddingVertical: 14,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  converterCtaText: {
+    color: OrTrackColors.gold,
+    fontSize: 14,
+    fontWeight: '500',
+  },
   copperNote: {
     fontSize: 12,
     color: OrTrackColors.subtext,
     marginTop: 12,
     textAlign: 'center',
     lineHeight: 18,
+  },
+  disclaimer: {
+    color: OrTrackColors.subtext,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 24,
+    marginBottom: 16,
   },
 });

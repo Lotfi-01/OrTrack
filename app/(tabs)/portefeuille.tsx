@@ -14,7 +14,9 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
+import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { TAX } from '@/constants/tax';
+import { formatEuro, formatG, formatQty } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -30,30 +32,11 @@ import {
 import { PRODUCT_TO_MARKET_SLUG } from '@/constants/market-products';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
-const OZ_TO_G = 31.10435;
-
-// Taux fiscaux métaux précieux (France)
-const TAUX_FORFAITAIRE = 0.115; // TMP 11,5%
-const TAUX_PLUS_VALUES = 0.362; // 36,2% (19% IR + 17,2% PS)
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtEur(n: number): string {
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function fmtPct(value: number, decimals = 2): string {
   return value.toFixed(decimals).replace('.', ',');
-}
-
-function fmtG(g: number): string {
-  if (g >= 1000) return `${(g / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 })} kg`;
-  return `${g % 1 === 0 ? g : g.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} g`;
-}
-
-function fmtQty(n: number): string {
-  const qty = n % 1 === 0 ? String(n) : n.toFixed(2);
-  return `${qty} pièce${n > 1 ? 's' : ''}`;
 }
 
 const getPositionMetal = (p: Position): MetalType => p.metal;
@@ -70,13 +53,13 @@ function computeNetGains(
   netPlusValues: number;
   bestRegime: 'forfaitaire' | 'plusvalues';
 } {
-  const taxeForfaitaire = currentValue * TAUX_FORFAITAIRE;
+  const taxeForfaitaire = currentValue * TAX.forfaitaireRate;
   const netForfaitaire = currentValue - taxeForfaitaire - totalCost;
 
   let netPlusValues: number;
   if (gainLoss > 0) {
     const gainTaxable = gainLoss * (1 - abattement / 100);
-    const taxePV = gainTaxable * TAUX_PLUS_VALUES;
+    const taxePV = gainTaxable * TAX.plusValueRate;
     netPlusValues = gainLoss - taxePV;
   } else {
     netPlusValues = gainLoss;
@@ -235,7 +218,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
               styles.posCompactGainSmall,
               gainLoss >= 0 ? styles.positive : styles.negative,
             ]}>
-              {gainLoss >= 0 ? '+' : ''}{fmtEur(gainLoss)} {currencySymbol}
+              {gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol}
               {gainLossPct !== null && (
                 `  (${gainLoss >= 0 ? '+' : ''}${fmtPct(gainLossPct)} %)`
               )}
@@ -250,7 +233,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
                 styles.posCompactNetMainValue,
                 (displayNet ?? 0) >= 0 ? styles.positive : styles.negative,
               ]}>
-                {(displayNet ?? 0) >= 0 ? '+' : ''}{fmtEur(displayNet ?? 0)} {currencySymbol}
+                {(displayNet ?? 0) >= 0 ? '+' : ''}{formatEuro(displayNet ?? 0)} {currencySymbol}
               </Text>
               {isPremium && netGains && (
                 <Text style={styles.posCompactRegime}>
@@ -280,7 +263,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
           {gainLoss !== null && !hideValue && (
             <View style={styles.posGainRow}>
               <Text style={[styles.posGain, gainLoss >= 0 ? styles.positive : styles.negative]}>
-                {gainLoss >= 0 ? '+' : ''}{fmtEur(gainLoss)} {currencySymbol}
+                {gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol}
               </Text>
               {gainLossPct !== null && (
                 <Text style={[styles.posGainPct, gainLoss >= 0 ? styles.positive : styles.negative]}>
@@ -297,13 +280,13 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
 
               {/* Forfaitaire — toujours visible */}
               <View style={styles.netGainRow}>
-                <Text style={styles.netGainLabel}>Forfaitaire (11,5%)</Text>
+                <Text style={styles.netGainLabel}>Forfaitaire ({TAX.labels.forfaitaire})</Text>
                 <Text style={[
                   styles.netGainValue,
                   netGains.netForfaitaire >= 0 ? styles.positive : styles.negative,
                 ]}>
                   {netGains.netForfaitaire >= 0 ? '+' : ''}
-                  {fmtEur(netGains.netForfaitaire)} {currencySymbol}
+                  {formatEuro(netGains.netForfaitaire)} {currencySymbol}
                 </Text>
               </View>
 
@@ -311,14 +294,14 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
               {isPremium ? (
                 <View style={styles.netGainRow}>
                   <Text style={styles.netGainLabel}>
-                    Plus-values ({abattement > 0 ? `${abattement}% abatt.` : '36,2%'})
+                    {`Plus-values (${abattement > 0 ? `${abattement}% abatt.` : TAX.labels.plusValue})`}
                   </Text>
                   <Text style={[
                     styles.netGainValue,
                     netGains.netPlusValues >= 0 ? styles.positive : styles.negative,
                   ]}>
                     {netGains.netPlusValues >= 0 ? '+' : ''}
-                    {fmtEur(netGains.netPlusValues)} {currencySymbol}
+                    {formatEuro(netGains.netPlusValues)} {currencySymbol}
                   </Text>
                 </View>
               ) : (
@@ -343,7 +326,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
                   <Text style={styles.bestRegimeText}>
                     Régime optimal : {netGains.bestRegime === 'forfaitaire' ? 'Forfaitaire' : 'Plus-values'}
                     {' · Économie : '}
-                    {fmtEur(Math.abs(netGains.netPlusValues - netGains.netForfaitaire))} {currencySymbol}
+                    {formatEuro(Math.abs(netGains.netPlusValues - netGains.netForfaitaire))} {currencySymbol}
                   </Text>
                 </View>
               )}
@@ -401,11 +384,11 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
 
           {/* 5. Détails d'achat */}
           <Text style={styles.posDetail}>
-            {fmtQty(pos.quantity)} · {fmtG(totalWeightG)} · Acheté le {pos.purchaseDate}
+            {formatQty(pos.quantity)} pièce{pos.quantity > 1 ? 's' : ''} · {formatG(totalWeightG)} · Acheté le {pos.purchaseDate}
           </Text>
           {pos.quantity > 1 && (
             <Text style={styles.posDetail}>
-              Prix d'achat : {fmtEur(pos.purchasePrice)} €/pièce
+              Prix d'achat : {formatEuro(pos.purchasePrice)} €/pièce
             </Text>
           )}
           {pos.note != null && pos.note.trim().length > 0 && pos.note.trim() !== 'Note' && (
@@ -419,7 +402,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
             <View style={styles.posValuesRow}>
               <View style={styles.posValueCol}>
                 <Text style={styles.posValueLabel}>Investi</Text>
-                <Text style={styles.posValueAmount}>{fmtEur(totalCost)} {currencySymbol}</Text>
+                <Text style={styles.posValueAmount}>{formatEuro(totalCost)} {currencySymbol}</Text>
               </View>
               <View style={styles.posValueDivider} />
               <View style={[styles.posValueCol, styles.posValueColRight]}>
@@ -428,7 +411,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
                   {pricesLoading
                     ? 'Calcul…'
                     : currentValue !== null
-                    ? `${fmtEur(currentValue)} ${currencySymbol}`
+                    ? `${formatEuro(currentValue)} ${currencySymbol}`
                     : '—'}
                 </Text>
               </View>
@@ -635,7 +618,7 @@ export default function PortefeuilleScreen() {
 
   // Net global estimé (approximation forfaitaire pour le header)
   const totalNetEstime = (totalGainLoss !== null && totalGainLoss > 0 && allPricesKnown)
-    ? totalValue - (totalValue * TAUX_FORFAITAIRE) - totalCost
+    ? totalValue - (totalValue * TAX.forfaitaireRate) - totalCost
     : totalGainLoss;
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -662,7 +645,7 @@ export default function PortefeuilleScreen() {
                   {pricesLoading
                     ? 'Calcul en cours…'
                     : allPricesKnown
-                    ? `${fmtEur(totalValue)} ${currencySymbol}`
+                    ? `${formatEuro(totalValue)} ${currencySymbol}`
                     : `— ${currencySymbol}`}
                 </Text>
               )}
@@ -679,7 +662,7 @@ export default function PortefeuilleScreen() {
             </View>
             {totalGainLoss !== null && !hideValue && (
               <Text style={[styles.compactGain, totalGainLoss >= 0 ? styles.positive : styles.negative]}>
-                {totalGainLoss >= 0 ? '+' : ''}{fmtEur(totalGainLoss)} {currencySymbol}
+                {totalGainLoss >= 0 ? '+' : ''}{formatEuro(totalGainLoss)} {currencySymbol}
                 {totalGainLossPct !== null && (
                   `  (${totalGainLoss >= 0 ? '+' : ''}${fmtPct(totalGainLossPct)} %)`
                 )}
@@ -687,7 +670,7 @@ export default function PortefeuilleScreen() {
             )}
             {totalNetEstime !== null && !hideValue && totalGainLoss !== null && totalGainLoss > 0 && (
               <Text style={styles.compactNetGlobal}>
-                Gain net : ~{fmtEur(totalNetEstime)} {currencySymbol}
+                Gain net : ~{formatEuro(totalNetEstime)} {currencySymbol}
               </Text>
             )}
             {totalNetEstime !== null && !hideValue && totalGainLoss !== null && totalGainLoss > 0 && (

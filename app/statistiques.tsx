@@ -12,13 +12,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 
-import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
+import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
+import { formatEuro, formatG } from '@/utils/format';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
-const OZ_TO_G = 31.10435;
 
 const PREMIUM_STATS_FEATURES = [
   { icon: '🏆', title: 'Vos positions les plus rentables', sub: 'Voyez ce qui vous rapporte le plus aujourd\'hui' },
@@ -28,17 +28,8 @@ const PREMIUM_STATS_FEATURES = [
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtEur(n: number): string {
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function fmtPct(value: number, decimals = 2): string {
   return value.toFixed(decimals).replace('.', ',');
-}
-
-function fmtG(g: number): string {
-  if (g >= 1000) return `${(g / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 })} kg`;
-  return `${g % 1 === 0 ? g : g.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} g`;
 }
 
 // ─── Composant ────────────────────────────────────────────────────────────────
@@ -231,7 +222,7 @@ export default function StatistiquesScreen() {
                   styles.heroValue,
                   totalGainLoss >= 0 ? styles.positive : styles.negative,
                 ]}>
-                  {totalGainLoss >= 0 ? '+' : ''}{fmtEur(totalGainLoss)} {currencySymbol}
+                  {totalGainLoss >= 0 ? '+' : ''}{formatEuro(totalGainLoss)} {currencySymbol}
                 </Text>
               )}
               {totalGainLossPct !== null && (
@@ -248,14 +239,14 @@ export default function StatistiquesScreen() {
                 <View style={styles.heroCol}>
                   <Text style={styles.heroLabel}>Investi</Text>
                   <Text style={styles.heroAmount}>
-                    {fmtEur(totalCost)} {currencySymbol}
+                    {formatEuro(totalCost)} {currencySymbol}
                   </Text>
                 </View>
                 <View style={styles.heroSeparator} />
                 <View style={[styles.heroCol, { alignItems: 'flex-end' }]}>
                   <Text style={styles.heroLabel}>Valeur actuelle</Text>
                   <Text style={styles.heroAmount}>
-                    {fmtEur(totalValue)} {currencySymbol}
+                    {formatEuro(totalValue)} {currencySymbol}
                   </Text>
                 </View>
               </View>
@@ -408,7 +399,7 @@ export default function StatistiquesScreen() {
                     <Text style={styles.gridLabel}>COÛT MOYEN</Text>
                     {metalMetrics.map((m) => (
                       <Text key={m.metal} style={styles.gridValue}>
-                        {METAL_CONFIG[m.metal].name} — {fmtEur(m.avgPrice)} {currencySymbol}
+                        {METAL_CONFIG[m.metal].name} — {formatEuro(m.avgPrice)} {currencySymbol}
                       </Text>
                     ))}
                   </View>
@@ -417,7 +408,7 @@ export default function StatistiquesScreen() {
                     <Text style={styles.gridLabel}>POIDS TOTAL</Text>
                     {metalMetrics.map((m) => (
                       <Text key={m.metal} style={styles.gridValue}>
-                        {METAL_CONFIG[m.metal].name} — {fmtG(m.totalG)}
+                        {METAL_CONFIG[m.metal].name} — {formatG(m.totalG)}
                       </Text>
                     ))}
                   </View>
@@ -482,7 +473,7 @@ export default function StatistiquesScreen() {
                         color: '#4CAF50',
                         marginTop: 4,
                       }}>
-                        +{bestGainEur !== null ? fmtEur(bestGainEur) : '0,00'} €
+                        +{bestGainEur !== null ? formatEuro(bestGainEur) : '0,00'} €
                       </Text>
                       <Text style={{
                         fontSize: 12,

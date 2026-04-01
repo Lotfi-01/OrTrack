@@ -1,10 +1,11 @@
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { OZ_TO_G } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-
-const OZ_TO_G = 31.10435;
 
 const PRICE_KEY: Record<string, 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper'> = {
   or: 'gold',
@@ -33,6 +34,14 @@ function getDisplayPrice(key: string, prices: SpotPrices): string | null {
     maximumFractionDigits: 2,
   }) + ' \u20AC/oz';
 }
+
+const metalWithPrep: Record<string, string> = {
+  or: "de l'or",
+  argent: "de l'argent",
+  platine: 'du platine',
+  palladium: 'du palladium',
+  cuivre: 'du cuivre',
+};
 
 type MetalInfo = {
   key: string;
@@ -150,6 +159,12 @@ const METALS: MetalInfo[] = [
   },
 ];
 
+const DisclaimerFooter = () => (
+  <Text style={styles.disclaimer}>
+    Données à titre indicatif. Pas un conseil d'investissement.
+  </Text>
+);
+
 export function MetalGuide() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const { prices } = useSpotPrices();
@@ -160,6 +175,10 @@ export function MetalGuide() {
 
   return (
     <View>
+      <Text style={styles.intro}>
+        Repères simples pour comprendre chaque métal.
+      </Text>
+
       {METALS.map((m) => {
         const isOpen = openKey === m.key;
         const displayPrice = getDisplayPrice(m.key, prices);
@@ -184,13 +203,11 @@ export function MetalGuide() {
               <View style={styles.body}>
                 <Text style={styles.description}>{m.description}</Text>
 
-                {/* Conseil (remonté en 2ème position) */}
-                <View style={[styles.tipBox, { marginTop: 0, marginBottom: 14 }]}>
+                <View style={[styles.tipBox, { marginTop: 0, marginBottom: 10 }]}>
                   <Text style={styles.tipLabel}>{'\uD83D\uDCA1'} Conseil</Text>
                   <Text style={styles.tipText}>{m.tip}</Text>
                 </View>
 
-                {/* Cours actuel */}
                 <View style={styles.priceRow}>
                   <Text style={styles.sectionLabel}>COURS ACTUEL</Text>
                   {displayPrice !== null ? (
@@ -200,13 +217,11 @@ export function MetalGuide() {
                   )}
                 </View>
 
-                {/* Unités */}
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Unités</Text>
                   <Text style={styles.infoValue}>{m.units}</Text>
                 </View>
 
-                {/* Pureté */}
                 {m.purity && (
                   <View style={styles.infoRow}>
                     <Text style={styles.infoLabel}>Pureté</Text>
@@ -214,7 +229,6 @@ export function MetalGuide() {
                   </View>
                 )}
 
-                {/* Usages */}
                 <Text style={styles.sectionLabel}>USAGES</Text>
                 <View style={styles.tagsRow}>
                   {m.usages.map((u, i) => (
@@ -224,7 +238,6 @@ export function MetalGuide() {
                   ))}
                 </View>
 
-                {/* Production mondiale */}
                 <Text style={styles.sectionLabel}>PRODUCTION MONDIALE</Text>
                 {m.production.map((p, i) => (
                   <View key={i} style={styles.productionRow}>
@@ -233,7 +246,6 @@ export function MetalGuide() {
                   </View>
                 ))}
 
-                {/* Facteurs de prix */}
                 <Text style={styles.sectionLabel}>FACTEURS DE PRIX</Text>
                 <View style={styles.tagsRow}>
                   {m.priceFactor.map((f, i) => (
@@ -243,21 +255,40 @@ export function MetalGuide() {
                   ))}
                 </View>
 
-                {/* Le saviez-vous */}
                 <View style={styles.funFactBox}>
                   <Text style={styles.funFactLabel}>Le saviez-vous ?</Text>
                   <Text style={styles.funFactText}>{m.funFact}</Text>
                 </View>
+
+                {/* CTA — Ajouter au portefeuille */}
+                <TouchableOpacity
+                  onPress={() => router.push('/(tabs)/ajouter')}
+                  accessibilityRole="button"
+                  accessibilityLabel={metalWithPrep[m.key]
+                    ? `Ajouter ${metalWithPrep[m.key]} au portefeuille`
+                    : 'Ajouter au portefeuille'}
+                  style={styles.metalCta}
+                >
+                  <Text style={styles.metalCtaText}>Ajouter au portefeuille</Text>
+                  <Ionicons name="chevron-forward" size={16} color={OrTrackColors.gold} style={{ marginLeft: 8 }} />
+                </TouchableOpacity>
               </View>
             )}
           </View>
         );
       })}
+
+      <DisclaimerFooter />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  intro: {
+    color: OrTrackColors.subtext,
+    fontSize: 14,
+    marginBottom: 12,
+  },
   card: {
     backgroundColor: OrTrackColors.card,
     borderRadius: 12,
@@ -305,9 +336,9 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 13,
-    color: OrTrackColors.subtext,
+    color: OrTrackColors.label,
     lineHeight: 20,
-    marginBottom: 14,
+    marginBottom: 12,
   },
   infoRow: {
     marginBottom: 8,
@@ -325,7 +356,7 @@ const styles = StyleSheet.create({
     lineHeight: 19,
   },
   funFactBox: {
-    marginTop: 10,
+    marginTop: 8,
     backgroundColor: 'rgba(201, 168, 76, 0.08)',
     borderRadius: 8,
     padding: 12,
@@ -338,7 +369,7 @@ const styles = StyleSheet.create({
   },
   funFactText: {
     fontSize: 13,
-    color: OrTrackColors.subtext,
+    color: OrTrackColors.label,
     lineHeight: 19,
   },
   sectionLabel: {
@@ -347,14 +378,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.5,
     textTransform: 'uppercase',
-    marginTop: 12,
+    marginTop: 8,
     marginBottom: 6,
   },
   priceRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   priceValue: {
     fontSize: 16,
@@ -365,7 +396,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   tag: {
     backgroundColor: 'rgba(201,168,76,0.1)',
@@ -397,22 +428,44 @@ const styles = StyleSheet.create({
     color: '#888888',
   },
   tipBox: {
-    marginTop: 10,
-    backgroundColor: 'rgba(255,255,255,0.04)',
+    marginTop: 12,
+    backgroundColor: 'rgba(201,168,76,0.08)',
     borderRadius: 8,
     padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.08)',
   },
   tipLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#FFFFFF',
+    color: OrTrackColors.gold,
     marginBottom: 4,
   },
   tipText: {
     fontSize: 13,
-    color: '#888888',
+    color: OrTrackColors.label,
     lineHeight: 19,
+  },
+  metalCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#C9A84C14',
+    borderWidth: 1,
+    borderColor: '#C9A84C40',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 16,
+  },
+  metalCtaText: {
+    color: OrTrackColors.gold,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  disclaimer: {
+    color: OrTrackColors.subtext,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 24,
+    marginBottom: 16,
   },
 });

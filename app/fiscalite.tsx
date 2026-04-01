@@ -16,36 +16,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
+import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
+import { formatEuro } from '@/utils/format';
+import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
-const OZ_TO_G = 31.10435;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function fmtEur(n: number): string {
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function parseDate(str: string): Date | null {
-  if (!str || str.length < 10) return null;
-  const parts = str.split('/');
-  if (parts.length !== 3) return null;
-  const [d, m, y] = parts.map(Number);
-  if (!d || !m || !y || y < 1900 || y > 2100) return null;
-  const date = new Date(y, m - 1, d);
-  if (isNaN(date.getTime())) return null;
-  return date;
-}
-
-function todayStr(): string {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, '0');
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  return `${d}/${m}/${now.getFullYear()}`;
-}
 
 function autoFormatDate(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -54,47 +34,9 @@ function autoFormatDate(raw: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
-function calcYearsHeld(from: Date, to: Date): number {
-  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / (365.25 * 24 * 3600 * 1000)));
-}
-
 function spotValue(pos: Position, spot: number | null): number | null {
   if (spot === null) return null;
   return pos.quantity * (pos.weightG / OZ_TO_G) * spot;
-}
-
-// ─── Calcul fiscal ────────────────────────────────────────────────────────────
-
-interface TaxResult {
-  forfaitaire: number;
-  plusValuesTax: number;
-  plusValue: number;
-  abattement: number; // 0 → 1
-  years: number;
-  isExempt: boolean;
-  taxablePV: number;
-}
-
-function computeTax(salePrice: number, costPrice: number, years: number): TaxResult {
-  // Régime 1 — Taxe forfaitaire : 11,5 % sur le prix de cession
-  const forfaitaire = salePrice * 0.115;
-
-  // Régime 2 — Plus-values avec abattement
-  const plusValue = salePrice - costPrice;
-  let abattement = 0;
-  let isExempt = false;
-
-  if (years >= 22) {
-    abattement = 1;
-    isExempt = true;
-  } else if (years >= 3) {
-    abattement = Math.min(1, (years - 2) * 0.05); // 5 % par an à partir de la 3e année
-  }
-
-  const taxablePV = Math.max(0, plusValue) * (1 - abattement);
-  const plusValuesTax = isExempt || plusValue <= 0 ? 0 : taxablePV * 0.362; // 36,2 % = 19 % CGP + 17,2 % CS
-
-  return { forfaitaire, plusValuesTax, plusValue, abattement, years, isExempt, taxablePV };
 }
 
 // ─── Écran ────────────────────────────────────────────────────────────────────
@@ -249,7 +191,7 @@ export default function FiscaliteScreen() {
               </View>
               {!showCessionDetails && (
                 <Text style={styles.cessionSummary}>
-                  {salePrice !== null ? `${fmtEur(salePrice)} €` : salePriceStr} · {saleDate}
+                  {salePrice !== null ? `${formatEuro(salePrice)} €` : salePriceStr} · {saleDate}
                 </Text>
               )}
             </TouchableOpacity>
@@ -272,7 +214,7 @@ export default function FiscaliteScreen() {
                       Valeur marché estimée :&nbsp;
                       {(() => {
                         const mv = spotValue(selectedPos, getSpot(selectedPos.metal, prices));
-                        return mv !== null ? `${fmtEur(mv)} €` : 'cours indisponible';
+                        return mv !== null ? `${formatEuro(mv)} €` : 'cours indisponible';
                       })()}
                     </Text>
                   )}
@@ -318,7 +260,7 @@ export default function FiscaliteScreen() {
                 </Text>
                 {!taxResult.isExempt && taxResult.plusValue > 0 && (
                   <Text style={styles.recommendSaving}>
-                    Économie estimée : {fmtEur(savings!)} €
+                    Économie estimée : {formatEuro(savings!)} €
                   </Text>
                 )}
               </View>
@@ -333,10 +275,10 @@ export default function FiscaliteScreen() {
                     </View>
                   )}
                 </View>
-                <Text style={styles.regimeDesc}>11,5 % du prix de cession</Text>
+                <Text style={styles.regimeDesc}>{TAX.labels.forfaitaire} du prix de cession</Text>
                 <Text style={styles.regimeNetLabel}>Net encaissé</Text>
-                <Text style={styles.regimeNetAmount}>{fmtEur(salePrice - taxResult.forfaitaire)} €</Text>
-                <Text style={styles.regimeTaxLine}>Taxe (11,5%) : {fmtEur(taxResult.forfaitaire)} €</Text>
+                <Text style={styles.regimeNetAmount}>{formatEuro(salePrice - taxResult.forfaitaire)} €</Text>
+                <Text style={styles.regimeTaxLine}>Taxe ({TAX.labels.forfaitaire}) : {formatEuro(taxResult.forfaitaire)} €</Text>
               </View>
 
               {/* Régime plus-values */}
@@ -356,11 +298,11 @@ export default function FiscaliteScreen() {
                     ? 'Exonération totale — détention supérieure à 22 ans'
                     : taxResult.plusValue <= 0
                     ? 'Cession à perte — aucune plus-value imposable'
-                    : '36,2 % sur la plus-value après abattement'}
+                    : `${TAX.labels.plusValue} sur la plus-value après abattement`}
                 </Text>
                 <Text style={styles.regimeNetLabel}>Net encaissé</Text>
-                <Text style={styles.regimeNetAmount}>{fmtEur(salePrice - taxResult.plusValuesTax)} €</Text>
-                <Text style={styles.regimeTaxLine}>Taxe (36,2%) : {fmtEur(taxResult.plusValuesTax)} €</Text>
+                <Text style={styles.regimeNetAmount}>{formatEuro(salePrice - taxResult.plusValuesTax)} €</Text>
+                <Text style={styles.regimeTaxLine}>Taxe ({TAX.labels.plusValue}) : {formatEuro(taxResult.plusValuesTax)} €</Text>
               </View>
 
               {/* Bouton afficher/masquer détail */}
@@ -377,16 +319,16 @@ export default function FiscaliteScreen() {
 
                   <View style={styles.detailRow}>
                     <Text style={styles.detailKey}>Prix de cession</Text>
-                    <Text style={styles.detailVal}>{fmtEur(salePrice)} €</Text>
+                    <Text style={styles.detailVal}>{formatEuro(salePrice)} €</Text>
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailKey}>Prix de revient</Text>
-                    <Text style={styles.detailVal}>{fmtEur(costPrice)} €</Text>
+                    <Text style={styles.detailVal}>{formatEuro(costPrice)} €</Text>
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailKey}>Plus-value brute</Text>
                     <Text style={[styles.detailVal, taxResult.plusValue >= 0 ? styles.positive : styles.negative]}>
-                      {taxResult.plusValue >= 0 ? '+' : ''}{fmtEur(taxResult.plusValue)} €
+                      {taxResult.plusValue >= 0 ? '+' : ''}{formatEuro(taxResult.plusValue)} €
                     </Text>
                   </View>
 
@@ -398,11 +340,11 @@ export default function FiscaliteScreen() {
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailKey}>Taux</Text>
-                    <Text style={styles.detailVal}>11,5 %</Text>
+                    <Text style={styles.detailVal}>{TAX.labels.forfaitaire}</Text>
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={[styles.detailKey, styles.detailKeyBold]}>Taxe</Text>
-                    <Text style={[styles.detailVal, styles.detailValBold]}>{fmtEur(taxResult.forfaitaire)} €</Text>
+                    <Text style={[styles.detailVal, styles.detailValBold]}>{formatEuro(taxResult.forfaitaire)} €</Text>
                   </View>
 
                   <View style={styles.detailDivider} />
@@ -413,23 +355,23 @@ export default function FiscaliteScreen() {
                   </View>
                   <View style={styles.detailRow}>
                     <Text style={styles.detailKey}>Abattement applicable</Text>
-                    <Text style={styles.detailVal}>{Math.round(taxResult.abattement * 100)} %</Text>
+                    <Text style={styles.detailVal}>{Math.round(taxResult.abatement * 100)} %</Text>
                   </View>
                   {!taxResult.isExempt && taxResult.plusValue > 0 && (
                     <>
                       <View style={styles.detailRow}>
                         <Text style={styles.detailKey}>Plus-value imposable</Text>
-                        <Text style={styles.detailVal}>{fmtEur(taxResult.taxablePV)} €</Text>
+                        <Text style={styles.detailVal}>{formatEuro(taxResult.taxablePV)} €</Text>
                       </View>
                       <View style={styles.detailRow}>
                         <Text style={styles.detailKey}>Taux global (CGP + CS)</Text>
-                        <Text style={styles.detailVal}>36,2 %</Text>
+                        <Text style={styles.detailVal}>{TAX.labels.plusValue}</Text>
                       </View>
                     </>
                   )}
                   <View style={styles.detailRow}>
                     <Text style={[styles.detailKey, styles.detailKeyBold]}>Taxe</Text>
-                    <Text style={[styles.detailVal, styles.detailValBold]}>{fmtEur(taxResult.plusValuesTax)} €</Text>
+                    <Text style={[styles.detailVal, styles.detailValBold]}>{formatEuro(taxResult.plusValuesTax)} €</Text>
                   </View>
                 </View>
               )}

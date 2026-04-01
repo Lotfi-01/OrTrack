@@ -14,8 +14,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
+import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
+import { formatEuro } from '@/utils/format';
+import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
@@ -31,31 +34,7 @@ type PositionResult = {
   bestRegime: 'forfaitaire' | 'plusvalues';
 };
 
-const OZ_TO_G = 31.10435;
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function fmtEur(n: number): string {
-  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function parseDate(str: string): Date | null {
-  if (!str || str.length < 10) return null;
-  const parts = str.split('/');
-  if (parts.length !== 3) return null;
-  const [d, m, y] = parts.map(Number);
-  if (!d || !m || !y || y < 1900 || y > 2100) return null;
-  const date = new Date(y, m - 1, d);
-  if (isNaN(date.getTime())) return null;
-  return date;
-}
-
-function todayStr(): string {
-  const now = new Date();
-  const d = String(now.getDate()).padStart(2, '0');
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  return `${d}/${m}/${now.getFullYear()}`;
-}
 
 function autoFormatDate(raw: string): string {
   const digits = raw.replace(/\D/g, '').slice(0, 8);
@@ -64,45 +43,9 @@ function autoFormatDate(raw: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
-function calcYearsHeld(from: Date, to: Date): number {
-  return Math.max(0, Math.floor((to.getTime() - from.getTime()) / (365.25 * 24 * 3600 * 1000)));
-}
-
 function spotValue(pos: Position, spot: number | null): number | null {
   if (spot === null) return null;
   return pos.quantity * (pos.weightG / OZ_TO_G) * spot;
-}
-
-// ─── Calcul fiscal ───────────────────────────────────────────────────────────
-
-interface TaxResult {
-  forfaitaire: number;
-  plusValuesTax: number;
-  plusValue: number;
-  abattement: number;
-  years: number;
-  isExempt: boolean;
-  taxablePV: number;
-}
-
-function computeTax(salePrice: number, costPrice: number, years: number): TaxResult {
-  const forfaitaire = salePrice * 0.115;
-
-  const plusValue = salePrice - costPrice;
-  let abattement = 0;
-  let isExempt = false;
-
-  if (years >= 22) {
-    abattement = 1;
-    isExempt = true;
-  } else if (years >= 3) {
-    abattement = Math.min(1, (years - 2) * 0.05);
-  }
-
-  const taxablePV = Math.max(0, plusValue) * (1 - abattement);
-  const plusValuesTax = isExempt || plusValue <= 0 ? 0 : taxablePV * 0.362;
-
-  return { forfaitaire, plusValuesTax, plusValue, abattement, years, isExempt, taxablePV };
 }
 
 // ─── Écran ───────────────────────────────────────────────────────────────────
@@ -228,7 +171,7 @@ export default function FiscaliteGlobaleScreen() {
                   <Text style={styles.savingTitle}>
                     Régime {bestGlobalRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'} conseillé
                   </Text>
-                  <Text style={styles.savingAmount}>Économie estimée : {fmtEur(economieGlobale)} €</Text>
+                  <Text style={styles.savingAmount}>Économie estimée : {formatEuro(economieGlobale)} €</Text>
                 </View>
               )}
 
@@ -238,15 +181,15 @@ export default function FiscaliteGlobaleScreen() {
 
                 <View style={[styles.card, styles.recapHero]}>
                   <Text style={styles.recapHeroLabel}>MONTANT TOTAL DE VENTE</Text>
-                  <Text style={styles.recapHeroValue}>{fmtEur(totalSalePrice)} €</Text>
+                  <Text style={styles.recapHeroValue}>{formatEuro(totalSalePrice)} €</Text>
 
                   {/* Deux colonnes : forfaitaire vs plus-values */}
                   <View style={styles.recapColumns}>
                     <View style={[styles.recapCol, bestGlobalRegime === 'forfaitaire' && styles.recapColBest]}>
                       <Text style={styles.recapColTitle}>Forfaitaire</Text>
-                      <Text style={styles.recapColNetAmount}>{fmtEur(netForfaitaire)} €</Text>
+                      <Text style={styles.recapColNetAmount}>{formatEuro(netForfaitaire)} €</Text>
                       <Text style={styles.recapColNetLabel}>Net encaissé</Text>
-                      <Text style={styles.recapColTaxLine}>Taxe (11,5%) : {fmtEur(totalForfaitaire)} €</Text>
+                      <Text style={styles.recapColTaxLine}>Taxe ({TAX.labels.forfaitaire}) : {formatEuro(totalForfaitaire)} €</Text>
                       {bestGlobalRegime === 'forfaitaire' && (
                         <View style={styles.recommendBadge}>
                           <Text style={styles.recommendBadgeText}>Le moins taxé</Text>
@@ -255,9 +198,9 @@ export default function FiscaliteGlobaleScreen() {
                     </View>
                     <View style={[styles.recapCol, bestGlobalRegime === 'plusvalues' && styles.recapColBest]}>
                       <Text style={styles.recapColTitle}>Plus-values</Text>
-                      <Text style={styles.recapColNetAmount}>{fmtEur(netPlusValues)} €</Text>
+                      <Text style={styles.recapColNetAmount}>{formatEuro(netPlusValues)} €</Text>
                       <Text style={styles.recapColNetLabel}>Net encaissé</Text>
-                      <Text style={styles.recapColTaxLine}>Taxe (36,2%) : {fmtEur(totalPlusValuesTax)} €</Text>
+                      <Text style={styles.recapColTaxLine}>Taxe ({TAX.labels.plusValue}) : {formatEuro(totalPlusValuesTax)} €</Text>
                       {bestGlobalRegime === 'plusvalues' && (
                         <View style={styles.recommendBadge}>
                           <Text style={styles.recommendBadgeText}>Le moins taxé</Text>
@@ -270,7 +213,7 @@ export default function FiscaliteGlobaleScreen() {
                 {economieGlobale > 0.01 && (
                   <View style={styles.savingsBanner}>
                     <Text style={styles.savingsBannerText}>
-                      +{fmtEur(economieGlobale)} € avec le {bestGlobalRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'}
+                      +{formatEuro(economieGlobale)} € avec le {bestGlobalRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values'}
                     </Text>
                   </View>
                 )}
@@ -319,7 +262,7 @@ export default function FiscaliteGlobaleScreen() {
                                   styles.taxLabel,
                                   { color: r.bestRegime === 'forfaitaire' ? gold : subtext,
                                     fontWeight: r.bestRegime === 'forfaitaire' ? '700' : '400' },
-                                ]}>Taxe forfaitaire : {fmtEur(r.tax.forfaitaire)} €</Text>
+                                ]}>Taxe forfaitaire : {formatEuro(r.tax.forfaitaire)} €</Text>
                                 {r.bestRegime === 'forfaitaire' && (
                                   <View style={styles.miniBadgeBest}>
                                     <Text style={styles.miniBadgeBestText}>Le moins taxé</Text>
@@ -331,7 +274,7 @@ export default function FiscaliteGlobaleScreen() {
                                   styles.fiscalLabelPV,
                                   { color: r.bestRegime === 'plusvalues' ? gold : subtext,
                                     fontWeight: r.bestRegime === 'plusvalues' ? '700' : '400' },
-                                ]}>Taxe plus-values : {fmtEur(r.tax.plusValuesTax)} €</Text>
+                                ]}>Taxe plus-values : {formatEuro(r.tax.plusValuesTax)} €</Text>
                                 {r.bestRegime === 'plusvalues' && (
                                   <View style={styles.miniBadgeBest}>
                                     <Text style={styles.miniBadgeBestText}>

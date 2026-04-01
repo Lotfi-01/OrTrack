@@ -18,6 +18,9 @@ import { PriceChart } from '@/components/price-chart';
 import { OrTrackColors } from '@/constants/theme';
 import { loadPriceHistory } from '@/hooks/use-metal-history';
 import { type SpotPrices, useSpotPrices } from '@/hooks/use-spot-prices';
+import { OZ_TO_G } from '@/constants/metals';
+import { TAX } from '@/constants/tax';
+import { formatEuro, formatG, formatQty, formatTimeFR, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 
@@ -33,38 +36,8 @@ type PricePoint = {
   palladium: number;
   copper: number;
 };
-const OZ_TO_G = 31.10435;
-const TAUX_FORFAITAIRE = 0.115; // TMP 11,5%
-
-// ─── Date française (fiable Android/Hermes) ──────────────────────────────────
-
-const JOURS_FR = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
-const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatEur(value: number): string {
-  const [int, dec] = value.toFixed(2).split('.');
-  const thousands = int.replace(/\B(?=(\d{3})+(?!\d))/g, '\u202F');
-  return `${thousands},${dec}`;
-}
-
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-}
-
-function fmtG(g: number): string {
-  if (g >= 1000) {
-    return `${(g / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 3 })} kg`;
-  }
-  return `${g % 1 === 0 ? g : g.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} g`;
-}
-
-function fmtQty(n: number): string {
-  const qty = n % 1 === 0 ? String(n) : n.toFixed(2);
-  return `${qty} pièce${n > 1 ? 's' : ''}`;
-}
 
 function fmtPct(value: number, decimals = 2): string {
   return value.toFixed(decimals).replace('.', ',');
@@ -233,7 +206,7 @@ export default function TableauDeBordScreen() {
 
     // Net global estimé (forfaitaire)
     const totalNetEstime = (totalGainLoss !== null && totalGainLoss > 0)
-      ? totalValue - (totalValue * TAUX_FORFAITAIRE) - totalCost
+      ? totalValue - (totalValue * TAX.forfaitaireRate) - totalCost
       : totalGainLoss;
 
     return {
@@ -263,7 +236,7 @@ export default function TableauDeBordScreen() {
         .reduce((s, p) => s + p.quantity * p.purchasePrice, 0);
       const gain = value !== null ? value - cost : null;
       const netEstime = (value !== null && gain !== null && gain > 0)
-        ? value - (value * TAUX_FORFAITAIRE) - cost
+        ? value - (value * TAX.forfaitaireRate) - cost
         : gain;
 
       return { ...m, value, netEstime };
@@ -309,7 +282,7 @@ export default function TableauDeBordScreen() {
           {loading && !prices.gold ? (
             <ActivityIndicator size="small" color={OrTrackColors.gold} />
           ) : lastUpdated ? (
-            <Text style={styles.headerTime}>Mis à jour à {formatTime(lastUpdated)}</Text>
+            <Text style={styles.headerTime}>Mis à jour à {formatTimeFR(lastUpdated)}</Text>
           ) : null}
         </View>
 
@@ -346,7 +319,7 @@ export default function TableauDeBordScreen() {
                 </View>
               ) : (
                 <Text style={styles.heroValue}>
-                  {formatEur(portfolio.totalValue)} {currencySymbol}
+                  {formatEuro(portfolio.totalValue)} {currencySymbol}
                 </Text>
               )}
               {portfolio.totalGainLoss !== null && !hideValue && (
@@ -356,7 +329,7 @@ export default function TableauDeBordScreen() {
                     portfolio.totalGainLoss >= 0 ? styles.changePositive : styles.changeNegative,
                   ]}>
                     {portfolio.totalGainLoss >= 0 ? '+' : ''}
-                    {formatEur(portfolio.totalGainLoss)} {currencySymbol}
+                    {formatEuro(portfolio.totalGainLoss)} {currencySymbol}
                   </Text>
                   {portfolio.totalGainLossPct !== null && (
                     <Text style={[
@@ -372,13 +345,13 @@ export default function TableauDeBordScreen() {
               {portfolio.totalNetEstime !== null && !hideValue &&
                portfolio.totalGainLoss !== null && portfolio.totalGainLoss > 0 && (
                 <View style={styles.netGlobalRow}
-                  accessibilityLabel={`Si vous vendez aujourd'hui, environ ${formatEur(portfolio.totalNetEstime ?? 0)} euros nets`}
+                  accessibilityLabel={`Si vous vendez aujourd'hui, environ ${formatEuro(portfolio.totalNetEstime ?? 0)} euros nets`}
                 >
                   <Text style={styles.netGlobalLabel}>
                     GAIN NET ESTIMÉ
                   </Text>
                   <Text style={styles.netGlobalValue}>
-                    ~{formatEur(portfolio.totalNetEstime)} {currencySymbol}
+                    ~{formatEuro(portfolio.totalNetEstime)} {currencySymbol}
                   </Text>
                   <Text style={styles.netGlobalSub}>
                     Estimation après impôts
@@ -462,7 +435,7 @@ export default function TableauDeBordScreen() {
                   key={m.metal}
                   onPress={() => handleSelectMetal(m.metal)}
                   activeOpacity={0.75}
-                  accessibilityLabel={`${m.name} ${displayPrice !== null ? formatEur(displayPrice) + ' ' + unitLabel : ''}`}
+                  accessibilityLabel={`${m.name} ${displayPrice !== null ? formatEuro(displayPrice) + ' ' + unitLabel : ''}`}
                   style={[
                     styles.marketChip,
                     active && { borderColor: m.color, backgroundColor: `${m.color}15` },
@@ -470,7 +443,7 @@ export default function TableauDeBordScreen() {
                   <Text style={styles.marketChipName}>{m.name}</Text>
                   {displayPrice !== null ? (
                     <>
-                      <Text style={styles.marketChipPrice}>{formatEur(displayPrice)}</Text>
+                      <Text style={styles.marketChipPrice}>{formatEuro(displayPrice)}</Text>
                       <Text style={styles.marketChipUnit}>{unitLabel}</Text>
                       {variationEur !== null && change24h[m.metal] !== undefined && (
                         <Text style={[
@@ -480,7 +453,7 @@ export default function TableauDeBordScreen() {
                           {change24h[m.metal]! >= 0 ? '▲' : '▼'}{' '}
                           {fmtPct(Math.abs(change24h[m.metal]!))}%
                           {'  '}{change24h[m.metal]! >= 0 ? '+' : '-'}
-                          {formatEur(Math.abs(variationEur))}{currencySymbol}
+                          {formatEuro(Math.abs(variationEur))}{currencySymbol}
                         </Text>
                       )}
                     </>
@@ -516,7 +489,7 @@ export default function TableauDeBordScreen() {
                     key={m.key}
                     onPress={navigateToPortfolio}
                     activeOpacity={0.7}
-                    accessibilityLabel={`${m.label} ${fmtG(m.totalG)} ${m.value !== null ? formatEur(m.value) + ' ' + currencySymbol : ''}`}
+                    accessibilityLabel={`${m.label} ${formatG(m.totalG)} ${m.value !== null ? formatEuro(m.value) + ' ' + currencySymbol : ''}`}
                   >
                     {i > 0 && <View style={styles.separator} />}
                     <View style={styles.detentionRow}>
@@ -526,21 +499,21 @@ export default function TableauDeBordScreen() {
                         </View>
                         <View style={styles.detentionNameCol}>
                           <Text style={styles.detentionLabel}>{m.label}</Text>
-                          <Text style={styles.detentionSub}>{fmtG(m.totalG)} · {fmtQty(m.pieces)}</Text>
+                          <Text style={styles.detentionSub}>{formatG(m.totalG)} · {formatQty(m.pieces)} pièce{m.pieces > 1 ? 's' : ''}</Text>
                         </View>
                       </View>
                       <View style={styles.detentionRight}>
                         {m.value !== null && (
                           <View style={styles.detentionValues}>
                             <Text style={styles.detentionValue}>
-                              {formatEur(m.value)} {currencySymbol}
+                              {formatEuro(m.value)} {currencySymbol}
                             </Text>
                             {m.netEstime !== null && (m.netEstime ?? 0) > 0 && (
                               <Text style={[
                                 styles.detentionNet,
                                 styles.changePositive,
                               ]}>
-                                Gain net : +{formatEur(m.netEstime)} {currencySymbol}
+                                Gain net : +{formatEuro(m.netEstime)} {currencySymbol}
                               </Text>
                             )}
                           </View>
