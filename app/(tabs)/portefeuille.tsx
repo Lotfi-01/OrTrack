@@ -20,6 +20,7 @@ import { formatEuro, formatG, formatQty } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { usePositions } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 
@@ -424,26 +425,17 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
 // ─── Écran principal ──────────────────────────────────────────────────────────
 
 export default function PortefeuilleScreen() {
-  const [positions, setPositions] = useState<Position[]>([]);
+  const { positions, reloadPositions, deletePosition } = usePositions();
   const [hideValue, setHideValue] = useState(false);
   const [metalFilter, setMetalFilter] = useState<'all' | MetalType>('all');
   const { prices, loading: pricesLoading, currencySymbol } = useSpotPrices();
   const { showPaywall, isPremium, limits, canAddPosition } = usePremium();
 
-  const loadPositions = useCallback(async () => {
-    try {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
-      setPositions(raw ? JSON.parse(raw) : []);
-    } catch {
-      setPositions([]);
-    }
-  }, []);
-
   // Recharge à chaque activation de l'onglet
   useFocusEffect(
     useCallback(() => {
-      loadPositions();
-    }, [loadPositions])
+      reloadPositions();
+    }, [reloadPositions])
   );
 
   useFocusEffect(
@@ -471,15 +463,11 @@ export default function PortefeuilleScreen() {
         {
           text: 'Supprimer',
           style: 'destructive',
-          onPress: async () => {
-            const updated = positions.filter((p) => p.id !== id);
-            await AsyncStorage.setItem(STORAGE_KEYS.positions, JSON.stringify(updated));
-            setPositions(updated);
-          },
+          onPress: () => deletePosition(id),
         },
       ]
     );
-  }, [positions]);
+  }, [deletePosition]);
 
   // ── Filtre métal ────────────────────────────────────────────────────────
 
