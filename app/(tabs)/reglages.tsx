@@ -22,12 +22,21 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePremium } from '@/contexts/premium-context';
 
 import { OrTrackColors } from '@/constants/theme';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { resetPositionsCache } from '@/hooks/use-positions';
+import { Position } from '@/types/position';
+import { supabase } from '@/lib/supabase';
 
 // ─── Clés AsyncStorage ────────────────────────────────────────────────────────
 
 const PROFILE_KEY = '@ortrack:profil';
 const SETTINGS_KEY = '@ortrack:settings';
-const POSITIONS_KEY = '@ortrack:positions';
+
+// RFC 4180 — échappe les virgules, guillemets et retours à la ligne
+function csvEscape(value: unknown): string {
+  const str = String(value ?? '');
+  return `"${str.replace(/"/g, '""')}"`;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -225,79 +234,96 @@ export default function ReglagesScreen() {
     );
   }
 
-  // ── Export portefeuille ───────────────────────────────────────────────────
+  // ── Partager le portefeuille ─────────────────────────────────────────────
 
-  const exportPortfolio = async () => {
-    const raw = await AsyncStorage.getItem(POSITIONS_KEY);
-    const positions = raw ? JSON.parse(raw) : [];
-    const json = JSON.stringify({ exportedAt: new Date().toISOString(), positions }, null, 2);
-    await Share.share({ message: json, title: 'OrTrack — Portefeuille' });
+  const sharePositionsAsJson = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
+      if (!raw) return;
+      await Share.share({ message: raw, title: 'OrTrack — Données JSON' });
+    } catch {}
   };
 
-  const exportCSV = async () => {
-    const raw = await AsyncStorage.getItem(POSITIONS_KEY);
-    const positions = raw ? JSON.parse(raw) : [];
-    if (positions.length === 0) {
-      Alert.alert('Aucune donnée', 'Votre portefeuille est vide.');
-      return;
-    }
-    const header = 'Métal,Produit,Quantité,Poids unitaire (g),Prix achat unitaire,Date achat';
-    const rows = positions.map((p: any) =>
-      [
-        p.metal,
-        `"${p.product}"`,
-        p.quantity,
-        p.weightG,
-        p.purchasePrice,
-        p.purchaseDate,
-      ].join(',')
-    );
-    const csv = [header, ...rows].join('\n');
-    await Share.share({
-      message: csv,
-      title: 'OrTrack — Portefeuille.csv',
-    });
-  };
-
-  // ── Sauvegarde complète ───────────────────────────────────────────────────
-
-  const exportAllData = async () => {
-    const [rawPositions, rawProfile, rawSettings] = await Promise.all([
-      AsyncStorage.getItem(POSITIONS_KEY),
-      AsyncStorage.getItem(PROFILE_KEY),
-      AsyncStorage.getItem(SETTINGS_KEY),
-    ]);
-    const backup = {
-      exportedAt: new Date().toISOString(),
-      version: '1.0.0',
-      positions: rawPositions ? JSON.parse(rawPositions) : [],
-      profil: rawProfile ? JSON.parse(rawProfile) : {},
-      settings: rawSettings ? JSON.parse(rawSettings) : DEFAULT_SETTINGS,
-    };
-    await Share.share({
-      message: JSON.stringify(backup, null, 2),
-      title: 'OrTrack — Sauvegarde complète',
-    });
+  const sharePositionsAsCsv = async () => {
+    try {
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
+      if (!raw) return;
+      const positions: Position[] = JSON.parse(raw);
+      if (positions.length === 0) {
+        Alert.alert('Aucune donnée', 'Votre portefeuille est vide.');
+        return;
+      }
+      const header = 'metal,product,weightG,quantity,purchasePrice,purchaseDate,note';
+      const rows = positions.map(p =>
+        [p.metal, p.product, p.weightG, p.quantity, p.purchasePrice, p.purchaseDate, p.note ?? '']
+          .map(csvEscape).join(',')
+      );
+      await Share.share({ message: [header, ...rows].join('\n'), title: 'OrTrack — Données CSV' });
+    } catch {}
   };
 
   // ── Suppression totale ────────────────────────────────────────────────────
 
-  const deleteAllData = () => {
+  const wipeAllUserData = async () => {
+    // 1. Nettoyage serveur (best-effort)
+    try {
+      const token = await AsyncStorage.getItem(STORAGE_KEYS.pushToken);
+      if (token && supabase) {
+        await supabase.from('alerts').delete().eq('push_token', token);
+        await supabase.from('push_tokens').delete().eq('token', token);
+      }
+    } catch {}
+
+    // 2. Nettoyage local — clés fixes
+    const fixedKeys = [
+      STORAGE_KEYS.positions,
+      STORAGE_KEYS.hidePortfolioValue,
+      STORAGE_KEYS.onboardingComplete,
+      STORAGE_KEYS.biometricEnabled,
+      STORAGE_KEYS.settings,
+      STORAGE_KEYS.spotCache,
+      STORAGE_KEYS.priceHistory,
+      STORAGE_KEYS.pushToken,
+      STORAGE_KEYS.installTracked,
+      STORAGE_KEYS.premiumNotify,
+      STORAGE_KEYS.legacyPriceAlerts,
+      PROFILE_KEY,
+      SETTINGS_KEY,
+    ];
+
+    // 3. Nettoyage local — clés dynamiques (caches historiques)
+    const allKeys = await AsyncStorage.getAllKeys();
+    const dynamicKeys = allKeys.filter(key => key.startsWith(STORAGE_KEYS.historyCachePrefix));
+
+    await AsyncStorage.multiRemove([...fixedKeys, ...dynamicKeys]);
+
+    // 4. Invalider le cache mémoire et rediriger
+    resetPositionsCache();
+    router.replace('/onboarding');
+  };
+
+  const confirmWipe = () => {
     Alert.alert(
-      'Supprimer toutes les données',
-      'Cette action effacera définitivement toutes vos positions, votre profil et vos préférences. Cette opération est irréversible.',
+      'Supprimer toutes mes données',
+      'Cette action efface ton portefeuille, tes réglages et tes caches locaux. Pense à partager tes données avant.',
       [
         { text: 'Annuler', style: 'cancel' },
+        { text: 'Partager', onPress: sharePositionsAsJson },
         {
-          text: 'Tout supprimer',
+          text: 'Continuer',
           style: 'destructive',
-          onPress: async () => {
-            await AsyncStorage.multiRemove([POSITIONS_KEY, PROFILE_KEY, SETTINGS_KEY]);
-            setSettings(DEFAULT_SETTINGS);
-            Alert.alert('Données supprimées', 'Toutes vos données ont été effacées.');
+          onPress: () => {
+            Alert.alert(
+              'Confirmation finale',
+              'Cette suppression est irréversible.',
+              [
+                { text: 'Annuler', style: 'cancel' },
+                { text: 'Supprimer', style: 'destructive', onPress: wipeAllUserData },
+              ],
+            );
           },
         },
-      ]
+      ],
     );
   };
 
@@ -446,25 +472,17 @@ export default function ReglagesScreen() {
           <View style={styles.card}>
 
             <ActionRow
-              label="Exporter mon portefeuille (JSON)"
+              label="Partager mes données (JSON)"
               iconName="share-outline"
-              onPress={exportPortfolio}
+              onPress={sharePositionsAsJson}
             />
 
             <ItemSeparator />
 
             <ActionRow
-              label="Exporter en CSV"
+              label="Partager mes données (CSV)"
               iconName="document-text-outline"
-              onPress={exportCSV}
-            />
-
-            <ItemSeparator />
-
-            <ActionRow
-              label="Sauvegarder mes données"
-              iconName="save-outline"
-              onPress={exportAllData}
+              onPress={sharePositionsAsCsv}
             />
 
             <ItemSeparator />
@@ -473,7 +491,7 @@ export default function ReglagesScreen() {
               label="Supprimer toutes mes données"
               iconName="trash-outline"
               color="#E07070"
-              onPress={deleteAllData}
+              onPress={confirmWipe}
             />
           </View>
 
