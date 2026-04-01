@@ -19,20 +19,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-
-type Position = {
-  id: string;
-  metal: MetalType;
-  product: string;
-  weightG: number;
-  quantity: number;
-  purchasePrice: number;
-  purchaseDate: string; // JJ/MM/AAAA
-  createdAt: string;
-  note?: string;
-};
-
-const STORAGE_KEY = '@ortrack:positions';
+import { Position } from '@/types/position';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 const OZ_TO_G = 31.10435;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -131,7 +119,7 @@ export default function FiscaliteScreen() {
 
   // Charger les positions depuis AsyncStorage
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+    AsyncStorage.getItem(STORAGE_KEYS.positions).then((raw) => {
       const loaded: Position[] = raw ? JSON.parse(raw) : [];
       setPositions(loaded);
       if (positionId && loaded.some((p) => p.id === positionId)) {

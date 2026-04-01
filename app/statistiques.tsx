@@ -16,22 +16,8 @@ import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type Position = {
-  id: string;
-  metal: MetalType;
-  product: string;
-  weightG: number;
-  quantity: number;
-  purchasePrice: number;
-  purchaseDate: string;
-  createdAt: string;
-  note?: string;
-};
-
-const STORAGE_KEY = '@ortrack:positions';
+import { Position } from '@/types/position';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 const OZ_TO_G = 31.10435;
 
 const PREMIUM_STATS_FEATURES = [
@@ -64,7 +50,7 @@ export default function StatistiquesScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEY)
+      AsyncStorage.getItem(STORAGE_KEYS.positions)
         .then((raw) => setPositions(raw ? JSON.parse(raw) : []))
         .catch(() => setPositions([]));
     }, [])

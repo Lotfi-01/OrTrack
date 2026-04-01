@@ -18,22 +18,12 @@ import { PriceChart } from '@/components/price-chart';
 import { OrTrackColors } from '@/constants/theme';
 import { loadPriceHistory } from '@/hooks/use-metal-history';
 import { type SpotPrices, useSpotPrices } from '@/hooks/use-spot-prices';
+import { Position } from '@/types/position';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 
-// ─── Types (miroir de ajouter.tsx / portefeuille.tsx) ─────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
-
-type Position = {
-  id: string;
-  metal: MetalType;
-  product: string;
-  weightG: number;
-  quantity: number;
-  purchasePrice: number;
-  purchaseDate: string;
-  createdAt: string;
-  note?: string;
-};
 
 type PricePoint = {
   timestamp: number;
@@ -43,9 +33,6 @@ type PricePoint = {
   palladium: number;
   copper: number;
 };
-
-const STORAGE_KEY = '@ortrack:positions';
-const HIDE_VALUE_KEY = '@ortrack:hide_portfolio_value';
 const OZ_TO_G = 31.10435;
 const TAUX_FORFAITAIRE = 0.115; // TMP 11,5%
 
@@ -122,7 +109,7 @@ export default function TableauDeBordScreen() {
   // Recharge positions à chaque activation de l'onglet
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEY)
+      AsyncStorage.getItem(STORAGE_KEYS.positions)
         .then((raw) => {
           setPositions(raw ? JSON.parse(raw) : []);
           setPositionsLoaded(true);
@@ -148,7 +135,7 @@ export default function TableauDeBordScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(HIDE_VALUE_KEY).then((val) => {
+      AsyncStorage.getItem(STORAGE_KEYS.hidePortfolioValue).then((val) => {
         setHideValue(val === 'true');
       });
     }, [])
@@ -157,7 +144,7 @@ export default function TableauDeBordScreen() {
   const toggleHideValue = useCallback(() => {
     setHideValue((prev) => {
       const next = !prev;
-      AsyncStorage.setItem(HIDE_VALUE_KEY, String(next));
+      AsyncStorage.setItem(STORAGE_KEYS.hidePortfolioValue, String(next));
       return next;
     });
   }, []);

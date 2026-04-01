@@ -17,20 +17,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { Position } from '@/types/position';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 
 // ─── Types & Constantes ──────────────────────────────────────────────────────
-
-type Position = {
-  id: string;
-  metal: MetalType;
-  product: string;
-  weightG: number;
-  quantity: number;
-  purchasePrice: number;
-  purchaseDate: string;
-  createdAt: string;
-  note?: string;
-};
 
 type PositionResult = {
   pos: Position;
@@ -41,7 +31,6 @@ type PositionResult = {
   bestRegime: 'forfaitaire' | 'plusvalues';
 };
 
-const STORAGE_KEY = '@ortrack:positions';
 const OZ_TO_G = 31.10435;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -127,7 +116,7 @@ export default function FiscaliteGlobaleScreen() {
   const [detailExpanded, setDetailExpanded] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+    AsyncStorage.getItem(STORAGE_KEYS.positions).then((raw) => {
       const loaded: Position[] = raw ? JSON.parse(raw) : [];
       setPositions(loaded);
     });

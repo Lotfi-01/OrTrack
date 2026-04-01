@@ -12,7 +12,7 @@ type Tab = 'actualites' | 'guide' | 'convertisseur' | 'indicateurs';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'actualites', label: 'Actus' },
-  { key: 'guide', label: 'Guide' },
+  { key: 'guide', label: 'Métaux' },
   { key: 'convertisseur', label: 'Convertir' },
   { key: 'indicateurs', label: 'Ratios' },
 ];
@@ -26,6 +26,9 @@ export default function ApprendreScreen() {
 
         {/* Header */}
         <Text style={styles.headerTitle}>Apprendre</Text>
+        <Text style={styles.headerSubtitle}>
+          Comprendre les métaux pour mieux investir.
+        </Text>
 
         {/* Tab bar */}
         <View style={styles.tabBar}>
@@ -70,7 +73,13 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
     color: OrTrackColors.white,
-    marginBottom: 20,
+    marginBottom: 4,
+  },
+  headerSubtitle: {
+    color: OrTrackColors.subtext,
+    fontSize: 14,
+    marginTop: 4,
+    marginBottom: 8,
   },
   tabBar: {
     flexDirection: 'row',
