@@ -432,7 +432,7 @@ export default function ReglagesScreen() {
 
             <TouchableOpacity
               style={styles.alertsLink}
-              onPress={() => router.push('/alertes')}>
+              onPress={() => router.navigate('/(tabs)/alertes')}>
               <View>
                 <Text style={styles.alertsLinkLabel}>Gérer mes alertes de cours</Text>
                 <Text style={styles.alertsLinkSub}>Seuils personnalisés Or &amp; Argent</Text>

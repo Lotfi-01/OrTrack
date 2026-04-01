@@ -19,6 +19,7 @@ import {
   getAlerts,
   createAlert,
   deleteAlert,
+  updateAlert,
   type Alert,
   type Condition,
 } from '../../services/alerts'
@@ -102,17 +103,21 @@ export default function AlertesScreen() {
 
     setCreating(true)
 
-    // Si édition, supprimer l'ancienne alerte AVANT de créer la nouvelle
+    let success: boolean
     if (editingAlertId) {
-      await deleteAlert(editingAlertId)
+      success = await updateAlert(editingAlertId, {
+        metal: selectedMetal,
+        condition: selectedCondition,
+        target_price: parseFloat(targetPrice),
+      })
+    } else {
+      success = await createAlert(
+        pushToken,
+        selectedMetal,
+        selectedCondition,
+        parseFloat(targetPrice)
+      )
     }
-
-    const success = await createAlert(
-      pushToken,
-      selectedMetal,
-      selectedCondition,
-      parseFloat(targetPrice)
-    )
     setCreating(false)
     if (success) {
       closeModal()

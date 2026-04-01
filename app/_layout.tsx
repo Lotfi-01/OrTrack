@@ -10,8 +10,8 @@ import 'react-native-reanimated';
 
 import BiometricLock from '@/components/BiometricLock';
 import { OrTrackColors } from '@/constants/theme';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { PremiumProvider } from '@/contexts/premium-context';
-import { checkPriceAlerts } from '@/hooks/use-price-alerts';
 import { trackInstall } from '@/lib/trackInstall';
 import { registerForPushNotifications } from '../services/notifications';
 
@@ -26,11 +26,9 @@ try {
       shouldSetBadge: false,
     }),
   });
-} catch (e) {
-  console.log('Notifications handler setup failed:', e);
+} catch {
+  // Notifications handler setup failed — silencieux
 }
-
-const ONBOARDING_KEY = '@ortrack:onboarding_complete';
 
 const OrTrackNavTheme = {
   ...DarkTheme,
@@ -52,7 +50,6 @@ export const unstable_settings = {
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
   const needsOnboarding = useRef(false);
-  const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [biometricLocked, setBiometricLocked] = useState(false);
   const [biometricChecked, setBiometricChecked] = useState(false);
 
@@ -74,7 +71,7 @@ export default function RootLayout() {
 
   // Vérifier si l'onboarding a déjà été fait
   useEffect(() => {
-    AsyncStorage.getItem(ONBOARDING_KEY).then((done) => {
+    AsyncStorage.getItem(STORAGE_KEYS.onboardingComplete).then((done) => {
       needsOnboarding.current = done !== 'true';
       setReady(true);
     });
@@ -87,7 +84,7 @@ export default function RootLayout() {
     }
   }, [ready]);
 
-  // Créer le canal Android + lancer la vérification des alertes toutes les 15 min
+  // Créer le canal Android pour les notifications
   useEffect(() => {
     if (!ready) return;
 
@@ -96,25 +93,14 @@ export default function RootLayout() {
         name: 'Alertes de cours',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
-      }).catch((e) => {
-        console.log('Channel setup failed:', e);
-      });
+      }).catch(() => {});
     }
-
-    const timeout = setTimeout(checkPriceAlerts, 10_000);
-    const interval = setInterval(checkPriceAlerts, 15 * 60 * 1000);
-    return () => {
-      clearTimeout(timeout);
-      clearInterval(interval);
-    };
   }, [ready]);
 
   // Enregistrer le push token auprès de Supabase
   useEffect(() => {
     if (!ready) return;
-    registerForPushNotifications().catch((e) => {
-      console.log('Push registration failed:', e);
-    });
+    registerForPushNotifications().catch(() => {});
   }, [ready]);
 
   // Tracker l'installation dans Supabase
@@ -123,52 +109,23 @@ export default function RootLayout() {
     trackInstall();
   }, [ready]);
 
-  // Vérifier si l'onboarding a été complété
-  useEffect(() => {
-    async function checkOnboarding() {
-      try {
-        const complete = await AsyncStorage.getItem('@ortrack:onboarding_complete');
-        if (!complete) {
-          // setTimeout garantit que le navigator est prêt avant la redirection
-          setTimeout(() => {
-            router.replace('/onboarding');
-          }, 0);
-        }
-      } catch (e) {
-        console.log('Onboarding check error:', e);
-      } finally {
-        setOnboardingChecked(true);
-      }
-    }
-    checkOnboarding();
-  }, []);
-
   // Vérifier si la biométrie est activée et verrouiller si nécessaire
   useEffect(() => {
     async function checkBiometric() {
       try {
-        // Ne pas bloquer si onboarding pas complété
-        const onboardingDone = await AsyncStorage.getItem(
-          '@ortrack:onboarding_complete'
-        );
+        const onboardingDone = await AsyncStorage.getItem(STORAGE_KEYS.onboardingComplete);
         if (!onboardingDone) {
           setBiometricChecked(true);
           return;
         }
 
-        const stored = await AsyncStorage.getItem(
-          '@ortrack:biometric_enabled'
-        );
+        const stored = await AsyncStorage.getItem(STORAGE_KEYS.biometricEnabled);
 
-        // Premier lancement : détecte si disponible
         if (stored === null) {
           const compatible = await LocalAuthentication.hasHardwareAsync();
           const enrolled = await LocalAuthentication.isEnrolledAsync();
           const available = compatible && enrolled;
-          await AsyncStorage.setItem(
-            '@ortrack:biometric_enabled',
-            available ? 'true' : 'false'
-          );
+          await AsyncStorage.setItem(STORAGE_KEYS.biometricEnabled, available ? 'true' : 'false');
           if (!available) {
             setBiometricChecked(true);
             return;
@@ -178,7 +135,6 @@ export default function RootLayout() {
           return;
         }
 
-        // Biométrie activée → verrouille et déclenche
         setBiometricLocked(true);
         setBiometricChecked(true);
       } catch {
@@ -195,14 +151,12 @@ export default function RootLayout() {
     }
   }, [biometricLocked]);
 
-  if (!onboardingChecked) return null;
   if (!biometricChecked) return null;
 
   if (biometricLocked) {
     return <BiometricLock onRetry={handleBiometricAuth} />;
   }
 
-  // Écran de chargement : fond uni pendant la vérification AsyncStorage
   if (!ready) {
     return <View style={{ flex: 1, backgroundColor: OrTrackColors.background }} />;
   }
@@ -215,7 +169,6 @@ export default function RootLayout() {
           <Stack.Screen name="onboarding" options={{ headerShown: false }} />
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
           <Stack.Screen name="fiscalite" options={{ title: 'Simulation fiscale', headerBackTitle: 'Retour' }} />
-          <Stack.Screen name="alertes" options={{ title: 'Alertes de cours', headerBackTitle: 'Retour' }} />
           <Stack.Screen name="statistiques" options={{ headerShown: false }} />
           <Stack.Screen name="graphique" options={{ headerShown: false }} />
         </Stack>

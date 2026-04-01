@@ -22,10 +22,7 @@ export async function getAlerts(pushToken: string): Promise<Alert[]> {
     .eq('push_token', pushToken)
     .eq('is_active', true)
     .order('created_at', { ascending: false })
-  if (error) {
-    console.error('Erreur récupération alertes:', error)
-    return []
-  }
+  if (error) return []
   return data ?? []
 }
 
@@ -44,11 +41,7 @@ export async function createAlert(
     currency: 'EUR',
     is_active: true,
   })
-  if (error) {
-    console.error('Erreur création alerte:', error)
-    return false
-  }
-  return true
+  return !error
 }
 
 export async function deleteAlert(alertId: string): Promise<boolean> {
@@ -57,9 +50,25 @@ export async function deleteAlert(alertId: string): Promise<boolean> {
     .from('alerts')
     .update({ is_active: false })
     .eq('id', alertId)
-  if (error) {
-    console.error('Erreur suppression alerte:', error)
-    return false
-  }
-  return true
+  return !error
+}
+
+export async function updateAlert(
+  alertId: string,
+  updates: {
+    metal: MetalType;
+    condition: Condition;
+    target_price: number;
+  },
+): Promise<boolean> {
+  if (!supabase) return false
+  const { error } = await supabase
+    .from('alerts')
+    .update({
+      metal: updates.metal,
+      condition: updates.condition,
+      target_price: updates.target_price,
+    })
+    .eq('id', alertId)
+  return !error
 }

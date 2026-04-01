@@ -571,7 +571,7 @@ export default function TableauDeBordScreen() {
         {/* ── 6. Alertes de prix ── */}
         <TouchableOpacity
           style={styles.alertCard}
-          onPress={() => router.push('/alertes')}
+          onPress={() => router.navigate('/(tabs)/alertes')}
           activeOpacity={0.7}
           accessibilityLabel="Configurer les alertes de prix"
         >
