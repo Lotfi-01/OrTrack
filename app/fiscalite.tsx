@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -22,8 +22,8 @@ import { OrTrackColors } from '@/constants/theme';
 import { formatEuro } from '@/utils/format';
 import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { usePositions } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,7 +45,7 @@ export default function FiscaliteScreen() {
   const { positionId } = useLocalSearchParams<{ positionId?: string }>();
   const { prices } = useSpotPrices();
 
-  const [positions, setPositions] = useState<Position[]>([]);
+  const { positions, reloadPositions } = usePositions();
   const [selectedId, setSelectedId] = useState<string>(positionId ?? '');
   const [salePriceStr, setSalePriceStr] = useState('');
   const [saleDate, setSaleDate] = useState(todayStr());
@@ -59,18 +59,14 @@ export default function FiscaliteScreen() {
     setShowCessionDetails(prev => !prev);
   }, []);
 
-  // Charger les positions depuis AsyncStorage
+  // Sélection automatique de la position
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.positions).then((raw) => {
-      const loaded: Position[] = raw ? JSON.parse(raw) : [];
-      setPositions(loaded);
-      if (positionId && loaded.some((p) => p.id === positionId)) {
-        setSelectedId(positionId);
-      } else if (loaded.length > 0 && !positionId) {
-        setSelectedId(loaded[0].id);
-      }
-    });
-  }, [positionId]);
+    if (positionId && positions.some((p) => p.id === positionId)) {
+      setSelectedId(positionId);
+    } else if (positions.length > 0 && !positionId) {
+      setSelectedId(positions[0].id);
+    }
+  }, [positionId, positions]);
 
   const selectedPos = useMemo(
     () => positions.find((p) => p.id === selectedId) ?? null,

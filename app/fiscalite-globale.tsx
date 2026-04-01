@@ -1,6 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { Stack, router } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -21,7 +21,7 @@ import { formatEuro } from '@/utils/format';
 import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { usePositions } from '@/hooks/use-positions';
 
 // ─── Types & Constantes ──────────────────────────────────────────────────────
 
@@ -53,17 +53,16 @@ function spotValue(pos: Position, spot: number | null): number | null {
 export default function FiscaliteGlobaleScreen() {
   const { prices } = useSpotPrices();
 
-  const [positions, setPositions] = useState<Position[]>([]);
+  const { positions, reloadPositions } = usePositions();
   const [saleDate, setSaleDate] = useState(todayStr());
   const [disclaimerExpanded, setDisclaimerExpanded] = useState(false);
   const [detailExpanded, setDetailExpanded] = useState(false);
 
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.positions).then((raw) => {
-      const loaded: Position[] = raw ? JSON.parse(raw) : [];
-      setPositions(loaded);
-    });
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      reloadPositions();
+    }, [reloadPositions])
+  );
 
   // ── Calculs ──────────────────────────────────────────────────────────────
 
