@@ -135,7 +135,7 @@ export default function AjouterScreen() {
   // ── States ──────────────────────────────────────────────────────────────
 
   const scrollRef = useRef<ScrollView>(null);
-  const formYRef = useRef<number>(0);
+
   const spotInfoCardYRef = useRef<number>(0);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justTappedContinue = useRef(false);
@@ -831,9 +831,9 @@ export default function AjouterScreen() {
                   }}
                 >
                   <Text style={styles.progressIndicator}>
-                    Étape 2 · Détails de l'achat
+                    Étape 2 · Détails de l’achat
                   </Text>
-                  <Text style={styles.sectionTitle}>Détails de l'achat</Text>
+                  <Text style={styles.sectionTitle}>Détails de l’achat</Text>
                   {product && (
                     <View>
                       <Text style={styles.miniRecapText}>
@@ -861,7 +861,7 @@ export default function AjouterScreen() {
 
                     <View style={styles.field}>
                       <View style={styles.fieldLabelRow}>
-                        <Text style={[styles.fieldLabel, highlightedField === 'price' && { color: OrTrackColors.gold }]}>Prix d'achat unitaire</Text>
+                        <Text style={[styles.fieldLabel, highlightedField === 'price' && { color: OrTrackColors.gold }]}>Prix d’achat unitaire</Text>
                         {/* Correction 7 — Raccourci "Cours du jour" */}
                         {estimatedValue !== null && estimatedValue > 0 && (
                           <TouchableOpacity
@@ -913,7 +913,7 @@ export default function AjouterScreen() {
 
                     <View style={styles.field}>
                       <View style={styles.fieldLabelRow}>
-                        <Text style={[styles.fieldLabel, highlightedField === 'date' && { color: OrTrackColors.gold }]}>Date d'achat</Text>
+                        <Text style={[styles.fieldLabel, highlightedField === 'date' && { color: OrTrackColors.gold }]}>Date d’achat</Text>
                         <View style={styles.dateShortcuts}>
                           <TouchableOpacity
                             onPress={() => {
@@ -929,7 +929,7 @@ export default function AjouterScreen() {
                             onPress={() => setPurchaseDate(formatDateDMY(new Date()))}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.quickFillBtn}>Aujourd'hui</Text>
+                            <Text style={styles.quickFillBtn}>Aujourd’hui</Text>
                           </TouchableOpacity>
                         </View>
                       </View>

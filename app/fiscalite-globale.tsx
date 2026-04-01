@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { Stack, router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro } from '@/utils/format';
@@ -152,7 +152,7 @@ export default function FiscaliteGlobaleScreen() {
                   placeholderTextColor={OrTrackColors.subtext}
                   selectionColor={OrTrackColors.gold}
                 />
-                <Text style={styles.inputHint}>La date de cession détermine l'abattement du régime plus-values (5 % par an dès la 3e année de détention).</Text>
+                <Text style={styles.inputHint}>La date de cession détermine l’abattement du régime plus-values (5 % par an dès la 3e année de détention).</Text>
               </View>
 
               {/* 2. POSITIONS EXCLUES */}

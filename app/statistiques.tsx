@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 import {
   ScrollView,
   StyleSheet,
@@ -16,7 +16,6 @@ import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, formatG, formatPct } from '@/utils/format';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
-import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
 
 const PREMIUM_STATS_FEATURES = [

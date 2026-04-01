@@ -41,8 +41,8 @@ export function GoldSilverRatio() {
       <Text style={styles.average}>Moyenne historique : ~65</Text>
 
       <Text style={styles.explanation}>
-        Nombre d'onces d'argent nécessaires pour acheter 1 once d'or. Plus le
-        ratio est élevé, plus l'argent est bon marché relativement à l'or.
+        Nombre d&#39;onces d&#39;argent nécessaires pour acheter 1 once d&#39;or. Plus le
+        ratio est élevé, plus l&#39;argent est bon marché relativement à l&#39;or.
       </Text>
     </View>
   );

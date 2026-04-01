@@ -48,7 +48,8 @@
       "Bash(ls app/\\\\\\(tabs\\\\\\)/explore.tsx components/hello-wave.tsx components/parallax-scroll-view.tsx components/themed-text.tsx components/themed-view.tsx components/external-link.tsx hooks/use-color-scheme.ts hooks/use-color-scheme.web.ts hooks/use-theme-color.ts app/modal.tsx)",
       "Bash(cd:*)",
       "Bash(ls \"app/\\(tabs\\)/explore.tsx\" components/hello-wave.tsx components/themed-text.tsx)",
-      "Bash(npx jest:*)"
+      "Bash(npx jest:*)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }

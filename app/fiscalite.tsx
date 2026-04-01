@@ -1,4 +1,3 @@
-import { useFocusEffect } from '@react-navigation/native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -16,11 +15,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro } from '@/utils/format';
-import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
+import { parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
@@ -45,7 +44,7 @@ export default function FiscaliteScreen() {
   const { positionId } = useLocalSearchParams<{ positionId?: string }>();
   const { prices } = useSpotPrices();
 
-  const { positions, reloadPositions } = usePositions();
+  const { positions } = usePositions();
   const [selectedId, setSelectedId] = useState<string>(positionId ?? '');
   const [salePriceStr, setSalePriceStr] = useState('');
   const [saleDate, setSaleDate] = useState(todayStr());

@@ -168,9 +168,9 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
         >
           <Text style={{ fontSize: 24, flexShrink: 0 }}>💰</Text>
           <View style={{ flex: 1 }}>
-            <Text style={s.fiscalTitle}>Évitez de payer trop d'impôts</Text>
+            <Text style={s.fiscalTitle}>Évitez de payer trop d’impôts</Text>
             <Text style={s.fiscalSub}>
-              Jusqu'à plusieurs centaines d'euros d'écart entre les régimes. Trouvez le moins taxé en 1 clic.
+              Jusqu’à plusieurs centaines d’euros d’écart entre les régimes. Trouvez le moins taxé en 1 clic.
             </Text>
           </View>
           <View style={s.fiscalBadge}>

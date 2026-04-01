@@ -38,7 +38,7 @@ function toNum(s: string): number {
 
 const DisclaimerFooter = () => (
   <Text style={styles.disclaimer}>
-    Données à titre indicatif. Pas un conseil d'investissement.
+    Données à titre indicatif. Pas un conseil d’investissement.
   </Text>
 );
 

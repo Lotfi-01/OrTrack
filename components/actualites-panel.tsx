@@ -274,7 +274,7 @@ export function ActualitesPanel() {
           activeOpacity={0.7}
         >
           <Text style={styles.premiumNudgeTitle}>
-            Débloquer 4+ sources d'actualités
+            Débloquer 4+ sources d’actualités
           </Text>
           <Text style={styles.premiumNudgeSubtitle}>
             Sources FR et internationales

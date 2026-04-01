@@ -214,7 +214,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
               )}
             </View>
           ) : gainLoss !== null && gainLoss <= 0 ? (
-            <Text style={styles.posCompactNoTax}>Aucune plus-value · Pas d'impôt</Text>
+            <Text style={styles.posCompactNoTax}>Aucune plus-value · Pas d’impôt</Text>
           ) : null}
 
           {/* CTA — visible sans déplier */}
@@ -309,7 +309,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
           {netGains && !hideValue && gainLoss !== null && gainLoss <= 0 && (
             <View style={styles.netGainSection}>
               <Text style={styles.noTaxMessage}>
-                Aucune plus-value · Pas d'impôt
+                Aucune plus-value · Pas d’impôt
               </Text>
             </View>
           )}
@@ -360,7 +360,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
           </Text>
           {pos.quantity > 1 && (
             <Text style={styles.posDetail}>
-              Prix d'achat : {formatEuro(pos.purchasePrice)} €/pièce
+              Prix d’achat : {formatEuro(pos.purchasePrice)} €/pièce
             </Text>
           )}
           {pos.note != null && pos.note.trim().length > 0 && pos.note.trim() !== 'Note' && (
@@ -378,7 +378,7 @@ function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscali
               </View>
               <View style={styles.posValueDivider} />
               <View style={[styles.posValueCol, styles.posValueColRight]}>
-                <Text style={styles.posValueLabel}>Vaut aujourd'hui</Text>
+                <Text style={styles.posValueLabel}>Vaut aujourd’hui</Text>
                 <Text style={styles.posValueAmount}>
                   {pricesLoading
                     ? 'Calcul…'
@@ -416,7 +416,7 @@ export default function PortefeuilleScreen() {
   const [hideValue, setHideValue] = useState(false);
   const [metalFilter, setMetalFilter] = useState<'all' | MetalType>('all');
   const { prices, loading: pricesLoading, currencySymbol } = useSpotPrices();
-  const { showPaywall, isPremium, limits, canAddPosition } = usePremium();
+  const { showPaywall, isPremium, limits } = usePremium();
 
   // Recharge à chaque activation de l'onglet
   useFocusEffect(
@@ -683,7 +683,7 @@ export default function PortefeuilleScreen() {
             <Text style={styles.emptyTitle}>Aucun actif enregistré</Text>
             <Text style={styles.emptyText}>
               Commencez par ajouter vos lingots, pièces ou barres
-              via l'onglet "Ajouter".
+              via l&apos;onglet &ldquo;Ajouter&rdquo;.
             </Text>
           </View>
         )}
