@@ -1,10 +1,20 @@
+// ─── ÉTAPE 0 — Hooks et sources identifiés ───
+// Hook positions : usePositions (hooks/use-positions.ts) → positions, loading, reloadPositions, deletePosition
+// Hook spot : useSpotPrices (hooks/use-spot-prices.ts) → prices, loading, lastUpdated, currencySymbol, error
+// Fonction suppression position : deletePosition(id: string) → from usePositions
+// Fonction calcul fiscal : computeSellerNets (locale), computeFiscalCountdown (locale)
+// Route fiscalité : /fiscalite-globale (stack push)
+// Route Ajouter (édition) : /(tabs)/ajouter + param editId
+// Structure position : { id, metal, product, weightG, quantity, purchasePrice, purchaseDate, createdAt, note? }
+// react-native-svg : installé (v15.12.1)
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { router, useLocalSearchParams } from 'expo-router';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  LayoutAnimation,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,65 +23,66 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { parseDate } from '@/utils/tax-helpers';
-import { formatEuro, formatG, formatPct, formatQty } from '@/utils/format';
+import { formatEuro, formatQty } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
-import { Position } from '@/types/position';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
 
+const C = OrTrackColors;
 
-const getPositionMetal = (p: Position): MetalType => p.metal;
+// TODO ARCHITECTURE: extraire la logique fiscale dans un service dédié (utils/fiscal.ts ou domain/tax/)
+// Les calculs d'abattement, exonération, comparaison de régimes ne doivent pas vivre dans le composant UI
+// Prépare le multi-pays (FR → BE/CH/LU)
 
-// TODO v1.2 : extraire dans services/fiscal-calculator.ts
-// pour partager avec fiscalite.tsx
-function computeNetGains(
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function symbolToMetal(sym: string): MetalType | null {
+  const entry = (Object.entries(METAL_CONFIG) as [MetalType, (typeof METAL_CONFIG)[MetalType]][]).find(
+    ([, cfg]) => cfg.symbol === sym,
+  );
+  return entry ? entry[0] : null;
+}
+
+function computeSellerNets(
   currentValue: number,
-  totalCost: number,
   gainLoss: number,
-  abattement: number
-): {
-  netForfaitaire: number;
-  netPlusValues: number;
-  bestRegime: 'forfaitaire' | 'plusvalues';
-} {
-  const taxeForfaitaire = currentValue * TAX.forfaitaireRate;
-  const netForfaitaire = currentValue - taxeForfaitaire - totalCost;
+  abattement: number,
+): { sellerNetForfaitaire: number; sellerNetPlusValues: number; bestRegime: 'forfaitaire' | 'plusvalues' } {
+  // Forfaitaire : taxe TOUJOURS le prix de cession (pas le gain)
+  const sellerNetForfaitaire = currentValue * (1 - TAX.forfaitaireRate);
 
-  let netPlusValues: number;
+  let sellerNetPlusValues: number;
   if (gainLoss > 0) {
     const gainTaxable = gainLoss * (1 - abattement / 100);
     const taxePV = gainTaxable * TAX.plusValueRate;
-    netPlusValues = gainLoss - taxePV;
+    sellerNetPlusValues = currentValue - taxePV;
   } else {
-    netPlusValues = gainLoss;
+    // Pas de plus-value = pas de taxe PV → net vendeur = valeur actuelle
+    sellerNetPlusValues = currentValue;
   }
 
-  const bestRegime = netPlusValues >= netForfaitaire
-    ? 'plusvalues' as const
-    : 'forfaitaire' as const;
-
-  return { netForfaitaire, netPlusValues, bestRegime };
+  const bestRegime = sellerNetPlusValues >= sellerNetForfaitaire ? ('plusvalues' as const) : ('forfaitaire' as const);
+  return { sellerNetForfaitaire, sellerNetPlusValues, bestRegime };
 }
-
 
 function computeFiscalCountdown(purchaseDate: string) {
   const buyDate = parseDate(purchaseDate);
   if (!buyDate) return null;
 
   const now = new Date();
-  const diffMs = now.getTime() - buyDate.getTime();
-  if (diffMs < 0) return null;
+  if (now.getTime() - buyDate.getTime() < 0) return null;
 
   let years = now.getFullYear() - buyDate.getFullYear();
   let months = now.getMonth() - buyDate.getMonth();
   if (now.getDate() < buyDate.getDate()) months--;
-  if (months < 0) { years--; months += 12; }
+  if (months < 0) {
+    years--;
+    months += 12;
+  }
 
   const abattement = years < 3 ? 0 : Math.min((years - 2) * 5, 100);
   const isExonere = abattement >= 100;
@@ -85,1120 +96,711 @@ function computeFiscalCountdown(purchaseDate: string) {
     remainingYears = exemptionDate.getFullYear() - now.getFullYear();
     remainingMonths = exemptionDate.getMonth() - now.getMonth();
     if (exemptionDate.getDate() < now.getDate()) remainingMonths--;
-    if (remainingMonths < 0) { remainingYears--; remainingMonths += 12; }
+    if (remainingMonths < 0) {
+      remainingYears--;
+      remainingMonths += 12;
+    }
   }
 
-  const moisNoms = ['janv.','févr.','mars','avr.','mai','juin',
-    'juil.','août','sept.','oct.','nov.','déc.'];
-  const exemptionLabel = moisNoms[exemptionDate.getMonth()]
-    + ' ' + exemptionDate.getFullYear();
+  const moisNoms = [
+    'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+    'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
+  ];
+  const exemptionLabel = moisNoms[exemptionDate.getMonth()] + ' ' + exemptionDate.getFullYear();
 
   const buildLabel = (y: number, m: number): string => {
     const parts: string[] = [];
     if (y > 0) parts.push(y + ' an' + (y > 1 ? 's' : ''));
     if (m > 0) parts.push(m + ' mois');
-    return parts.length > 0 ? parts.join(' ') : "Moins d'un mois";
+    return parts.length > 0 ? parts.join(' ') : "Moins d\u2019un mois";
   };
 
   return {
+    years,
+    months,
     detentionLabel: buildLabel(years, months),
     abattement,
     isExonere,
     remainingLabel: buildLabel(remainingYears, remainingMonths),
     exemptionLabel,
+    exemptionYear: exemptionDate.getFullYear(),
     progress: abattement / 100,
   };
 }
 
-// ─── Sous-composant : carte position ─────────────────────────────────────────
-
-type PositionCardProps = {
-  pos: Position;
-  spotEur: number | null;
-  pricesLoading: boolean;
-  onDelete: (id: string) => void;
-  onEdit: () => void;
-  onFiscalite: () => void;
-  currencySymbol: string;
-  hideValue: boolean;
-  isPremium: boolean;
-  showPaywall: () => void;
-  positionIndex: number;
-};
-
-function PositionCard({ pos, spotEur, pricesLoading, onDelete, onEdit, onFiscalite, currencySymbol, hideValue, isPremium, showPaywall, positionIndex }: PositionCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const totalWeightG = pos.quantity * pos.weightG;
-  const totalCost = pos.quantity * pos.purchasePrice;
-
-  const currentValue =
-    spotEur !== null
-      ? pos.quantity * (pos.weightG / OZ_TO_G) * spotEur
-      : null;
-
-  const gainLoss = currentValue !== null ? currentValue - totalCost : null;
-  const gainLossPct =
-    gainLoss !== null && totalCost > 0
-      ? (gainLoss / totalCost) * 100
-      : null;
-
-  const cfg = METAL_CONFIG[pos.metal];
-
-  // ── Fiscal + calcul gain net ──
-  const fiscal = computeFiscalCountdown(pos.purchaseDate);
-  const abattement = fiscal?.abattement ?? 0;
-
-  const netGains = (currentValue !== null && gainLoss !== null)
-    ? computeNetGains(currentValue, totalCost, gainLoss, abattement)
-    : null;
-
-  const displayNet = netGains
-    ? (isPremium
-        ? (netGains.bestRegime === 'plusvalues' ? netGains.netPlusValues : netGains.netForfaitaire)
-        : netGains.netForfaitaire)
-    : null;
-
-  return (
-    <View style={styles.posCard}>
-      {/* ── Header tappable ── */}
-      <TouchableOpacity
-        style={styles.posHeader}
-        onPress={() => setExpanded(!expanded)}
-        activeOpacity={0.7}
-      >
-        <View style={[styles.metalChip, { backgroundColor: cfg.chipBg, borderColor: cfg.chipBorder }]}>
-          <Text style={[styles.metalChipText, { color: cfg.chipText }]}>
-            {cfg.symbol}
-          </Text>
-        </View>
-        <Text style={styles.posProduct} numberOfLines={1}>
-          {pos.product}
-        </Text>
-        <Ionicons
-          name={expanded ? 'chevron-up' : 'chevron-down'}
-          size={16}
-          color={OrTrackColors.subtext}
-        />
-      </TouchableOpacity>
-
-      {/* ── Plus-value compacte (replié uniquement) ── */}
-      {!expanded && !hideValue && (
-        <View>
-          {/* Gain brut — taille réduite mais COLORÉ vert/rouge */}
-          {gainLoss !== null && (
-            <Text style={[
-              styles.posCompactGainSmall,
-              gainLoss >= 0 ? styles.positive : styles.negative,
-            ]}>
-              {gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol}
-              {gainLossPct !== null && (
-                `  (${gainLoss >= 0 ? '+' : ''}${formatPct(gainLossPct, 2)})`
-              )}
-            </Text>
-          )}
-
-          {/* NET = l'info principale, plus visible que le brut */}
-          {netGains && gainLoss !== null && gainLoss > 0 ? (
-            <View style={styles.posCompactNetMain}>
-              <Text style={styles.posCompactNetMainLabel}>Gain net : </Text>
-              <Text style={[
-                styles.posCompactNetMainValue,
-                (displayNet ?? 0) >= 0 ? styles.positive : styles.negative,
-              ]}>
-                {(displayNet ?? 0) >= 0 ? '+' : ''}{formatEuro(displayNet ?? 0)} {currencySymbol}
-              </Text>
-              {isPremium && netGains && (
-                <Text style={styles.posCompactRegime}>
-                  {' · '}{netGains.bestRegime === 'forfaitaire' ? 'Forfaitaire' : 'Plus-values'}
-                </Text>
-              )}
-            </View>
-          ) : gainLoss !== null && gainLoss <= 0 ? (
-            <Text style={styles.posCompactNoTax}>Aucune plus-value · Pas d’impôt</Text>
-          ) : null}
-
-          {/* CTA — visible sans déplier */}
-          <TouchableOpacity
-            onPress={onFiscalite}
-            activeOpacity={0.7}
-            style={styles.posCompactCta}
-          >
-            <Text style={styles.posCompactCtaText}>Simuler ma vente →</Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
-      {/* ── Contenu déplié ── */}
-      {expanded && (
-        <>
-          {/* 1. Gain brut */}
-          {gainLoss !== null && !hideValue && (
-            <View style={styles.posGainRow}>
-              <Text style={[styles.posGain, gainLoss >= 0 ? styles.positive : styles.negative]}>
-                {gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol}
-              </Text>
-              {gainLossPct !== null && (
-                <Text style={[styles.posGainPct, gainLoss >= 0 ? styles.positive : styles.negative]}>
-                  {'  '}({gainLoss >= 0 ? '+' : ''}{formatPct(gainLossPct, 2)})
-                </Text>
-              )}
-            </View>
-          )}
-
-          {/* 2. Gain net estimé — en gain */}
-          {netGains && !hideValue && gainLoss !== null && gainLoss > 0 && (
-            <View style={styles.netGainSection}>
-              <Text style={styles.netGainTitle}>NET ESTIMÉ</Text>
-
-              {/* Forfaitaire — toujours visible */}
-              <View style={styles.netGainRow}>
-                <Text style={styles.netGainLabel}>Forfaitaire ({TAX.labels.forfaitaire})</Text>
-                <Text style={[
-                  styles.netGainValue,
-                  netGains.netForfaitaire >= 0 ? styles.positive : styles.negative,
-                ]}>
-                  {netGains.netForfaitaire >= 0 ? '+' : ''}
-                  {formatEuro(netGains.netForfaitaire)} {currencySymbol}
-                </Text>
-              </View>
-
-              {/* Plus-values — premium uniquement */}
-              {isPremium ? (
-                <View style={styles.netGainRow}>
-                  <Text style={styles.netGainLabel}>
-                    {`Plus-values (${abattement > 0 ? `${abattement}% abatt.` : TAX.labels.plusValue})`}
-                  </Text>
-                  <Text style={[
-                    styles.netGainValue,
-                    netGains.netPlusValues >= 0 ? styles.positive : styles.negative,
-                  ]}>
-                    {netGains.netPlusValues >= 0 ? '+' : ''}
-                    {formatEuro(netGains.netPlusValues)} {currencySymbol}
-                  </Text>
-                </View>
-              ) : (
-                <TouchableOpacity
-                  onPress={showPaywall}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Comparer les 2 régimes fiscaux"
-                >
-                  <View style={styles.premiumCompareRow}>
-                    <Ionicons name="lock-closed" size={14} color={OrTrackColors.gold} />
-                    <Text style={styles.premiumCompareText}>
-                      Comparer les 2 régimes
-                    </Text>
-                    <Text style={styles.premiumCompareChevron}>›</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-
-              {/* Régime optimal — premium */}
-              {isPremium && netGains && (
-                <View style={styles.bestRegimeBanner}>
-                  <Text style={styles.bestRegimeText}>
-                    Régime optimal : {netGains.bestRegime === 'forfaitaire' ? 'Forfaitaire' : 'Plus-values'}
-                    {' · Économie : '}
-                    {formatEuro(Math.abs(netGains.netPlusValues - netGains.netForfaitaire))} {currencySymbol}
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
-
-          {/* 2b. Gain net estimé — en perte */}
-          {netGains && !hideValue && gainLoss !== null && gainLoss <= 0 && (
-            <View style={styles.netGainSection}>
-              <Text style={styles.noTaxMessage}>
-                Aucune plus-value · Pas d’impôt
-              </Text>
-            </View>
-          )}
-
-          {/* 3. CTA Simuler — remonté */}
-          <TouchableOpacity
-            onPress={onFiscalite}
-            activeOpacity={0.7}
-            style={styles.simulerInline}
-          >
-            <Text style={styles.simulerInlineText}>Simuler ma vente →</Text>
-          </TouchableOpacity>
-
-          {/* 4. Exonération fiscale */}
-          {fiscal && (
-            <View style={styles.fiscalCountdown}>
-              <Text style={styles.fiscalTitle}>Exonération fiscale</Text>
-
-              <Text style={styles.fiscalDetail}>
-                Détention : {fiscal.detentionLabel}
-              </Text>
-
-              <Text style={styles.fiscalDetail}>
-                Abattement actuel : {fiscal.abattement} %
-              </Text>
-
-              <View style={styles.progressBarBg}>
-                <View style={[
-                  styles.progressBarFill,
-                  { width: `${Math.round(Math.max(fiscal.progress * 100, 2))}%` },
-                  fiscal.isExonere && styles.progressBarExonere,
-                ]} />
-              </View>
-
-              {fiscal.isExonere ? (
-                <Text style={styles.fiscalExonere}>{'Exonéré ✓'}</Text>
-              ) : (
-                <Text style={styles.fiscalRemaining}>
-                  Totalement exonéré en {fiscal.exemptionLabel}
-                </Text>
-              )}
-            </View>
-          )}
-
-          {/* 5. Détails d'achat */}
-          <Text style={styles.posDetail}>
-            {formatQty(pos.quantity)} pièce{pos.quantity > 1 ? 's' : ''} · {formatG(totalWeightG)} · Acheté le {pos.purchaseDate}
-          </Text>
-          {pos.quantity > 1 && (
-            <Text style={styles.posDetail}>
-              Prix d’achat : {formatEuro(pos.purchasePrice)} €/pièce
-            </Text>
-          )}
-          {pos.note != null && pos.note.trim().length > 0 && pos.note.trim() !== 'Note' && (
-            <Text style={styles.posNote}>{pos.note}</Text>
-          )}
-
-          {/* 6. Investi / Vaut aujourd'hui */}
-          {!hideValue && <View style={styles.posDivider} />}
-
-          {!hideValue && (
-            <View style={styles.posValuesRow}>
-              <View style={styles.posValueCol}>
-                <Text style={styles.posValueLabel}>Investi</Text>
-                <Text style={styles.posValueAmount}>{formatEuro(totalCost)} {currencySymbol}</Text>
-              </View>
-              <View style={styles.posValueDivider} />
-              <View style={[styles.posValueCol, styles.posValueColRight]}>
-                <Text style={styles.posValueLabel}>Vaut aujourd’hui</Text>
-                <Text style={styles.posValueAmount}>
-                  {pricesLoading
-                    ? 'Calcul…'
-                    : currentValue !== null
-                    ? `${formatEuro(currentValue)} ${currencySymbol}`
-                    : '—'}
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* 7. Footer — Modifier + Supprimer */}
-          <View style={styles.posExpandedFooter}>
-            <TouchableOpacity
-              onPress={onEdit}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.editLabel}>Modifier</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => onDelete(pos.id)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <Text style={styles.deleteLabel}>Supprimer</Text>
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
-    </View>
-  );
+function truncName(name: string, max = 20): string {
+  if (name.length <= max) return name;
+  const cut = name.lastIndexOf(' ', max);
+  return (cut > 0 ? name.slice(0, cut) : name.slice(0, max)) + '\u2026';
 }
 
-// ─── Écran principal ──────────────────────────────────────────────────────────
+function fmtPct(pct: number): string {
+  if (pct === 0) return '0 %';
+  const abs = Math.abs(pct);
+  const sign = pct >= 0 ? '+' : '';
+  if (abs >= 100) return `${sign}${Math.round(pct)} %`;
+  if (abs >= 1) return `${sign}${pct.toFixed(1).replace('.', ',')} %`;
+  return `${sign}${pct.toFixed(2).replace('.', ',')} %`;
+}
+
+// ─── Composant ───────────────────────────────────────────────────────────────
 
 export default function PortefeuilleScreen() {
-  const { positions, reloadPositions, deletePosition } = usePositions();
-  const [hideValue, setHideValue] = useState(false);
-  const [metalFilter, setMetalFilter] = useState<'all' | MetalType>('all');
-  const { prices, loading: pricesLoading, currencySymbol } = useSpotPrices();
+  const { positions, loading: positionsLoading, reloadPositions, deletePosition } = usePositions();
+  const { prices, loading: spotLoading, lastUpdated, currencySymbol, error: spotError } = useSpotPrices();
   const { showPaywall, isPremium, limits } = usePremium();
 
-  // Recharge à chaque activation de l'onglet
-  useFocusEffect(
-    useCallback(() => {
-      reloadPositions();
-    }, [reloadPositions])
-  );
+  const { metal: paramMetal } = useLocalSearchParams<{ metal?: string }>();
+
+  const [masked, setMasked] = useState(false);
+  const [filterMetal, setFilterMetal] = useState<MetalType | null>(null);
+  const prevParamRef = useRef<string | undefined>(undefined);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [level2Id, setLevel2Id] = useState<string | null>(null);
+
+  // ── Privacy mode ─────────────────────────────────────────────────────
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEYS.hidePortfolioValue).then((val) => {
-        setHideValue(val === 'true');
-      });
-    }, [])
+      AsyncStorage.getItem('@ortrack_privacy_mode')
+        .then(v => setMasked(v === 'true'))
+        .catch(() => {});
+    }, []),
   );
 
-  const toggleHideValue = useCallback(() => {
-    setHideValue((prev) => {
-      const next = !prev;
-      AsyncStorage.setItem(STORAGE_KEYS.hidePortfolioValue, String(next));
-      return next;
-    });
-  }, []);
+  const toggleMask = useCallback(async () => {
+    const next = !masked;
+    setMasked(next);
+    setOpenId(null);
+    setLevel2Id(null);
+    try {
+      await AsyncStorage.setItem('@ortrack_privacy_mode', String(next));
+    } catch {}
+  }, [masked]);
 
-  const handleDelete = useCallback((id: string) => {
-    Alert.alert(
-      'Supprimer la position',
-      'Cette action est irréversible.',
-      [
-        { text: 'Annuler', style: 'cancel' },
-        {
-          text: 'Supprimer',
-          style: 'destructive',
-          onPress: () => deletePosition(id),
-        },
-      ]
-    );
-  }, [deletePosition]);
+  // ── Reload on focus ──────────────────────────────────────────────────
 
-  // ── Filtre métal ────────────────────────────────────────────────────────
+  useFocusEffect(useCallback(() => { reloadPositions(); }, [reloadPositions]));
 
-  const handleFilterChange = useCallback((key: 'all' | MetalType) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setMetalFilter(key);
-  }, []);
+  // ── Filter from route param ──────────────────────────────────────────
 
-  // Reset auto si le métal filtré n'a plus de positions
   useEffect(() => {
-    if (metalFilter !== 'all') {
-      const stillExists = positions.some(p => getPositionMetal(p) === metalFilter);
-      if (!stillExists) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setMetalFilter('all');
-      }
+    if (paramMetal && paramMetal !== prevParamRef.current) {
+      const mt = symbolToMetal(paramMetal);
+      setFilterMetal(mt);
+      prevParamRef.current = paramMetal;
+    } else if (!paramMetal && prevParamRef.current) {
+      setFilterMetal(null);
+      prevParamRef.current = undefined;
     }
-  }, [positions, metalFilter]);
+  }, [paramMetal]);
 
-  const metalChips = useMemo(() => {
-    const metals: Record<string, { count: number; label: string }> = {};
-    positions.forEach(p => {
-      const key = getPositionMetal(p);
-      if (!metals[key]) {
-        metals[key] = { count: 0, label: METAL_CONFIG[key].name };
-      }
-      metals[key].count += 1;
-    });
-    return [
-      { key: 'all' as const, label: 'Tout', count: positions.length },
-      ...Object.entries(metals).map(([key, { count, label }]) => ({
-        key: key as MetalType,
-        label,
-        count,
-      })),
-    ];
-  }, [positions]);
+  const filterMetalName = useMemo(() => {
+    if (!filterMetal) return null;
+    return METAL_CONFIG[filterMetal]?.name ?? filterMetal;
+  }, [filterMetal]);
+
+  const clearFilter = useCallback(() => {
+    setFilterMetal(null);
+    prevParamRef.current = undefined;
+    // expo-router ne permet pas de supprimer un param proprement ; on replace sans params
+    router.replace('/(tabs)/portefeuille' as never);
+  }, []);
+
+  // ── Filtered positions ───────────────────────────────────────────────
 
   const filteredPositions = useMemo(() => {
-    if (metalFilter === 'all') return positions;
-    return positions.filter(p => getPositionMetal(p) === metalFilter);
-  }, [positions, metalFilter]);
+    if (!filterMetal) return positions;
+    return positions.filter(p => p.metal === filterMetal);
+  }, [positions, filterMetal]);
 
-  // ── Calculs agrégés ───────────────────────────────────────────────────────
+  // ── pricesReady (same pattern as Accueil) ────────────────────────────
 
-  let totalValue = 0;
-  let totalCost = 0;
-  let allPricesKnown = !pricesLoading;
+  const heldMetals = useMemo(() => {
+    if (!filteredPositions || filteredPositions.length === 0) return [];
+    return [...new Set(filteredPositions.map(p => p.metal))];
+  }, [filteredPositions]);
 
-  for (const p of positions) {
-    const spot = getSpot(p.metal, prices);
-    totalCost += p.quantity * p.purchasePrice;
-    if (spot !== null) {
-      totalValue += p.quantity * (p.weightG / OZ_TO_G) * spot;
-    } else {
-      allPricesKnown = false;
+  const pricesReady = useMemo(() => {
+    if (spotLoading) return false;
+    if (heldMetals.length === 0) return true;
+    return heldMetals.every(metal => {
+      const spot = prices[METAL_CONFIG[metal].spotKey];
+      return spot !== null && spot !== undefined;
+    });
+  }, [spotLoading, heldMetals, prices]);
+
+  // ── Portfolio calculations (from filtered) ───────────────────────────
+
+  const summary = useMemo(() => {
+    let totalValue = 0;
+    let totalCost = 0;
+
+    for (const p of filteredPositions) {
+      const spot = getSpot(p.metal, prices);
+      const cost = p.quantity * p.purchasePrice;
+      totalCost += cost;
+      if (spot !== null) {
+        totalValue += p.quantity * (p.weightG / OZ_TO_G) * spot;
+      }
     }
-  }
 
-  const totalGainLoss = allPricesKnown && positions.length > 0 ? totalValue - totalCost : null;
-  const totalGainLossPct =
-    totalGainLoss !== null && totalCost > 0
-      ? (totalGainLoss / totalCost) * 100
-      : null;
+    const gain = totalCost > 0 ? totalValue - totalCost : 0;
+    const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
+    // Net vendeur = ce que l'utilisateur touche si vente (forfaitaire taxe TOUJOURS le prix de cession)
+    const sellerNet = totalValue * (1 - TAX.forfaitaireRate);
+
+    return { totalValue, totalCost, gain, gainPct, sellerNet };
+  }, [filteredPositions, prices]);
 
   const hasPositions = positions.length > 0;
+  const hasFilteredPositions = filteredPositions.length > 0;
 
-  // Net global estimé (approximation forfaitaire pour le header)
-  const totalNetEstime = (totalGainLoss !== null && totalGainLoss > 0 && allPricesKnown)
-    ? totalValue - (totalValue * TAX.forfaitaireRate) - totalCost
-    : totalGainLoss;
+  // ── Card toggle ──────────────────────────────────────────────────────
 
-  // ─────────────────────────────────────────────────────────────────────────
+  const toggleCard = useCallback(
+    (id: string) => {
+      setOpenId(prev => (prev === id ? null : id));
+      setLevel2Id(null);
+    },
+    [],
+  );
+
+  // ── Last updated time ────────────────────────────────────────────────
+
+  const timeStr = useMemo(() => {
+    if (!lastUpdated) return null;
+    return `${String(lastUpdated.getHours()).padStart(2, '0')}:${String(lastUpdated.getMinutes()).padStart(2, '0')}`;
+  }, [lastUpdated]);
+
+  const m = (text: string) => (masked ? '\u2022\u2022\u2022\u2022\u2022\u2022' : text);
+
+  const bestPerformerName = useMemo(() => {
+    const source = filterMetal ? filteredPositions : positions;
+    if (source.length < 2) return null;
+    let bestPct = -Infinity;
+    let bestName = '';
+    for (const p of source) {
+      const spot = getSpot(p.metal, prices);
+      if (spot === null) continue;
+      const cost = p.quantity * p.purchasePrice;
+      const val = p.quantity * (p.weightG / OZ_TO_G) * spot;
+      const pct = cost > 0 ? ((val - cost) / cost) * 100 : 0;
+      if (pct > bestPct) { bestPct = pct; bestName = p.product; }
+    }
+    return bestName || null;
+  }, [positions, filteredPositions, filterMetal, prices]);
+
+  // ── Loading guard ─────────────────────────────────────────────────────
+
+  if (positionsLoading) {
+    return (
+      <SafeAreaView style={st.container}>
+        <ScrollView contentContainerStyle={st.scroll}>
+          <Text style={st.headerTitle}>Portefeuille</Text>
+          <View style={{ marginTop: 14 }}>
+            <View style={{ width: 180, height: 28, borderRadius: 6, backgroundColor: C.border, marginBottom: 12 }} />
+            <View style={{ width: 120, height: 16, borderRadius: 4, backgroundColor: C.border, marginBottom: 8 }} />
+            <View style={{ width: '100%', height: 38, borderRadius: 9, backgroundColor: C.border }} />
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // TODO ARCHITECTURE: extraire PortfolioHero, PositionCard, PositionTaxSummary en composants dédiés
+  // Le screen actuel est trop gros pour une maintenance long terme
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+    <SafeAreaView style={st.container}>
+      <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
+        {/* ── 1. HEADER ──────────────────────────────────── */}
+        <View style={st.header}>
+          <Text style={st.headerTitle}>Portefeuille</Text>
+          <TouchableOpacity onPress={toggleMask} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name={masked ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.textDim} />
+          </TouchableOpacity>
+        </View>
 
-        {/* ── 1. Header ── */}
-        <Text style={styles.headerTitle}>Portefeuille</Text>
+        {/* ── 2. FILTRE CONTEXTE ─────────────────────────── */}
+        {filterMetal && !masked && (
+          <View style={st.filterBar}>
+            <View style={st.filterLeft}>
+              <View style={st.filterDot} />
+              <Text style={st.filterLabel}>Filtre : {filterMetalName}</Text>
+            </View>
+            <TouchableOpacity onPress={clearFilter}>
+              <Text style={st.filterClear}>{'Tout afficher →'}</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
-        {/* ── 2. Valeur totale compacte ── */}
-        {hasPositions && (
-          <View style={styles.compactValue}>
-            <View style={styles.compactValueRow}>
-              {hideValue ? (
-                <View style={styles.blurRow}>
-                  <View style={[styles.blurBlock, { width: 80 }]} />
-                  <View style={[styles.blurBlock, { width: 60 }]} />
-                  <View style={[styles.blurBlock, { width: 40 }]} />
-                </View>
+        {/* ── 3. RÉSUMÉ ──────────────────────────────────── */}
+        <View style={st.heroCard}>
+          {pricesReady ? (
+            <>
+              <Text style={st.resumeValue}>{m(`${formatEuro(summary.totalValue)} ${currencySymbol}`)}</Text>
+              {hasFilteredPositions && !masked && (
+                <>
+                  <View style={st.resumeGainRow}>
+                    <Text style={[st.resumeGain, { color: summary.gain >= 0 ? C.green : C.red }]}>
+                      {'Gain brut : '}{summary.gain >= 0 ? '+' : ''}{formatEuro(summary.gain)} {currencySymbol}
+                    </Text>
+                    <Text style={st.resumeGainPct}>({fmtPct(summary.gainPct)})</Text>
+                  </View>
+                  <View style={st.resumeNetRow}>
+                    <Text style={st.resumeNetVendeur}>
+                      {'Net vendeur estimé : ~'}{formatEuro(summary.sellerNet)} {currencySymbol}
+                    </Text>
+                    <Text style={st.resumeNetSub}>{'Estimé au régime forfaitaire'}</Text>
+                  </View>
+                </>
+              )}
+              {masked && hasFilteredPositions && (
+                <Text style={{ color: C.textDim, fontSize: 13, marginTop: 4 }}>{'\u2022\u2022\u2022\u2022\u2022\u2022'}</Text>
+              )}
+            </>
+          ) : spotError ? (
+            <Text style={{ color: C.textMuted, fontSize: 12, textAlign: 'center' }}>Cours indisponibles</Text>
+          ) : (
+            <View>
+              <View style={{ width: 180, height: 26, borderRadius: 6, backgroundColor: C.border, marginBottom: 10 }} />
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                <View style={{ width: 80, height: 20, borderRadius: 5, backgroundColor: C.border }} />
+                <View style={{ width: 70, height: 20, borderRadius: 5, backgroundColor: C.border }} />
+              </View>
+              <View style={{ width: '100%', height: 36, borderRadius: 9, backgroundColor: C.border }} />
+            </View>
+          )}
+
+          {/* CTA fiscal */}
+          <TouchableOpacity
+            style={[st.ctaFiscal, (!hasFilteredPositions || !pricesReady || masked) && { opacity: 0.5 }]}
+            onPress={() => hasFilteredPositions && pricesReady && !masked && router.push('/fiscalite-globale')}
+            activeOpacity={0.7}
+            disabled={!hasFilteredPositions || !pricesReady || masked}
+          >
+            <Text style={st.ctaFiscalText}>{'Voir combien je récupère →'}</Text>
+          </TouchableOpacity>
+          <Text style={st.ctaSub}>Comparez les régimes et voyez votre net de vente</Text>
+        </View>
+
+        {/* ── 4. POSITIONS ───────────────────────────────── */}
+        <View style={st.posHeader}>
+          <Text style={st.posHeaderTitle}>POSITIONS ({filteredPositions.length})</Text>
+          {!masked && !isPremium && (
+            <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
+              {positions.length >= limits.maxPositions ? (
+                <Text style={st.quotaFull}>
+                  <Text style={{ color: C.gold }}>{positions.length}/{limits.maxPositions} incluses</Text>
+                  {' \u00B7 '}
+                  <Text style={{ color: C.gold, fontWeight: '600' }}>Passez à Premium</Text>
+                </Text>
               ) : (
-                <Text style={styles.compactAmount}>
-                  {pricesLoading
-                    ? 'Calcul en cours…'
-                    : allPricesKnown
-                    ? `${formatEuro(totalValue)} ${currencySymbol}`
-                    : `— ${currencySymbol}`}
+                <Text style={st.quota}>
+                  {positions.length}/{limits.maxPositions} incluses{' \u00B7 '}
+                  <Text style={{ color: C.gold, opacity: 0.85 }}>Premium illimité</Text>
                 </Text>
               )}
-              <TouchableOpacity
-                onPress={toggleHideValue}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons
-                  name={hideValue ? 'eye-off-outline' : 'eye-outline'}
-                  size={18}
-                  color={OrTrackColors.subtext}
-                />
-              </TouchableOpacity>
-            </View>
-            {totalGainLoss !== null && !hideValue && (
-              <Text style={[styles.compactGain, totalGainLoss >= 0 ? styles.positive : styles.negative]}>
-                {totalGainLoss >= 0 ? '+' : ''}{formatEuro(totalGainLoss)} {currencySymbol}
-                {totalGainLossPct !== null && (
-                  `  (${totalGainLoss >= 0 ? '+' : ''}${formatPct(totalGainLossPct, 2)})`
-                )}
-              </Text>
-            )}
-            {totalNetEstime !== null && !hideValue && totalGainLoss !== null && totalGainLoss > 0 && (
-              <Text style={styles.compactNetGlobal}>
-                Gain net : ~{formatEuro(totalNetEstime)} {currencySymbol}
-              </Text>
-            )}
-            {totalNetEstime !== null && !hideValue && totalGainLoss !== null && totalGainLoss > 0 && (
-              <Text style={styles.compactNetTimestamp}>
-                Estimation après impôts
-              </Text>
-            )}
-            {totalGainLoss !== null && totalGainLoss <= 0 && !hideValue && (
-              <Text style={styles.compactNetGlobal}>
-                Aucun impôt si vente en régime plus-values
-              </Text>
-            )}
-          </View>
-        )}
-
-        {/* ── CTA principal ── */}
-        {hasPositions && !hideValue && (
-          <TouchableOpacity
-            style={styles.primaryCta}
-            onPress={() => router.push('/fiscalite-globale' as never)}
-            activeOpacity={0.7}
-            accessibilityLabel="Voir combien je récupère"
-          >
-            <Text style={styles.primaryCtaText}>Voir combien je récupère →</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* ── 3. Chips filtre métal ── */}
-        {hasPositions && (
-          <View style={styles.filterChipsRow}>
-            {metalChips.map(chip => {
-              const active = metalFilter === chip.key;
-              return (
-                <TouchableOpacity
-                  key={chip.key}
-                  onPress={() => handleFilterChange(chip.key)}
-                  activeOpacity={0.7}
-                  accessibilityLabel={`Filtrer ${chip.label}`}
-                  style={[
-                    styles.filterChip,
-                    active && styles.filterChipActive,
-                  ]}
-                >
-                  <Text style={[
-                    styles.filterChipText,
-                    active && styles.filterChipTextActive,
-                  ]}>
-                    {chip.key === 'all'
-                      ? `${chip.label} (${chip.count})`
-                      : `${chip.label} · ${chip.count}`}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {/* ── 4. Positions ── */}
-        {hasPositions ? (
-          <View>
-            <View style={styles.positionsHeader}>
-              <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
-                Positions ({filteredPositions.length})
-              </Text>
-              {!isPremium && (
-                <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
-                  <Text style={positions.length >= limits.maxPositions ? styles.positionsLimitFull : styles.positionsLimit}>
-                    {positions.length >= limits.maxPositions
-                      ? `${limits.maxPositions}/${limits.maxPositions} · Passer en Premium`
-                      : `${positions.length}/${limits.maxPositions} · Illimité en Premium`}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-            {filteredPositions.length > 0 ? (
-              filteredPositions.map((pos, posIdx) => (
-                <PositionCard
-                  key={pos.id}
-                  pos={pos}
-                  positionIndex={posIdx}
-                  spotEur={getSpot(pos.metal, prices)}
-                  pricesLoading={pricesLoading}
-                  onDelete={handleDelete}
-                  onEdit={() => router.push({ pathname: '/(tabs)/ajouter', params: { editId: pos.id } } as never)}
-                  onFiscalite={() => router.push({ pathname: '/fiscalite', params: { positionId: pos.id } })}
-                  currencySymbol={currencySymbol}
-                  hideValue={hideValue}
-                  isPremium={isPremium}
-                  showPaywall={showPaywall}
-                />
-              ))
-            ) : metalFilter !== 'all' ? (
-              <Text style={styles.emptyFilterText}>Aucune position pour ce métal</Text>
-            ) : null}
-          </View>
-        ) : (
-          <View style={styles.emptyState}>
-            <TouchableOpacity
-              onPress={() => router.navigate('/(tabs)/ajouter')}
-              activeOpacity={0.75}
-              style={styles.emptyIcon}>
-              <Text style={styles.emptyIconText}>+</Text>
             </TouchableOpacity>
-            <Text style={styles.emptyTitle}>Aucun actif enregistré</Text>
-            <Text style={styles.emptyText}>
-              Commencez par ajouter vos lingots, pièces ou barres
-              via l&apos;onglet &ldquo;Ajouter&rdquo;.
+          )}
+        </View>
+
+        {hasFilteredPositions ? (
+          filteredPositions.map(pos => {
+            const isOpen = openId === pos.id;
+            const isL2 = level2Id === pos.id;
+            const cfg = METAL_CONFIG[pos.metal];
+            const spotEur = getSpot(pos.metal, prices);
+            const totalCost = pos.quantity * pos.purchasePrice;
+            const currentValue = spotEur !== null ? pos.quantity * (pos.weightG / OZ_TO_G) * spotEur : null;
+            const gainLoss = currentValue !== null ? currentValue - totalCost : null;
+            const gainPct = gainLoss !== null && totalCost > 0 ? (gainLoss / totalCost) * 100 : null;
+            const fiscal = computeFiscalCountdown(pos.purchaseDate);
+            const abattement = fiscal?.abattement ?? 0;
+            const sellerNets =
+              currentValue !== null && gainLoss !== null ? computeSellerNets(currentValue, gainLoss, abattement) : null;
+
+            return (
+              <View key={pos.id} style={[st.card, isOpen && st.cardOpen]}>
+                {/* ── FERMÉ ── */}
+                <TouchableOpacity
+                  style={st.cardRow}
+                  onPress={() => toggleCard(pos.id)}
+                  activeOpacity={0.7}
+                  disabled={masked}
+                >
+                  <View style={st.badgeCircle}>
+                    <Text style={st.badgeText}>{cfg.symbol}</Text>
+                  </View>
+                  <View style={{ flex: 1, marginLeft: 12 }}>
+                    <Text style={st.cardName} numberOfLines={1}>{pos.product}</Text>
+                    {masked ? null : gainLoss !== null ? (
+                      <Text style={[st.cardGain, { color: gainLoss >= 0 ? C.green : C.red }]}>
+                        {'Gain : '}{gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol} ({fmtPct(gainPct ?? 0)})
+                      </Text>
+                    ) : (
+                      <Text style={st.cardGainPlaceholder}>{'\u2014'}</Text>
+                    )}
+                    {!masked && (() => {
+                      const qtyLabel = `${formatQty(pos.quantity)} pièce${pos.quantity > 1 ? 's' : ''}`;
+                      if (!fiscal) return <Text style={st.cardMicro}>{qtyLabel}</Text>;
+                      if (fiscal.isExonere) return <Text style={st.cardMicro}>{qtyLabel} {'\u00B7'} Exonéré</Text>;
+                      const yLeft = fiscal.exemptionYear - new Date().getFullYear();
+                      if (yLeft <= 3) return <Text style={[st.cardMicro, { color: C.textDim }]}>{qtyLabel} {'\u00B7'} Bientôt exonéré ({fiscal.exemptionYear})</Text>;
+                      return <Text style={st.cardMicro}>{qtyLabel} {'\u00B7'} Réduction fiscale : {fiscal.abattement} %</Text>;
+                    })()}
+                  </View>
+                  {!masked && (
+                    <>
+                      <Text style={st.cardValue}>
+                        {currentValue !== null ? `${formatEuro(currentValue)} ${currencySymbol}` : '\u2014'}
+                      </Text>
+                      <Text style={[st.chev, { transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }]}>{'\u203A'}</Text>
+                    </>
+                  )}
+                  {masked && (
+                    <Text style={{ color: C.textDim, fontSize: 13 }}>{'\u2022\u2022\u2022\u2022\u2022\u2022'}</Text>
+                  )}
+                </TouchableOpacity>
+
+                {/* ── L1 — FISCAL ── */}
+                {isOpen && !masked && (() => {
+                  const posSellerNet = currentValue !== null
+                    ? currentValue * (1 - TAX.forfaitaireRate)
+                    : null;
+                  return (
+                  <View style={st.l1}>
+                    <Text style={st.l1Title}>{'NET VENDEUR ESTIMÉ'}</Text>
+                    <View style={st.l1Row}>
+                      <Text style={st.l1Regime}>{'Régime forfaitaire ('}{TAX.labels.forfaitaire}{')'}</Text>
+                      {posSellerNet !== null ? (
+                        <Text style={st.l1NetVendeur}>
+                          {'~'}{formatEuro(posSellerNet)} {currencySymbol}
+                        </Text>
+                      ) : (
+                        <Text style={st.l1NetVendeur}>{'\u2014'}</Text>
+                      )}
+                    </View>
+                    <View style={st.l1Trust}>
+                      <Text style={st.l1TrustText}>
+                        Régime : Forfaitaire {TAX.labels.forfaitaire} {'\u00B7'} Cours du jour
+                        {timeStr ? ` \u00B7 Mis à jour à ${timeStr}` : ''}
+                      </Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={st.ctaSimuler}
+                      onPress={() => router.push({ pathname: '/fiscalite', params: { positionId: pos.id } } as never)}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={st.ctaSimulerText}>{'Simuler ma vente →'}</Text>
+                    </TouchableOpacity>
+
+                    {!isPremium && (
+                      <TouchableOpacity style={st.premiumTeaser} onPress={showPaywall} activeOpacity={0.7}>
+                        <Ionicons name="lock-closed-outline" size={12} color={C.textDim} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={st.premiumTeaserTitle}>
+                            {(() => {
+                              if (!sellerNets) return 'Comparer les 2 régimes fiscaux';
+                              const delta = sellerNets.sellerNetPlusValues - sellerNets.sellerNetForfaitaire;
+                              if (delta > 50) return `Un autre régime pourrait vous faire économiser ~${formatEuro(delta)}`;
+                              return 'Comparer les 2 régimes fiscaux';
+                            })()}
+                          </Text>
+                          <Text style={st.premiumTeaserSub}>
+                            {sellerNets && (sellerNets.sellerNetPlusValues - sellerNets.sellerNetForfaitaire) > 50
+                              ? 'Comparez en 1 clic'
+                              : 'Quel régime vous laisse le plus de net ?'}
+                          </Text>
+                        </View>
+                        <View style={st.premiumBadge}>
+                          <Text style={st.premiumBadgeText}>PREMIUM</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+
+                    {!isL2 && (
+                      <TouchableOpacity style={st.expandBtn} onPress={() => setLevel2Id(pos.id)}>
+                        <Text style={st.expandBtnText}>{'Voir achat et fiscalité '}{'\u203A'}</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {/* ── L2 — DÉTAILS ── */}
+                    {isL2 && (
+                      <View style={st.l2}>
+                        {fiscal && (
+                          <>
+                            <Text style={st.l2SectionTitle}>EXONÉRATION FISCALE</Text>
+                            <View style={st.l2FiscalRow}>
+                              <Text style={st.l2FiscalText}>Détention : {fiscal.detentionLabel}</Text>
+                              <Text style={st.l2FiscalText}>Abattement : {fiscal.abattement} %</Text>
+                            </View>
+                            <View style={st.progressBg}>
+                              <View
+                                style={[
+                                  st.progressFill,
+                                  { width: `${Math.max(0, Math.min(fiscal.abattement, 100))}%` },
+                                ]}
+                              />
+                            </View>
+                            {fiscal.isExonere ? (
+                              <Text style={{ color: C.white, fontSize: 12, fontWeight: '600' }}>Exonéré {'\u2713'}</Text>
+                            ) : (
+                              <Text style={{ color: C.white, fontSize: 12, fontWeight: '600' }}>
+                                Totalement exonéré en {fiscal.exemptionLabel}
+                              </Text>
+                            )}
+                          </>
+                        )}
+
+                        <View style={st.l2Grid}>
+                          <View style={st.l2GridItem}>
+                            <Text style={st.l2GridLabel}>Quantité</Text>
+                            <Text style={st.l2GridValue}>
+                              {formatQty(pos.quantity)} pièce{pos.quantity > 1 ? 's' : ''}
+                            </Text>
+                          </View>
+                          <View style={st.l2GridItem}>
+                            <Text style={st.l2GridLabel}>Acheté le</Text>
+                            <Text style={st.l2GridValue}>{pos.purchaseDate}</Text>
+                          </View>
+                          <View style={st.l2GridItem}>
+                            <Text style={st.l2GridLabel}>Prix d{'\u2019'}achat</Text>
+                            <Text style={st.l2GridValue}>{formatEuro(pos.purchasePrice)} {'€'}</Text>
+                          </View>
+                        </View>
+
+                        <View style={st.l2Compare}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={st.l2CompareLabel}>Investi</Text>
+                            <Text style={st.l2CompareValue}>{formatEuro(totalCost)} {currencySymbol}</Text>
+                          </View>
+                          <View style={st.l2CompareDivider} />
+                          <View style={{ flex: 1, alignItems: 'flex-end' }}>
+                            <Text style={st.l2CompareLabel}>Vaut aujourd{'\u2019'}hui</Text>
+                            <Text style={st.l2CompareValue}>
+                              {currentValue !== null ? `${formatEuro(currentValue)} ${currencySymbol}` : '\u2014'}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {pos.note != null && pos.note.trim().length > 0 && pos.note.trim() !== 'Note' && (
+                          <Text style={st.l2Note}>{pos.note}</Text>
+                        )}
+
+                        <View style={st.l2Actions}>
+                          <TouchableOpacity
+                            onPress={() =>
+                              router.replace({ pathname: '/(tabs)/ajouter' as never, params: { editId: pos.id } })
+                            }
+                          >
+                            <Text style={st.l2Edit}>Modifier</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() => {
+                              Alert.alert('Position', undefined, [
+                                {
+                                  text: 'Supprimer',
+                                  style: 'destructive',
+                                  onPress: () => {
+                                    Alert.alert('Supprimer cette position ?', 'Cette action est irréversible.', [
+                                      { text: 'Annuler', style: 'cancel' },
+                                      {
+                                        text: 'Supprimer',
+                                        style: 'destructive',
+                                        onPress: () => {
+                                          deletePosition(pos.id);
+                                          setOpenId(null);
+                                          setLevel2Id(null);
+                                        },
+                                      },
+                                    ]);
+                                  },
+                                },
+                                { text: 'Annuler', style: 'cancel' },
+                              ]);
+                            }}
+                          >
+                            <Ionicons name="ellipsis-vertical" size={16} color={C.textDim} />
+                          </TouchableOpacity>
+                        </View>
+
+                        <TouchableOpacity style={st.collapseBtn} onPress={() => setLevel2Id(null)}>
+                          <Text style={st.collapseBtnText}>Réduire</Text>
+                          <Text style={st.collapseChev}>{'\u203A'}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                  );
+                })()}
+              </View>
+            );
+          })
+        ) : hasPositions && filterMetal ? (
+          <View style={st.emptyState}>
+            <Ionicons name="briefcase-outline" size={40} color={C.textMuted} style={{ marginBottom: 12 }} />
+            <Text style={st.emptyTitle}>Aucune position en {filterMetalName?.toLowerCase()}</Text>
+            <TouchableOpacity onPress={clearFilter}>
+              <Text style={st.emptyAction}>{'Tout afficher →'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.replace('/(tabs)/ajouter' as never)}>
+              <Text style={st.emptyAction}>{'Ajouter une position →'}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : !hasPositions ? (
+          <View style={st.emptyState}>
+            <Ionicons name="briefcase-outline" size={40} color={C.textMuted} style={{ marginBottom: 12 }} />
+            <Text style={st.emptyTitle}>Aucune position</Text>
+            <Text style={st.emptyText}>Ajoutez votre premier achat pour suivre votre portefeuille.</Text>
+            <TouchableOpacity onPress={() => router.replace('/(tabs)/ajouter' as never)}>
+              <Text style={st.emptyAction}>{'Ajouter une position →'}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* ── 5. STATS TEASER ────────────────────────────── */}
+        <TouchableOpacity
+          style={st.statsTeaser}
+          onPress={() => Alert.alert('Premium', 'Débloquez les statistiques avec OrTrack Premium')}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="bar-chart-outline" size={18} color={C.gold} />
+          <View style={{ flex: 1 }}>
+            <Text style={st.statsTeaserTitle}>Statistiques</Text>
+            <Text style={st.statsTeaserSub}>
+              {bestPerformerName
+                ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
+                : 'Voyez quelles positions tirent vraiment votre performance'}
             </Text>
           </View>
-        )}
+          <View style={st.premiumBadgeLg}>
+            <Text style={st.premiumBadgeLgText}>PREMIUM</Text>
+          </View>
+        </TouchableOpacity>
 
-        {/* ── 5. Statistiques ── */}
-        {hasPositions && (
-          <TouchableOpacity
-            style={styles.statsButton}
-            onPress={() => router.push('/statistiques' as never)}>
-            <Text style={styles.statsButtonText}>Statistiques →</Text>
-          </TouchableOpacity>
-        )}
+        {/* ── 6. TRUST FOOTER ────────────────────────────── */}
+        <View style={st.trustFooter}>
+          <Text style={st.trustLine1}>
+            Cours du jour{timeStr ? ` \u00B7 Mis à jour à ${timeStr}` : ''}
+          </Text>
+          <Text style={st.trustLine2}>Estimation indicative {'\u00B7'} Ne constitue pas un conseil fiscal</Text>
+        </View>
 
-
+        <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: OrTrackColors.background,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 90,
-  },
+const st = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.background },
+  scroll: { padding: 20, paddingBottom: 90 },
 
-  // 1. Header
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-    marginBottom: 16,
-  },
+  // Header
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  headerTitle: { fontSize: 22, fontWeight: '700', color: C.white },
 
-  // 2. Valeur totale compacte
-  compactValue: {
-    marginBottom: 12,
-  },
-  compactValueRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  compactAmount: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: OrTrackColors.white,
-  },
-  compactGain: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  compactNetGlobal: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-    marginTop: 4,
-  },
-  compactNetTimestamp: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-    fontStyle: 'italic',
-  },
+  // Filter bar
+  filterBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  filterLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  filterDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.gold },
+  filterLabel: { color: C.white, fontSize: 12, fontWeight: '600' },
+  filterClear: { color: C.textDim, fontSize: 11, fontWeight: '600' },
 
-  // 3. Chips filtre
-  filterChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 16,
-  },
-  filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: OrTrackColors.card,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  filterChipActive: {
-    backgroundColor: `${OrTrackColors.gold}20`,
-    borderWidth: 1.5,
-    borderColor: OrTrackColors.gold,
-  },
-  filterChipText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-  },
-  filterChipTextActive: {
-    color: OrTrackColors.gold,
-  },
+  // Résumé (hero card)
+  heroCard: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14 },
+  resumeValue: { fontSize: 30, fontWeight: '700', color: C.white, letterSpacing: -0.5 },
+  resumeGainRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+  resumeGain: { fontSize: 12, fontWeight: '600' },
+  resumeGainPct: { color: C.textMuted, fontSize: 12 },
+  resumeNetRow: { marginTop: 10 },
+  resumeNetVendeur: { color: C.gold, fontSize: 17, fontWeight: '700' },
+  resumeNetSub: { color: C.textDim, fontSize: 11, fontStyle: 'italic', marginTop: 2 },
 
-  // Section title
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    marginBottom: 12,
-  },
+  // CTA fiscal
+  ctaFiscal: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 12, paddingVertical: 11, marginTop: 14 },
+  ctaFiscalText: { color: C.gold, fontSize: 13.5, fontWeight: '700', textAlign: 'center' },
+  ctaSub: { textAlign: 'center', marginTop: 5, fontSize: 11, color: C.textMuted },
 
   // Positions header
-  positionsHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
-  },
-  positionsLimit: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    fontWeight: '600',
-    flexShrink: 1,
-    textAlign: 'right',
-  },
-  positionsLimitFull: {
-    fontSize: 11,
-    color: OrTrackColors.gold,
-    fontWeight: '700',
-    flexShrink: 1,
-    textAlign: 'right',
-  },
-  emptyFilterText: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-    marginTop: 20,
-    marginBottom: 20,
-  },
+  posHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  posHeaderTitle: { fontSize: 12, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1 },
+  quota: { fontSize: 10, color: C.textDim },
+  quotaFull: { fontSize: 10, color: C.gold, fontWeight: '600' },
 
-  // Position card
-  posCard: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  posHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-    gap: 8,
-  },
-  metalChip: {
-    borderRadius: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderWidth: 1,
-  },
-  metalChipText: {
-    fontSize: 9,
-    fontWeight: '800',
-    letterSpacing: 1,
-  },
-  posProduct: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  editLabel: {
-    fontSize: 13,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
-  },
-  deleteLabel: {
-    fontSize: 12,
-    color: '#E57373',
-    fontWeight: '500',
-    opacity: 0.7,
-  },
-  posDetail: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginBottom: 12,
-  },
-  posNote: {
-    fontSize: 12,
-    color: '#7A7060',
-    fontStyle: 'italic',
-    marginBottom: 12,
-  },
-  posDivider: {
-    height: 1,
-    backgroundColor: OrTrackColors.border,
-    marginBottom: 12,
-  },
-  posValuesRow: {
-    flexDirection: 'row',
-    marginBottom: 10,
-  },
-  posValueCol: {
-    flex: 1,
-  },
-  posValueColRight: {
-    alignItems: 'flex-end',
-  },
-  posValueDivider: {
-    width: 1,
-    backgroundColor: OrTrackColors.border,
-    marginHorizontal: 12,
-  },
-  posValueLabel: {
-    fontSize: 10,
-    color: OrTrackColors.tabIconDefault,
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  posValueAmount: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  posGainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-    paddingTop: 10,
-  },
-  posGain: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  posGainPct: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  // Card
+  card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.border, overflow: 'hidden', marginBottom: 10 },
+  cardOpen: { backgroundColor: C.cardOpen, borderColor: C.openBorder },
+  cardRow: { flexDirection: 'row', alignItems: 'center', padding: 14, paddingHorizontal: 16, gap: 0 },
+  badgeCircle: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: C.gold, justifyContent: 'center', alignItems: 'center' },
+  badgeText: { color: C.gold, fontSize: 9, fontWeight: '700', textAlign: 'center' },
+  cardName: { color: C.white, fontSize: 14, fontWeight: '600' },
+  cardGain: { fontSize: 11, fontWeight: '600', marginTop: 1 },
+  cardGainPlaceholder: { color: C.textMuted, fontSize: 11, marginTop: 1 },
+  cardMicro: { color: C.textMuted, fontSize: 10, marginTop: 2 },
+  cardValue: { color: C.white, fontSize: 14, fontWeight: '600', flexShrink: 0, marginRight: 8, textAlign: 'right' },
+  chev: { color: C.textDim, opacity: 0.75, fontSize: 18 },
 
-  // Fiscal countdown
-  fiscalCountdown: {
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-  },
-  fiscalTitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    marginBottom: 8,
-  },
-  fiscalDetail: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginBottom: 4,
-  },
-  progressBarBg: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    marginVertical: 8,
-    overflow: 'hidden',
-    flexDirection: 'row',
-  },
-  progressBarFill: {
-    height: '100%',
-    borderRadius: 3,
-    backgroundColor: OrTrackColors.gold,
-  },
-  progressBarExonere: {
-    backgroundColor: '#4CAF50',
-  },
-  fiscalExonere: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#4CAF50',
-    marginTop: 4,
-  },
-  fiscalRemaining: {
-    fontSize: 12,
-    color: OrTrackColors.white,
-    fontWeight: '500',
-  },
+  // L1 — Fiscal
+  l1: { borderTopWidth: 1, borderTopColor: C.divider, paddingHorizontal: 16, paddingBottom: 14 },
+  l1Title: { color: C.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 12, marginBottom: 8, textTransform: 'uppercase' },
+  l1Row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  l1Regime: { color: C.textDim, fontSize: 12 },
+  l1NetVendeur: { color: C.gold, fontSize: 16, fontWeight: '700' },
+  l1Trust: { backgroundColor: 'rgba(201,168,76,0.03)', borderRadius: 6, padding: 8, marginBottom: 12 },
+  l1TrustText: { color: C.textDim, fontSize: 10 },
+  ctaSimuler: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 10, paddingVertical: 12, marginBottom: 12 },
+  ctaSimulerText: { color: C.gold, fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  premiumTeaser: { backgroundColor: 'rgba(201,168,76,0.03)', borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  premiumTeaserTitle: { color: C.textDim, fontSize: 11, fontWeight: '600' },
+  premiumTeaserSub: { color: C.textDim, fontSize: 9.5, marginTop: 1 },
+  premiumBadge: { backgroundColor: C.goldDim, borderRadius: 3, paddingVertical: 2, paddingHorizontal: 6 },
+  premiumBadgeText: { color: C.gold, fontSize: 8, fontWeight: '700' },
+  expandBtn: { borderTopWidth: 1, borderTopColor: C.divider, paddingVertical: 10, alignItems: 'center' },
+  expandBtnText: { color: C.textDim, fontSize: 11 },
 
-  // Expanded footer
-  posExpandedFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-  },
-
-  // Net gain compact (collapsed)
-  posCompactRegime: {
-    fontSize: 11,
-    color: OrTrackColors.gold,
-    fontWeight: '500',
-  },
-
-  // Net gain expanded
-  noTaxMessage: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
-    paddingVertical: 4,
-  },
-  netGainSection: {
-    marginTop: 14,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-    marginBottom: 4,
-  },
-  netGainTitle: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    letterSpacing: 0.8,
-    marginBottom: 10,
-  },
-  netGainRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  netGainLabel: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
-  },
-  netGainValue: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  premiumCompareRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(201,168,76,0.06)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.2)',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginTop: 8,
-    gap: 8,
-  },
-  premiumCompareText: {
-    flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-  },
-  premiumCompareChevron: {
-    fontSize: 18,
-    color: OrTrackColors.gold,
-    fontWeight: '300',
-  },
-  bestRegimeBanner: {
-    backgroundColor: 'rgba(201,168,76,0.08)',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.2)',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  bestRegimeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-    textAlign: 'center',
-  },
-
-  // Compact (collapsed)
-  posCompactGainSmall: {
-    fontSize: 11,
-    fontWeight: '500',
-    paddingTop: 4,
-  },
-  posCompactNetMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    paddingTop: 4,
-  },
-  posCompactNetMainLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  posCompactNetMainValue: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  posCompactNoTax: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    paddingTop: 4,
-  },
-  posCompactCta: {
-    marginTop: 10,
-    paddingVertical: 8,
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-  },
-  posCompactCtaText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-  },
-
-  // Blur blocks
-  blurRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    height: 34,
-  },
-  blurBlock: {
-    height: 24,
-    borderRadius: 8,
-    backgroundColor: OrTrackColors.subtext,
-    opacity: 0.25,
-  },
-
-  // Stats + Simulation buttons
-  statsButton: {
-    flexDirection: 'row',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 8,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  statsButtonText: {
-    fontSize: 11,
-    fontWeight: '400',
-    color: OrTrackColors.subtext,
-    opacity: 0.6,
-  },
-  primaryCta: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: OrTrackColors.gold,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  primaryCtaText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-  },
-  simulerInline: {
-    paddingVertical: 12,
-    marginTop: 6,
-    marginBottom: 6,
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-  },
-  simulerInlineText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-  },
-
-  // Colors
-  positive: { color: '#4CAF50' },
-  negative: { color: '#E07070' },
+  // L2 — Détails
+  l2: { borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 12, paddingHorizontal: 16 },
+  l2SectionTitle: { color: C.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' },
+  l2FiscalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  l2FiscalText: { color: C.textMuted, fontSize: 11 },
+  progressBg: { height: 6, borderRadius: 3, backgroundColor: C.border, opacity: 0.8, overflow: 'hidden', marginBottom: 8 },
+  progressFill: { height: '100%', borderRadius: 3, backgroundColor: C.gold },
+  l2Grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14 },
+  l2GridItem: { width: '48%', marginBottom: 8 },
+  l2GridLabel: { color: C.textDim, fontSize: 10, marginBottom: 2 },
+  l2GridValue: { color: C.white, fontSize: 12, fontWeight: '600' },
+  l2Compare: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 12 },
+  l2CompareLabel: { color: C.textDim, fontSize: 10, marginBottom: 4 },
+  l2CompareValue: { color: C.white, fontSize: 15, fontWeight: '700' },
+  l2CompareDivider: { width: 1, backgroundColor: C.border, marginHorizontal: 12, alignSelf: 'stretch' },
+  l2Note: { color: C.gold, fontSize: 11, fontStyle: 'italic', marginBottom: 8 },
+  l2Actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 12, marginBottom: 8 },
+  l2Edit: { color: C.gold, fontSize: 12, fontWeight: '600' },
+  collapseBtn: { borderTopWidth: 1, borderTopColor: C.divider, paddingVertical: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 4 },
+  collapseBtnText: { color: C.textDim, fontSize: 11 },
+  collapseChev: { color: C.textDim, fontSize: 12, transform: [{ rotate: '-90deg' }] },
 
   // Empty state
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 48,
-    paddingHorizontal: 32,
-  },
-  emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: OrTrackColors.card,
-    borderWidth: 2,
-    borderColor: OrTrackColors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  emptyIconText: {
-    fontSize: 32,
-    color: OrTrackColors.gold,
-    fontWeight: '300',
-    lineHeight: 38,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
+  emptyState: { alignItems: 'center', paddingVertical: 40 },
+  emptyTitle: { color: C.textDim, fontSize: 14, fontWeight: '600', marginBottom: 6 },
+  emptyText: { color: C.textMuted, fontSize: 12, textAlign: 'center', lineHeight: 18, paddingHorizontal: 20, marginBottom: 8 },
+  emptyAction: { color: C.gold, fontSize: 13, fontWeight: '600', marginTop: 14 },
+
+  // Stats teaser
+  statsTeaser: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
+  statsTeaserTitle: { color: C.white, fontSize: 13, fontWeight: '600' },
+  statsTeaserSub: { color: C.textDim, fontSize: 10, marginTop: 1 },
+  premiumBadgeLg: { backgroundColor: C.goldDim, borderRadius: 4, paddingVertical: 3, paddingHorizontal: 8 },
+  premiumBadgeLgText: { color: C.gold, fontSize: 9, fontWeight: '700' },
+
+  // Trust footer
+  trustFooter: { marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.divider, alignItems: 'center' },
+  trustLine1: { color: C.trustPrimary, fontSize: 12, textAlign: 'center' },
+  trustLine2: { color: C.trustSecondary, fontSize: 12, textAlign: 'center', marginTop: 4 },
 });

@@ -2,8 +2,10 @@ import { OrTrackColors } from './theme';
 
 export type MetalType = 'or' | 'argent' | 'platine' | 'palladium' | 'cuivre';
 
+export type MetalSymbol = 'XAU' | 'XAG' | 'XPT' | 'XPD' | 'XCU';
+
 export const METAL_CONFIG: Record<MetalType, {
-  symbol: string;
+  symbol: MetalSymbol;
   name: string;
   chipBg: string;
   chipBorder: string;
