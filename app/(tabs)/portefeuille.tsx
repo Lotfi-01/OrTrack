@@ -28,6 +28,7 @@ import { TAX } from '@/constants/tax';
 import { formatEuro, formatQty, formatPctSigned, truncName } from '@/utils/format';
 import { computePositionViewModels, computePortfolioSummary, getBestPerformerName } from '@/utils/portfolio';
 import { OrTrackColors } from '@/constants/theme';
+import PortfolioHero from '@/components/portfolio/PortfolioHero';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
@@ -163,8 +164,6 @@ export default function PortefeuilleScreen() {
     return `${String(lastUpdated.getHours()).padStart(2, '0')}:${String(lastUpdated.getMinutes()).padStart(2, '0')}`;
   }, [lastUpdated]);
 
-  const m = (text: string) => (masked ? '\u2022\u2022\u2022\u2022\u2022\u2022' : text);
-
   const bestPerformerName = useMemo(() => getBestPerformerName(viewModels), [viewModels]);
 
   // ── Loading guard ─────────────────────────────────────────────────────
@@ -212,54 +211,16 @@ export default function PortefeuilleScreen() {
         )}
 
         {/* ── 3. RÉSUMÉ ──────────────────────────────────── */}
-        <View style={st.heroCard}>
-          {pricesReady ? (
-            <>
-              <Text style={st.resumeValue}>{m(`${formatEuro(summary.totalValue)} ${currencySymbol}`)}</Text>
-              {hasFilteredPositions && !masked && (
-                <>
-                  <View style={st.resumeGainRow}>
-                    <Text style={[st.resumeGain, { color: summary.gain >= 0 ? C.green : C.red }]}>
-                      {'Gain brut : '}{summary.gain >= 0 ? '+' : ''}{formatEuro(summary.gain)} {currencySymbol}
-                    </Text>
-                    <Text style={st.resumeGainPct}>({formatPctSigned(summary.gainPct)})</Text>
-                  </View>
-                  <View style={st.resumeNetRow}>
-                    <Text style={st.resumeNetVendeur}>
-                      {'Net vendeur estimé : ~'}{formatEuro(summary.sellerNet)} {currencySymbol}
-                    </Text>
-                    <Text style={st.resumeNetSub}>{'Estimé au régime forfaitaire'}</Text>
-                  </View>
-                </>
-              )}
-              {masked && hasFilteredPositions && (
-                <Text style={{ color: C.textDim, fontSize: 13, marginTop: 4 }}>{'\u2022\u2022\u2022\u2022\u2022\u2022'}</Text>
-              )}
-            </>
-          ) : spotError ? (
-            <Text style={{ color: C.textMuted, fontSize: 12, textAlign: 'center' }}>Cours indisponibles</Text>
-          ) : (
-            <View>
-              <View style={{ width: 180, height: 26, borderRadius: 6, backgroundColor: C.border, marginBottom: 10 }} />
-              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
-                <View style={{ width: 80, height: 20, borderRadius: 5, backgroundColor: C.border }} />
-                <View style={{ width: 70, height: 20, borderRadius: 5, backgroundColor: C.border }} />
-              </View>
-              <View style={{ width: '100%', height: 36, borderRadius: 9, backgroundColor: C.border }} />
-            </View>
-          )}
-
-          {/* CTA fiscal */}
-          <TouchableOpacity
-            style={[st.ctaFiscal, (!hasFilteredPositions || !pricesReady || masked) && { opacity: 0.5 }]}
-            onPress={() => hasFilteredPositions && pricesReady && !masked && router.push('/fiscalite-globale')}
-            activeOpacity={0.7}
-            disabled={!hasFilteredPositions || !pricesReady || masked}
-          >
-            <Text style={st.ctaFiscalText}>{'Voir combien je récupère →'}</Text>
-          </TouchableOpacity>
-          <Text style={st.ctaSub}>Comparez les régimes et voyez votre net de vente</Text>
-        </View>
+        <PortfolioHero
+          summary={summary}
+          currencySymbol={currencySymbol}
+          masked={masked}
+          pricesReady={pricesReady}
+          spotError={spotError}
+          hasFilteredPositions={hasFilteredPositions}
+          onPressFiscal={() => router.push('/fiscalite-globale')}
+          ctaDisabled={!hasFilteredPositions || !pricesReady || masked}
+        />
 
         {/* ── 4. POSITIONS ───────────────────────────────── */}
         <View style={st.posHeader}>
@@ -578,20 +539,6 @@ const st = StyleSheet.create({
   filterLabel: { color: C.white, fontSize: 12, fontWeight: '600' },
   filterClear: { color: C.textDim, fontSize: 11, fontWeight: '600' },
 
-  // Résumé (hero card)
-  heroCard: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14 },
-  resumeValue: { fontSize: 30, fontWeight: '700', color: C.white, letterSpacing: -0.5 },
-  resumeGainRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
-  resumeGain: { fontSize: 12, fontWeight: '600' },
-  resumeGainPct: { color: C.textMuted, fontSize: 12 },
-  resumeNetRow: { marginTop: 10 },
-  resumeNetVendeur: { color: C.gold, fontSize: 17, fontWeight: '700' },
-  resumeNetSub: { color: C.textDim, fontSize: 11, fontStyle: 'italic', marginTop: 2 },
-
-  // CTA fiscal
-  ctaFiscal: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 12, paddingVertical: 11, marginTop: 14 },
-  ctaFiscalText: { color: C.gold, fontSize: 13.5, fontWeight: '700', textAlign: 'center' },
-  ctaSub: { textAlign: 'center', marginTop: 5, fontSize: 11, color: C.textMuted },
 
   // Positions header
   posHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
