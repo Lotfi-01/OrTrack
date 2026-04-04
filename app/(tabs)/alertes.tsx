@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import {
   View,
   Text,
@@ -14,6 +14,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
+import { useLocalSearchParams } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import {
   getAlerts,
@@ -37,6 +38,7 @@ import { STORAGE_KEYS } from '@/constants/storage-keys'
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre']
 
 export default function AlertesScreen() {
+  const params = useLocalSearchParams<{ metal?: string }>()
   const [pushToken, setPushToken] = useState<string | null>(null)
   const [tokenLoading, setTokenLoading] = useState(true)
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -49,6 +51,26 @@ export default function AlertesScreen() {
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null)
   const { prices } = useSpotPrices()
   const { canAddAlert, showPaywall, isPremium, limits } = usePremium()
+  const didAutoOpen = useRef(false)
+
+  // Préremplissage depuis param Accueil (metal = symbole ISO ex: 'XAU')
+  useEffect(() => {
+    if (didAutoOpen.current) return
+    const sym = params.metal
+    if (!sym || !pushToken || tokenLoading) return
+    // Mappe symbole ISO → MetalType key
+    const entry = METALS.find(k => METAL_CONFIG[k].symbol === sym)
+    const m = entry ?? (METALS.includes(sym as MetalType) ? sym as MetalType : undefined)
+    if (!m) return
+    {
+      didAutoOpen.current = true
+      setSelectedMetal(m)
+      setEditingAlertId(null)
+      setSelectedCondition('above')
+      setTargetPrice('')
+      setModalVisible(true)
+    }
+  }, [params.metal, pushToken, tokenLoading])
 
   useEffect(() => {
     async function init() {

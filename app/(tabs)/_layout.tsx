@@ -16,7 +16,7 @@ export default function TabLayout() {
           borderTopWidth: 1,
         },
         tabBarLabelStyle: {
-          fontSize: 10,
+          fontSize: 9,
           fontWeight: '500',
         },
         headerShown: false,
@@ -34,7 +34,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="portefeuille"
         options={{
-          title: 'Portfolio',
+          title: 'Portefeuille',
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'wallet' : 'wallet-outline'} size={size} color={color} />
           ),
