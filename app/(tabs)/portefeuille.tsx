@@ -37,10 +37,6 @@ import { usePositions } from '@/hooks/use-positions';
 
 const C = OrTrackColors;
 
-// TODO ARCHITECTURE: extraire la logique fiscale dans un service dédié (utils/fiscal.ts ou domain/tax/)
-// Les calculs d'abattement, exonération, comparaison de régimes ne doivent pas vivre dans le composant UI
-// Prépare le multi-pays (FR → BE/CH/LU)
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function symbolToMetal(sym: string): MetalType | null {
@@ -186,9 +182,6 @@ export default function PortefeuilleScreen() {
       </SafeAreaView>
     );
   }
-
-  // TODO ARCHITECTURE: extraire PortfolioHero, PositionCard, PositionTaxSummary en composants dédiés
-  // Le screen actuel est trop gros pour une maintenance long terme
 
   return (
     <SafeAreaView style={st.container}>
@@ -353,7 +346,6 @@ const st = StyleSheet.create({
   filterDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.gold },
   filterLabel: { color: C.white, fontSize: 12, fontWeight: '600' },
   filterClear: { color: C.textDim, fontSize: 11, fontWeight: '600' },
-
 
   // Positions header
   posHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
