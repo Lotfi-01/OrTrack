@@ -1,9 +1,22 @@
+// ─── ÉTAPE 0 — Hooks et sources identifiés ───
+// Hook positions : usePositions (hooks/use-positions.ts)
+// Hook spot/prix : useSpotPrices (hooks/use-spot-prices.ts) → prices.gold etc. en EUR/oz
+// Source historique : loadPriceHistory (hooks/use-metal-history.ts) → PricePoint[]
+// Fonction calcul fiscal : TAX.forfaitaireRate (constants/tax.ts)
+// Route fiscalité : /fiscalite-globale (app/fiscalite-globale.tsx)
+// Structure position : { id, metal, product, weightG, quantity, purchasePrice, purchaseDate, createdAt, note?, spotAtPurchase? }
+// react-native-svg : installé (v15.12.1)
+
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
+  Alert,
+  Dimensions,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -12,561 +25,552 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { PriceChart } from '@/components/price-chart';
-import { OrTrackColors } from '@/constants/theme';
-import { loadPriceHistory } from '@/hooks/use-metal-history';
-import { type SpotPrices, useSpotPrices } from '@/hooks/use-spot-prices';
-import { OZ_TO_G } from '@/constants/metals';
+import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
-import { formatEuro, formatG, formatPct, formatQty, formatTimeFR, JOURS_FR, MOIS_FR } from '@/utils/format';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { OrTrackColors } from '@/constants/theme';
+import { formatEuro, formatPct, formatG, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { usePositions } from '@/hooks/use-positions';
+import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+import type { MetalType } from '@/constants/metals';
+
+const C = OrTrackColors;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_WIDTH = 138;
+const SNAP_INTERVAL = CARD_WIDTH + 10;
+
+const MARKET_METALS: { key: MetalType; spotKey: 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper'; unit: string }[] = [
+  { key: 'or', spotKey: 'gold', unit: '€/oz' },
+  { key: 'argent', spotKey: 'silver', unit: '€/oz' },
+  { key: 'platine', spotKey: 'platinum', unit: '€/oz' },
+  { key: 'palladium', spotKey: 'palladium', unit: '€/oz' },
+  { key: 'cuivre', spotKey: 'copper', unit: '€/kg' },
+];
+
+// Articles pour construction de phrase : "Créer une alerte sur {article}"
+const METAL_ARTICLE: Record<string, string> = {
+  XAU: "l\u2019or", XAG: "l\u2019argent", XPT: 'le platine', XPD: 'le palladium', XCU: 'le cuivre',
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+function buildSvgPath(data: number[], width: number, height: number): string {
+  if (data.length < 2) return '';
+  const minP = data.reduce((a, b) => Math.min(a, b), Infinity);
+  const maxP = data.reduce((a, b) => Math.max(a, b), -Infinity);
+  const range = maxP - minP || 1;
+  const step = width / (data.length - 1);
+  return data.map((v, i) => {
+    const x = i * step;
+    const y = height - ((v - minP) / range) * height;
+    return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+}
 
-// ─── Config cours & graphique ────────────────────────────────────────────────
+function buildFillPath(data: number[], width: number, height: number): string {
+  const line = buildSvgPath(data, width, height);
+  if (!line) return '';
+  return `${line} L${width},${height} L0,${height} Z`;
+}
 
-type ChartMetal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
-
-const METALS_CONFIG: { metal: ChartMetal; name: string; symbol: string; color: string }[] = [
-  { metal: 'gold', name: 'Or', symbol: 'XAU', color: '#C9A84C' },
-  { metal: 'silver', name: 'Argent', symbol: 'XAG', color: '#A8A8B8' },
-  { metal: 'platinum', name: 'Platine', symbol: 'XPT', color: '#E0E0E0' },
-  { metal: 'palladium', name: 'Palladium', symbol: 'XPD', color: '#CBA135' },
-  { metal: 'copper', name: 'Cuivre', symbol: 'XCU', color: '#B87333' },
+const MOIS_COURT = [
+  'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
+  'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
 ];
 
-const METAL_SPOT_KEY: Record<string, keyof SpotPrices> = {
-  or: 'gold', argent: 'silver', platine: 'platinum',
-  palladium: 'palladium', cuivre: 'copper',
-};
+function formatChartDate(dateStr: string, period?: string): string {
+  if (!dateStr || dateStr.length < 10) return dateStr;
+  const parts = dateStr.split('-').map(Number);
+  const yr = parts[0];
+  const mo = parts[1];
+  const d = parts[2];
+  if (!mo || !d) return dateStr;
+  if (period === '1A') {
+    return `${MOIS_COURT[mo - 1]} ${String(yr).slice(2)}`;
+  }
+  return `${d} ${MOIS_COURT[mo - 1]}`;
+}
 
-// ─── Composant principal ──────────────────────────────────────────────────────
+// ─── Composant ────────────────────────────────────────────────────────────────
 
-export default function TableauDeBordScreen() {
-  const { prices, pricesUsd, loading, refreshing, error, lastUpdated, refresh, currency, currencySymbol } = useSpotPrices();
+export default function AccueilScreen() {
   const { positions, loading: positionsLoading, reloadPositions } = usePositions();
-  const positionsLoaded = !positionsLoading;
-  const [selectedChartMetal, setSelectedChartMetal] = useState<ChartMetal>('gold');
+  const { prices, loading: spotLoading, refreshing, lastUpdated, refresh, currencySymbol, error: spotError } = useSpotPrices();
+
+  const [masked, setMasked] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState<HistoryPeriod>('1A');
+  // TODO: fallback si données 1A insuffisantes
+  const [selectedMetal, setSelectedMetal] = useState<{ key: MetalType; spotKey: string; symbol: string }>({ key: 'or', spotKey: 'gold', symbol: 'XAU' });
+  const [chartHistory, setChartHistory] = useState<PricePoint[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartReady, setChartReady] = useState(false);
+  const [activeMarketIdx, setActiveMarketIdx] = useState(0);
   const [change24h, setChange24h] = useState<Partial<Record<string, number>>>({});
-  const [hideValue, setHideValue] = useState(false);
-  const [dateStr, setDateStr] = useState('');
 
-  // Date française — rafraîchie au retour sur l'onglet
+  const marketScrollRef = useRef<ScrollView>(null);
+  const isProgrammaticScroll = useRef(false);
+
+  // ── Privacy mode ─────────────────────────────────────────────────────
+
   useFocusEffect(
     useCallback(() => {
-      const d = new Date();
-      setDateStr(JOURS_FR[d.getDay()] + ' ' + d.getDate() + ' ' + MOIS_FR[d.getMonth()]);
+      AsyncStorage.getItem('@ortrack_privacy_mode').then(v => setMasked(v === 'true')).catch(() => {});
     }, [])
   );
 
-  // Recharge positions à chaque activation de l'onglet
-  useFocusEffect(
-    useCallback(() => {
-      reloadPositions();
-    }, [reloadPositions])
-  );
+  const toggleMask = useCallback(async () => {
+    const next = !masked;
+    setMasked(next);
+    try { await AsyncStorage.setItem('@ortrack_privacy_mode', String(next)); } catch {}
+  }, [masked]);
 
-  useFocusEffect(
-    useCallback(() => {
-      async function checkCacheAndRefresh() {
-        const cached = await AsyncStorage.getItem(STORAGE_KEYS.spotCache);
-        if (!cached) {
-          refresh();
-        }
-      }
-      checkCacheAndRefresh();
-    }, [refresh])
-  );
+  // ── Reload positions on focus ────────────────────────────────────────
 
-  useFocusEffect(
-    useCallback(() => {
-      AsyncStorage.getItem(STORAGE_KEYS.hidePortfolioValue).then((val) => {
-        setHideValue(val === 'true');
-      });
-    }, [])
-  );
+  useFocusEffect(useCallback(() => { reloadPositions(); }, [reloadPositions]));
 
-  const toggleHideValue = useCallback(() => {
-    setHideValue((prev) => {
-      const next = !prev;
-      AsyncStorage.setItem(STORAGE_KEYS.hidePortfolioValue, String(next));
-      return next;
-    });
-  }, []);
+  // ── Load chart history for selected metal ──────────────────────────
 
   useEffect(() => {
-    async function compute24hChange() {
-      try {
-        const history = await loadPriceHistory('1S', 'USD');
-        if (history.length < 2) return;
+    setChartLoading(true);
+    loadPriceHistory(selectedPeriod, 'EUR', selectedMetal.spotKey)
+      .then(pts => { setChartHistory(pts); setChartLoading(false); })
+      .catch(() => { setChartHistory([]); setChartLoading(false); });
+  }, [selectedPeriod, selectedMetal.spotKey]);
 
-        // Cibler explicitement la date d'hier
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().split('T')[0];
-        const point24h = history.find(p => p.date === yesterdayStr)
-          ?? history[history.length - 2];
-        if (!point24h) return;
 
-        const currentMap: Record<string, number | null> = {
-          gold: pricesUsd.gold,
-          silver: pricesUsd.silver,
-          platinum: pricesUsd.platinum,
-          palladium: pricesUsd.palladium,
-          copper: pricesUsd.copper,
-        };
+  // ── 24h change ───────────────────────────────────────────────────────
 
-        const changes: Partial<Record<string, number>> = {};
-        const keys = ['gold', 'silver', 'platinum', 'palladium', 'copper'] as const;
-
-        keys.forEach(key => {
-          const past = point24h[key];
-          const current = currentMap[key];
-          if (past && current && past > 0) {
-            changes[key] = ((current - past) / past) * 100;
-          }
-        });
-
-        setChange24h(changes);
-      } catch {
-        // Silencieux — pas de variation affichée
+  useEffect(() => {
+    loadPriceHistory('1S', 'EUR').then(history => {
+      if (history.length < 2) return;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const ydStr = yesterday.toISOString().split('T')[0];
+      const pt = history.find(p => p.date === ydStr) ?? history[history.length - 2];
+      if (!pt) return;
+      const changes: Partial<Record<string, number>> = {};
+      for (const k of ['gold', 'silver', 'platinum', 'palladium', 'copper'] as const) {
+        const cur = prices[k];
+        const past = pt[k];
+        if (cur && past && past > 0) changes[k] = ((cur - past) / past) * 100;
       }
-    }
+      setChange24h(changes);
+    }).catch(() => {});
+  }, [prices]);
 
-    if (Object.values(pricesUsd).some(v => v !== null)) {
-      compute24hChange();
-    }
-  }, [pricesUsd]);
-
-  const pricesReady = !loading && prices.gold !== null;
-  const hasPositions = positions.length > 0;
+  // ── Portfolio calculations ───────────────────────────────────────────
 
   const portfolio = useMemo(() => {
-    const goldTotalG = positions.filter((p) => p.metal === 'or').reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const silverTotalG = positions.filter((p) => p.metal === 'argent').reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const platinumTotalG = positions.filter((p) => p.metal === 'platine').reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const palladiumTotalG = positions.filter((p) => p.metal === 'palladium').reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const copperTotalG = positions.filter((p) => p.metal === 'cuivre').reduce((s, p) => s + p.quantity * p.weightG, 0);
-
-    const goldPieces = positions.filter((p) => p.metal === 'or').reduce((s, p) => s + p.quantity, 0);
-    const silverPieces = positions.filter((p) => p.metal === 'argent').reduce((s, p) => s + p.quantity, 0);
-    const platinumPieces = positions.filter((p) => p.metal === 'platine').reduce((s, p) => s + p.quantity, 0);
-    const palladiumPieces = positions.filter((p) => p.metal === 'palladium').reduce((s, p) => s + p.quantity, 0);
-    const copperPieces = positions.filter((p) => p.metal === 'cuivre').reduce((s, p) => s + p.quantity, 0);
-
     let totalValue = 0;
     let totalCost = 0;
+    const byMetal: Record<string, { count: number; totalG: number; value: number; cost: number }> = {};
 
     for (const p of positions) {
-      const spot =
-        p.metal === 'or' ? prices.gold :
-        p.metal === 'argent' ? prices.silver :
-        p.metal === 'platine' ? prices.platinum :
-        p.metal === 'palladium' ? prices.palladium :
-        prices.copper;
-      totalCost += p.quantity * p.purchasePrice;
-      if (spot !== null) {
-        totalValue += p.quantity * (p.weightG / OZ_TO_G) * spot;
-      }
+      const spot = getSpot(p.metal, prices);
+      const cost = p.quantity * p.purchasePrice;
+      totalCost += cost;
+      const val = spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0;
+      totalValue += val;
+
+      if (!byMetal[p.metal]) byMetal[p.metal] = { count: 0, totalG: 0, value: 0, cost: 0 };
+      byMetal[p.metal].count += p.quantity;
+      byMetal[p.metal].totalG += p.quantity * p.weightG;
+      byMetal[p.metal].value += val;
+      byMetal[p.metal].cost += cost;
     }
 
-    const totalGainLoss = totalCost > 0 ? totalValue - totalCost : null;
-    const totalGainLossPct =
-      totalGainLoss !== null && totalCost > 0
-        ? (totalGainLoss / totalCost) * 100
-        : null;
+    const gain = totalCost > 0 ? totalValue - totalCost : 0;
+    const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
+    const netEstime = gain > 0 ? totalValue - (totalValue * TAX.forfaitaireRate) - totalCost : gain;
 
-    // Net global estimé (forfaitaire)
-    const totalNetEstime = (totalGainLoss !== null && totalGainLoss > 0)
-      ? totalValue - (totalValue * TAX.forfaitaireRate) - totalCost
-      : totalGainLoss;
-
-    return {
-      goldTotalG, silverTotalG, platinumTotalG, palladiumTotalG, copperTotalG,
-      goldPieces, silverPieces, platinumPieces, palladiumPieces, copperPieces,
-      totalValue, totalCost, totalGainLoss, totalGainLossPct, totalNetEstime,
-    };
+    return { totalValue, totalCost, gain, gainPct, netEstime, byMetal };
   }, [positions, prices]);
 
-  const portfolioMetals = useMemo(() =>
-    [
-      { key: 'or', label: 'Or', symbol: 'XAU', color: '#C9A84C', totalG: portfolio.goldTotalG, pieces: portfolio.goldPieces },
-      { key: 'argent', label: 'Argent', symbol: 'XAG', color: '#A8A8B8', totalG: portfolio.silverTotalG, pieces: portfolio.silverPieces },
-      { key: 'platine', label: 'Platine', symbol: 'XPT', color: '#E0E0E0', totalG: portfolio.platinumTotalG, pieces: portfolio.platinumPieces },
-      { key: 'palladium', label: 'Palladium', symbol: 'XPD', color: '#CBA135', totalG: portfolio.palladiumTotalG, pieces: portfolio.palladiumPieces },
-      { key: 'cuivre', label: 'Cuivre', symbol: 'XCU', color: '#B87333', totalG: portfolio.copperTotalG, pieces: portfolio.copperPieces },
-    ]
-    .filter((m) => m.totalG > 0)
-    .map(m => {
-      const spotKey = METAL_SPOT_KEY[m.key];
-      const spot = spotKey ? prices[spotKey] : null;
-      const value = spot && m.totalG ? (m.totalG / OZ_TO_G) * spot : null;
+  const hasPositions = positions.length > 0;
 
-      // Net estimé par métal
-      const cost = positions
-        .filter(p => p.metal === m.key)
-        .reduce((s, p) => s + p.quantity * p.purchasePrice, 0);
-      const gain = value !== null ? value - cost : null;
-      const netEstime = (value !== null && gain !== null && gain > 0)
-        ? value - (value * TAX.forfaitaireRate) - cost
-        : gain;
+  // ── Init chart on dominant metal (anti-flash) ────────────────────────
 
-      return { ...m, value, netEstime };
-    }),
-    [portfolio, prices, positions]
-  );
+  const dominantMetal = useMemo(() => {
+    const entries = Object.entries(portfolio.byMetal);
+    if (entries.length === 0) return { key: 'or' as MetalType, spotKey: 'gold', symbol: 'XAU' };
+    const [topKey] = entries.sort(([, a], [, b]) => b.value - a.value)[0];
+    const cfg = METAL_CONFIG[topKey as MetalType];
+    return cfg ? { key: topKey as MetalType, spotKey: cfg.spotKey, symbol: cfg.symbol } : { key: 'or' as MetalType, spotKey: 'gold', symbol: 'XAU' };
+  }, [portfolio.byMetal]);
 
-  const selectedMetalConfig = useMemo(() =>
-    METALS_CONFIG.find(m => m.metal === selectedChartMetal)!,
-    [selectedChartMetal]
-  );
+  useEffect(() => {
+    if (chartReady || positionsLoading) return;
+    const metals = Object.keys(portfolio.byMetal);
+    if (metals.length > 0) {
+      setSelectedMetal(dominantMetal);
+    }
+    setChartReady(true);
+  }, [positionsLoading, portfolio.byMetal, dominantMetal, chartReady]);
+  // ── pricesReady basé sur les métaux réellement détenus ────────────
+  const heldMetals = useMemo(() => {
+    if (!positions || positions.length === 0) return [];
+    return [...new Set(positions.map(p => p.metal))];
+  }, [positions]);
 
-  // ── Navigation inter-tabs ────────────────────────────────────────────────
+  const pricesReady = useMemo(() => {
+    if (spotLoading) return false;
+    if (heldMetals.length === 0) return true;
+    return heldMetals.every(metal => {
+      const spot = prices[METAL_CONFIG[metal].spotKey];
+      return spot !== null && spot !== undefined;
+    });
+  }, [spotLoading, heldMetals, prices]);
 
-  const navigateToPortfolio = useCallback(() => {
-    router.navigate('/(tabs)/portefeuille');
+  // ── Chart data ───────────────────────────────────────────────────────
+
+  const chartData = useMemo(() => {
+    if (chartLoading) return null;
+    const metalKey = selectedMetal.spotKey as keyof PricePoint;
+    const isCopper = selectedMetal.spotKey === 'copper';
+    // Cuivre : historique converti oz → kg pour cohérence avec la carte Marchés
+    const factor = isCopper ? 32.1507 : 1;
+    const pts = chartHistory.map(p => (Number(p[metalKey]) || 0) * factor).filter(v => v > 0);
+    if (pts.length < 2) return null;
+    const first = pts[0];
+    const last = pts[pts.length - 1];
+    const perf = ((last - first) / first) * 100;
+    const minVal = pts.reduce((a, b) => Math.min(a, b), Infinity);
+    const maxVal = pts.reduce((a, b) => Math.max(a, b), -Infinity);
+    return { pts, perf, minVal, maxVal };
+  }, [chartHistory, chartLoading, selectedMetal.spotKey]);
+
+  // ── Date header ──────────────────────────────────────────────────────
+
+  const dateStr = useMemo(() => {
+    const d = new Date();
+    return `${JOURS_FR[d.getDay()]} ${d.getDate()} ${MOIS_FR[d.getMonth()]}`;
   }, []);
 
-  const navigateToAjouter = useCallback(() => {
-    router.navigate('/(tabs)/ajouter');
+  // ── Market scroll ────────────────────────────────────────────────────
+
+  const handleMarketScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const x = e.nativeEvent.contentOffset.x;
+    const idx = Math.max(0, Math.min(Math.round(x / SNAP_INTERVAL), MARKET_METALS.length - 1));
+    setActiveMarketIdx(idx);
   }, []);
 
-  const handleSelectMetal = useCallback((metal: ChartMetal) => {
-    setSelectedChartMetal(metal);
-  }, []);
+  const handleMarketScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (isProgrammaticScroll.current) {
+      isProgrammaticScroll.current = false;
+      return;
+    }
+    const x = e.nativeEvent.contentOffset.x;
+    const idx = Math.max(0, Math.min(Math.round(x / SNAP_INTERVAL), MARKET_METALS.length - 1));
+    const mm = MARKET_METALS[idx];
+    if (mm && mm.spotKey !== selectedMetal.spotKey) {
+      const cfg = METAL_CONFIG[mm.key];
+      setSelectedMetal({ key: mm.key, spotKey: mm.spotKey, symbol: cfg.symbol });
+    }
+  }, [selectedMetal.spotKey]);
+
+  const m = (text: string) => masked ? '••••••' : text;
+
+  const chartW = SCREEN_WIDTH - 68;
+
+  // ─────────────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={st.container}>
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
-            tintColor={OrTrackColors.gold}
-            colors={[OrTrackColors.gold]}
-          />
-        }>
+        contentContainerStyle={st.scroll}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={C.gold} colors={[C.gold]} />}
+      >
 
-        {/* ── 1. Header — date + heure ── */}
-        <View style={styles.headerRow}>
-          <Text style={styles.headerDate}>{dateStr}</Text>
-          {loading && !prices.gold ? (
-            <ActivityIndicator size="small" color={OrTrackColors.gold} />
-          ) : lastUpdated ? (
-            <Text style={styles.headerTime}>Mis à jour à {formatTimeFR(lastUpdated)}</Text>
-          ) : null}
+        {/* ── 1. HEADER ──────────────────────────────────── */}
+        <View style={st.header}>
+          <Text style={st.headerDate}>{dateStr}</Text>
+          <View style={st.headerRight}>
+            <View style={st.headerDot} />
+            <Text style={st.headerTime}>
+              {lastUpdated
+                ? `Mis à jour à ${String(lastUpdated.getHours()).padStart(2, '0')}:${String(lastUpdated.getMinutes()).padStart(2, '0')} \u00B7 Cours du jour`
+                : 'Cours du jour'}
+            </Text>
+          </View>
         </View>
 
-        {/* ── 2. Hero card — valeur totale ── */}
-        <View style={styles.heroCard}>
-          <View style={styles.heroLabelRow}>
-            <Text style={styles.heroLabel}>VALEUR DE VOTRE PORTEFEUILLE</Text>
-            <TouchableOpacity
-              onPress={toggleHideValue}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Ionicons
-                name={hideValue ? 'eye-off-outline' : 'eye-outline'}
-                size={18}
-                color={OrTrackColors.subtext}
-              />
+        {/* ── 2. HERO ────────────────────────────────────── */}
+        <View style={st.hero}>
+          <View style={st.heroLabelRow}>
+            <Text style={st.heroLabel}>VALEUR DE VOTRE PORTEFEUILLE</Text>
+            <TouchableOpacity onPress={toggleMask} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name={masked ? 'eye-off-outline' : 'eye-outline'} size={18} color={C.textDim} />
             </TouchableOpacity>
           </View>
 
-          {!hasPositions ? (
+          {pricesReady ? (
             <>
-              <Text style={styles.heroValue}>— {currencySymbol}</Text>
-              <Text style={styles.heroHint}>Ajoutez des actifs pour commencer</Text>
-            </>
-          ) : loading || !pricesReady ? (
-            <ActivityIndicator size="large" color={OrTrackColors.gold} style={styles.heroSpinner} />
-          ) : (
-            <>
-              {hideValue ? (
-                <View style={styles.blurRow}>
-                  <View style={[styles.blurBlock, { width: 80 }]} />
-                  <View style={[styles.blurBlock, { width: 60 }]} />
-                  <View style={[styles.blurBlock, { width: 40 }]} />
-                </View>
-              ) : (
-                <Text style={styles.heroValue}>
-                  {formatEuro(portfolio.totalValue)} {currencySymbol}
-                </Text>
-              )}
-              {portfolio.totalGainLoss !== null && !hideValue && (
-                <View style={styles.gainRow}>
-                  <Text style={[
-                    styles.gainValue,
-                    portfolio.totalGainLoss >= 0 ? styles.changePositive : styles.changeNegative,
-                  ]}>
-                    {portfolio.totalGainLoss >= 0 ? '+' : ''}
-                    {formatEuro(portfolio.totalGainLoss)} {currencySymbol}
-                  </Text>
-                  {portfolio.totalGainLossPct !== null && (
-                    <Text style={[
-                      styles.gainPct,
-                      portfolio.totalGainLoss >= 0 ? styles.changePositive : styles.changeNegative,
-                    ]}>
-                      {'  '}{portfolio.totalGainLoss >= 0 ? '+' : ''}
-                      {formatPct(portfolio.totalGainLossPct, 2)}
-                    </Text>
-                  )}
-                </View>
-              )}
-              {portfolio.totalNetEstime !== null && !hideValue &&
-               portfolio.totalGainLoss !== null && portfolio.totalGainLoss > 0 && (
-                <View style={styles.netGlobalRow}
-                  accessibilityLabel={`Si vous vendez aujourd'hui, environ ${formatEuro(portfolio.totalNetEstime ?? 0)} euros nets`}
-                >
-                  <Text style={styles.netGlobalLabel}>
-                    GAIN NET ESTIMÉ
-                  </Text>
-                  <Text style={styles.netGlobalValue}>
-                    ~{formatEuro(portfolio.totalNetEstime)} {currencySymbol}
-                  </Text>
-                  <Text style={styles.netGlobalSub}>
-                    Estimation après impôts
-                  </Text>
-                  <View style={styles.reassuranceRow}>
-                    <Text style={styles.reassuranceItem}>Calcul instantané</Text>
-                    <Text style={styles.reassuranceDot}>·</Text>
-                    <Text style={styles.reassuranceItem}>Données privées</Text>
-                  </View>
-                </View>
-              )}
-              {portfolio.totalGainLoss !== null && portfolio.totalGainLoss <= 0 && !hideValue && (
-                <Text style={styles.netGlobalNoTax}>
-                  Aucun impôt si vente en régime plus-values
-                </Text>
-              )}
-            </>
-          )}
-          {/* TODO: sparkline */}
-        </View>
+              <Text style={st.heroValue}>
+                {m(`${formatEuro(portfolio.totalValue)} ${currencySymbol}`)}
+              </Text>
 
-        {/* CTA Simuler mes ventes */}
-        {hasPositions && pricesReady && (
-          <TouchableOpacity
-            style={styles.simulerCta}
-            onPress={() => router.push('/fiscalite-globale' as never)}
-            activeOpacity={0.7}
-            accessibilityLabel="Voir combien je récupère"
-          >
-            <Ionicons name="calculator-outline" size={18} color={OrTrackColors.gold} />
-            <Text style={styles.simulerCtaText}>Voir combien je récupère →</Text>
-          </TouchableOpacity>
-        )}
+              <View style={{ height: 8 }} />
 
-        {/* ── 3. MARCHÉS — chips horizontales ── */}
-        <Text style={[styles.sectionTitle, { marginTop: 8 }]}>MARCHÉS</Text>
-
-        {error && !loading && (
-          <View style={styles.errorBanner}>
-            <View style={styles.errorRow}>
-              <Text style={styles.errorIcon}>!</Text>
-              <Text style={styles.errorText}>{error} — Vérifiez votre connexion.</Text>
-            </View>
-            <TouchableOpacity onPress={refresh} style={styles.retryButton}>
-              <Text style={styles.retryText}>Réessayer</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {!pricesReady ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginHorizontal: -20 }}
-            contentContainerStyle={{ paddingLeft: 20, paddingRight: 40, gap: 8, marginBottom: 16 }}>
-            {[1, 2, 3].map(i => (
-              <View key={i} style={styles.marketPlaceholder} />
-            ))}
-          </ScrollView>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={{ marginHorizontal: -20 }}
-            contentContainerStyle={{ paddingLeft: 20, paddingRight: 40, gap: 8, marginBottom: 16 }}>
-            {METALS_CONFIG.map((m) => {
-              const active = selectedChartMetal === m.metal;
-              const spot = prices[m.metal];
-              const isCopper = m.metal === 'copper';
-              const displayPrice = spot !== null
-                ? isCopper ? spot * (1000 / OZ_TO_G) : spot
-                : null;
-              const unitLabel = isCopper ? `${currencySymbol}/kg` : `${currencySymbol}/oz`;
-              const variationEur = (change24h[m.metal] !== undefined && spot !== null)
-                ? isCopper
-                  ? (spot * change24h[m.metal]! / 100) * (1000 / OZ_TO_G)
-                  : spot * change24h[m.metal]! / 100
-                : null;
-              return (
-                <TouchableOpacity
-                  key={m.metal}
-                  onPress={() => handleSelectMetal(m.metal)}
-                  activeOpacity={0.75}
-                  accessibilityLabel={`${m.name} ${displayPrice !== null ? formatEuro(displayPrice) + ' ' + unitLabel : ''}`}
-                  style={[
-                    styles.marketChip,
-                    active && { borderColor: m.color, backgroundColor: `${m.color}15` },
-                  ]}>
-                  <Text style={styles.marketChipName}>{m.name}</Text>
-                  {displayPrice !== null ? (
+              {hasPositions && (
+                <View style={st.variationRow}>
+                  {!masked ? (
                     <>
-                      <Text style={styles.marketChipPrice}>{formatEuro(displayPrice)}</Text>
-                      <Text style={styles.marketChipUnit}>{unitLabel}</Text>
-                      {variationEur !== null && change24h[m.metal] !== undefined && (
-                        <Text style={[
-                          styles.marketChipVariation,
-                          change24h[m.metal]! >= 0 ? styles.changePositive : styles.changeNegative,
-                        ]}>
-                          {change24h[m.metal]! >= 0 ? '▲' : '▼'}{' '}
-                          {formatPct(Math.abs(change24h[m.metal]!), 2)}
-                          {'  '}{change24h[m.metal]! >= 0 ? '+' : '-'}
-                          {formatEuro(Math.abs(variationEur))}{currencySymbol}
+                      <View style={[st.varBadge, { backgroundColor: portfolio.gain >= 0 ? C.greenDim : 'rgba(224,107,107,0.10)' }]}>
+                        <Text style={[st.varBadgeText, { color: portfolio.gain >= 0 ? C.green : C.red }]}>
+                          {portfolio.gain >= 0 ? '▲' : '▼'} {formatPct(Math.abs(portfolio.gainPct), 2)}
                         </Text>
-                      )}
+                      </View>
+                      <Text style={st.varAbs}>{portfolio.gain >= 0 ? '+' : '-'}{formatEuro(Math.abs(portfolio.gain))} {currencySymbol}</Text>
+                      <Text style={st.varPeriod}>Depuis achat</Text>
                     </>
                   ) : (
-                    <Text style={styles.marketChipPrice}>—</Text>
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-
-        {/* ── 4. MA DÉTENTION ── */}
-        {positionsLoaded && (
-          <>
-            <View style={styles.detentionTitleRow}>
-              <Text style={[styles.sectionTitle, { marginBottom: 0, marginTop: 0 }]}>MA DÉTENTION</Text>
-              {hasPositions && !hideValue && (
-                <TouchableOpacity
-                  onPress={navigateToPortfolio}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Voir mes positions"
-                >
-                  <Text style={styles.detentionViewAll}>Voir mes positions ›</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {hasPositions && portfolioMetals.length > 0 && !hideValue ? (
-              <View style={styles.detentionCard}>
-                {portfolioMetals.map((m, i) => (
-                  <TouchableOpacity
-                    key={m.key}
-                    onPress={navigateToPortfolio}
-                    activeOpacity={0.7}
-                    accessibilityLabel={`${m.label} ${formatG(m.totalG)} ${m.value !== null ? formatEuro(m.value) + ' ' + currencySymbol : ''}`}
-                  >
-                    {i > 0 && <View style={styles.separator} />}
-                    <View style={styles.detentionRow}>
-                      <View style={styles.detentionLeft}>
-                        <View style={[styles.miniBadge, { borderColor: m.color }]}>
-                          <Text style={[styles.miniBadgeText, { color: m.color }]}>{m.symbol}</Text>
-                        </View>
-                        <View style={styles.detentionNameCol}>
-                          <Text style={styles.detentionLabel}>{m.label}</Text>
-                          <Text style={styles.detentionSub}>{formatG(m.totalG)} · {formatQty(m.pieces)} pièce{m.pieces > 1 ? 's' : ''}</Text>
-                        </View>
-                      </View>
-                      <View style={styles.detentionRight}>
-                        {m.value !== null && (
-                          <View style={styles.detentionValues}>
-                            <Text style={styles.detentionValue}>
-                              {formatEuro(m.value)} {currencySymbol}
-                            </Text>
-                            {m.netEstime !== null && (m.netEstime ?? 0) > 0 && (
-                              <Text style={[
-                                styles.detentionNet,
-                                styles.changePositive,
-                              ]}>
-                                Gain net : +{formatEuro(m.netEstime)} {currencySymbol}
-                              </Text>
-                            )}
-                          </View>
-                        )}
-                        <Text style={styles.detentionChevron}>›</Text>
-                      </View>
+                    <View style={[st.varBadge, { backgroundColor: 'rgba(245,240,232,0.06)' }]}>
+                      <Text style={[st.varBadgeText, { color: C.textDim }]}>••••••</Text>
                     </View>
-                  </TouchableOpacity>
-                ))}
-                <View style={styles.separator} />
-                <TouchableOpacity
-                  onPress={navigateToAjouter}
-                  style={styles.detentionCta}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Ajouter une position"
-                >
-                  <Text style={styles.detentionCtaIcon}>+</Text>
-                  <Text style={styles.detentionCtaText}>Ajouter une position</Text>
-                </TouchableOpacity>
-              </View>
-            ) : !hasPositions ? (
-              <View style={styles.detentionCard}>
-                <Text style={styles.detentionEmptyText}>Aucune position pour le moment.</Text>
-                <TouchableOpacity
-                  onPress={navigateToAjouter}
-                  style={styles.detentionCta}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Ajouter une position"
-                >
-                  <Text style={styles.detentionCtaIcon}>+</Text>
-                  <Text style={styles.detentionCtaText}>Ajouter votre première position</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-          </>
-        )}
+                  )}
+                </View>
+              )}
 
-        {/* ── 5. COURS [MÉTAL] ── */}
-        <View style={styles.courseTitleRow}>
-          <Text style={[styles.sectionTitle, { marginBottom: 0, marginTop: 0 }]}>
-            Cours {selectedMetalConfig.name} ({selectedMetalConfig.symbol})
-          </Text>
-          {change24h[selectedChartMetal] !== undefined && (
-            <Text style={[
-              styles.courseVariation,
-              change24h[selectedChartMetal]! >= 0 ? styles.changePositive : styles.changeNegative,
-            ]}>
-              {change24h[selectedChartMetal]! >= 0 ? '▲' : '▼'}{' '}
-              {formatPct(Math.abs(change24h[selectedChartMetal]!), 2)}
+              {hasPositions && portfolio.gain > 0 && (
+                <View style={[st.netBlock, masked && st.netMasked]}>
+                  <Text style={st.netLabel}>Gain net estimé après impôts</Text>
+                  <Text style={[st.netValue, masked && { color: C.textDim }]}>
+                    {m(`${formatEuro(portfolio.netEstime)} ${currencySymbol}`)}
+                  </Text>
+                </View>
+              )}
+            </>
+          ) : spotError ? (
+            <Text style={{ color: C.textMuted, fontSize: 12, marginTop: 4, textAlign: 'center' }}>Cours indisponibles</Text>
+          ) : (
+            <View>
+              <View style={{ width: 180, height: 28, borderRadius: 6, backgroundColor: C.border, marginBottom: 12 }} />
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                <View style={{ width: 80, height: 22, borderRadius: 5, backgroundColor: C.border }} />
+                <View style={{ width: 90, height: 22, borderRadius: 5, backgroundColor: C.border }} />
+              </View>
+              <View style={{ width: '100%', height: 38, borderRadius: 9, backgroundColor: C.border, marginBottom: 12 }} />
+            </View>
+          )}
+
+          <TouchableOpacity
+            style={[st.ctaFiscal, (!hasPositions || !pricesReady) && { opacity: 0.5 }]}
+            onPress={() => hasPositions && pricesReady && router.push('/fiscalite-globale')}
+            activeOpacity={0.7}
+            disabled={!hasPositions || !pricesReady}
+          >
+            <Text style={st.ctaFiscalText}>Voir combien je récupère →</Text>
+          </TouchableOpacity>
+          <Text style={st.trustLine}>Calcul instantané · Données privées</Text>
+        </View>
+
+        {/* ── 3. MA DÉTENTION ────────────────────────────── */}
+        <Text style={st.secTitle}>MA DÉTENTION</Text>
+        <View style={st.detCard}>
+          {Object.entries(portfolio.byMetal).map(([mk, data], i) => {
+            const cfg = METAL_CONFIG[mk as MetalType];
+            if (!cfg) return null;
+            const net = data.value - data.cost;
+            return (
+              <View key={mk}>
+                {i > 0 && <View style={st.divider} />}
+                <TouchableOpacity style={st.detRow} onPress={() => router.replace({ pathname: '/(tabs)/portefeuille' as any, params: { metal: cfg.symbol } })} activeOpacity={0.7}>
+                  <View style={st.detBadge}><Text style={st.detBadgeText}>{cfg.symbol}</Text></View>
+                  <View style={st.detCenter}>
+                    <Text style={st.detName}>{cfg.name}</Text>
+                    <Text style={st.detSub}>{m(`${formatG(data.totalG)} · ${data.count} pièce${data.count > 1 ? 's' : ''}`)}</Text>
+                  </View>
+                  <View style={st.detRight}>
+                    <Text style={st.detVal}>{m(`${formatEuro(data.value)} ${currencySymbol}`)}</Text>
+                    <Text style={[st.detNet, { color: masked ? C.textDim : (net >= 0 ? C.green : C.red) }]}>{m(`Gain : ${net >= 0 ? '+' : ''}${formatEuro(net)} ${currencySymbol}`)}</Text>
+                  </View>
+                  <Text style={st.chev}>›</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+          <View style={st.divider} />
+          <TouchableOpacity style={st.addRow} onPress={() => router.replace('/(tabs)/ajouter' as any)} activeOpacity={0.7}>
+            <Text style={st.addIcon}>+</Text>
+            <Text style={st.addText}>Ajouter une position</Text>
+          </TouchableOpacity>
+          {positions.length === 0 && (
+            <Text style={{ color: C.textMuted, fontSize: 11, textAlign: 'center', marginTop: 6, paddingHorizontal: 20, paddingBottom: 10 }}>
+              Ajoutez votre première position pour suivre votre gain net.
             </Text>
           )}
         </View>
 
-        <PriceChart
-          metal={selectedChartMetal}
-          currency={currency}
-          compact
-          height={160}
-          onFullScreen={() => router.push(`/graphique?metal=${selectedChartMetal}&currency=${currency}` as any)}
-        />
-
-        {/* ── 6. Alertes de prix ── */}
-        <TouchableOpacity
-          style={styles.alertCard}
-          onPress={() => router.navigate('/(tabs)/alertes')}
-          activeOpacity={0.7}
-          accessibilityLabel="Configurer les alertes de prix"
-        >
-          <View style={styles.alertCardInner}>
-            <Ionicons name="notifications-outline" size={18} color={OrTrackColors.gold} style={{ opacity: 0.75 }} />
-            <Text style={styles.alertCardText}>Configurer mes alertes de prix</Text>
+        {!masked && portfolio.totalValue > 0 && (
+          <View style={st.expoRow}>
+            <View style={st.expoDot} />
+            <Text style={st.expoText}>
+              Exposition : {Object.entries(portfolio.byMetal).map(([k, d]) => `${Math.round((d.value / portfolio.totalValue) * 100)} % ${METAL_CONFIG[k as MetalType]?.name ?? k}`).join(' · ')}
+            </Text>
           </View>
-          <Text style={styles.alertCardChevron}>›</Text>
+        )}
+
+        {/* ── 4. COURS MÉTAL (dynamique) ────────────────── */}
+        {chartReady ? (
+        <View>
+        <View style={st.secRow}>
+          <Text style={st.secTitle}>COURS {METAL_CONFIG[selectedMetal.key]?.name?.toUpperCase() ?? 'OR'} ({selectedMetal.symbol})</Text>
+          {(() => {
+            const ch = change24h[selectedMetal.spotKey];
+            if (ch != null && ch !== 0) {
+              return <Text style={{ color: ch > 0 ? C.green : C.red, fontSize: 11 }}>Dernière clôture : {ch > 0 ? '+' : ''}{formatPct(ch, 2)}</Text>;
+            }
+            return <Text style={{ color: C.textDim, fontSize: 11 }}>Inchangé</Text>;
+          })()}
+        </View>
+
+        <View style={st.chartCard}>
+          <View style={st.chartPerfRow}>
+            <Text style={st.chartPerfLabel}>Performance sur la période</Text>
+            {chartData && <Text style={[st.chartPerfVal, { color: chartData.perf >= 0 ? C.green : C.red }]}>{chartData.perf >= 0 ? '+' : ''}{formatPct(chartData.perf, 2)}</Text>}
+          </View>
+
+          <View style={st.pillRow}>
+            {(['1S', '1M', '3M', '1A'] as HistoryPeriod[]).map(p => (
+              <TouchableOpacity key={p} style={[st.pill, selectedPeriod === p && st.pillAct]} onPress={() => setSelectedPeriod(p)}>
+                <Text style={[st.pillTxt, selectedPeriod === p && st.pillTxtAct]}>{p}</Text>
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity style={st.lockPill} onPress={() => Alert.alert('Premium', 'Débloquez l\'historique 5 ans avec OrTrack Premium')} activeOpacity={0.7}>
+              <Ionicons name="lock-closed-outline" size={10} color={C.textDim} />
+              <Text style={st.lockTxt}>5A+</Text>
+            </TouchableOpacity>
+          </View>
+
+          {chartData && (
+            <TouchableOpacity activeOpacity={0.8} onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: 'EUR' } })}>
+              <Svg width={chartW} height={110} style={{ marginTop: 8 }}>
+                <Defs>
+                  <LinearGradient id="chG" x1="0" y1="0" x2="0" y2="1">
+                    <Stop offset="0" stopColor={C.gold} stopOpacity="0.10" />
+                    <Stop offset="1" stopColor={C.gold} stopOpacity="0" />
+                  </LinearGradient>
+                </Defs>
+                <Path d={buildFillPath(chartData.pts, chartW, 110)} fill="url(#chG)" />
+                <Path d={buildSvgPath(chartData.pts, chartW, 110)} stroke={C.gold} strokeWidth={1.5} fill="none" opacity={0.85} />
+              </Svg>
+            </TouchableOpacity>
+          )}
+
+          {chartHistory.length > 2 && (
+            <View style={st.chartDates}>
+              <Text style={st.chartDate}>{formatChartDate(chartHistory[0]?.date ?? '', selectedPeriod)}</Text>
+              <Text style={st.chartDate}>{formatChartDate(chartHistory[Math.floor(chartHistory.length / 2)]?.date ?? '', selectedPeriod)}</Text>
+              <Text style={st.chartDate}>{formatChartDate(chartHistory[chartHistory.length - 1]?.date ?? '', selectedPeriod)}</Text>
+            </View>
+          )}
+
+          {chartData && (
+            <View style={st.mmRow}>
+              <Text style={st.mmText}>Min {formatEuro(chartData.minVal)} {currencySymbol}</Text>
+              <Text style={st.mmText}>Max {formatEuro(chartData.maxVal)} {currencySymbol}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: 'EUR' } })} activeOpacity={0.7}>
+            <Text style={{ color: C.gold, fontSize: 12, fontWeight: '600', textAlign: 'right', marginTop: 6 }}>Voir le détail →</Text>
+          </TouchableOpacity>
+        </View>
+        </View>
+        ) : (
+          <View style={{ backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginTop: 10 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ width: 160, height: 12, borderRadius: 4, backgroundColor: C.border }} />
+              <View style={{ width: 60, height: 12, borderRadius: 4, backgroundColor: C.border }} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14 }}>
+              {[0, 1, 2, 3].map(i => (
+                <View key={i} style={{ width: 42, height: 24, borderRadius: 6, backgroundColor: C.border }} />
+              ))}
+            </View>
+            <View style={{ height: 110, borderRadius: 8, backgroundColor: C.border, opacity: 0.3, marginBottom: 10 }} />
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+              <View style={{ width: 80, height: 10, borderRadius: 4, backgroundColor: C.border }} />
+              <View style={{ width: 80, height: 10, borderRadius: 4, backgroundColor: C.border }} />
+            </View>
+          </View>
+        )}
+
+        {/* ── 5. ALERTES ─────────────────────────────────── */}
+        <TouchableOpacity style={st.alertCard} onPress={() => router.replace({ pathname: '/(tabs)/alertes' as any, params: { metal: selectedMetal.symbol } })} activeOpacity={0.7}>
+          <Ionicons name="notifications-outline" size={20} color={C.gold} />
+          <Text style={st.alertText}>Créer une alerte sur {METAL_ARTICLE[selectedMetal.symbol] || 'ce métal'}</Text>
+          <Text style={st.chev}>›</Text>
         </TouchableOpacity>
 
+        {/* ── 6. MARCHÉS ─────────────────────────────────── */}
+        <Text style={st.secTitle}>MARCHÉS</Text>
+        <ScrollView
+          ref={marketScrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          snapToInterval={SNAP_INTERVAL}
+          decelerationRate="fast"
+          onScroll={handleMarketScroll}
+          onMomentumScrollEnd={handleMarketScrollEnd}
+          onScrollEndDrag={handleMarketScrollEnd}
+          scrollEventThrottle={16}
+          contentContainerStyle={{ paddingRight: CARD_WIDTH }}
+        >
+          {MARKET_METALS.map(mm => {
+            const cfg = METAL_CONFIG[mm.key];
+            const rawSpot = prices[mm.spotKey];
+            // Cuivre : source en €/oz troy, conversion × 32.1507 vers €/kg
+            const spot = rawSpot !== null && mm.spotKey === 'copper' ? rawSpot * 32.1507 : rawSpot;
+            const ch = change24h[mm.spotKey];
+            const isActive = selectedMetal.spotKey === mm.spotKey;
+            return (
+              <TouchableOpacity
+                key={mm.key}
+                style={[st.mktCard, isActive && { borderColor: C.gold, backgroundColor: 'rgba(201,168,76,0.04)' }]}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setSelectedMetal({ key: mm.key, spotKey: mm.spotKey, symbol: cfg.symbol });
+                  const idx = MARKET_METALS.findIndex(m => m.key === mm.key);
+                  if (idx === -1) return;
+                  setActiveMarketIdx(idx);
+                  isProgrammaticScroll.current = true;
+                  marketScrollRef.current?.scrollTo({ x: idx * SNAP_INTERVAL, animated: true });
+                }}
+              >
+                <Text style={st.mktChev}>›</Text>
+                <Text style={st.mktName}>{cfg.name}</Text>
+                <Text style={st.mktPrice}>{spot !== null ? formatEuro(spot) : '—'}</Text>
+                <Text style={st.mktUnit}>{mm.unit}</Text>
+                {ch != null && ch !== 0 ? (
+                  <Text style={{ color: ch > 0 ? C.green : C.red, fontSize: 11, marginTop: 4 }}>
+                    {ch > 0 ? '▲' : '▼'} {ch > 0 ? '+' : ''}{formatPct(ch, 2)}
+                  </Text>
+                ) : (
+                  <Text style={{ color: C.textMuted, fontSize: 11, marginTop: 4 }}>Inchangé</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <View style={st.dotRow}>
+          {MARKET_METALS.map((mm, i) => (
+            <TouchableOpacity key={i} onPress={() => {
+              isProgrammaticScroll.current = true;
+              marketScrollRef.current?.scrollTo({ x: i * SNAP_INTERVAL, animated: true });
+              setActiveMarketIdx(i);
+              const cfg = METAL_CONFIG[mm.key];
+              setSelectedMetal({ key: mm.key, spotKey: mm.spotKey, symbol: cfg.symbol });
+            }} style={[st.dot, i === activeMarketIdx && st.dotAct]} />
+          ))}
+        </View>
+
+        <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -574,410 +578,84 @@ export default function TableauDeBordScreen() {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: OrTrackColors.background,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 90,
-  },
+const st = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.background },
+  scroll: { padding: 20, paddingBottom: 90 },
 
-  // 1. Header
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  headerDate: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: OrTrackColors.subtext,
-  },
-  headerTime: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-  },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  headerDate: { fontSize: 13, fontWeight: '500', color: C.textDim },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  headerDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#14B8A6', opacity: 0.6 },
+  headerTime: { fontSize: 11, color: C.textDim },
 
-  // 2. Hero
-  heroCard: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.2)',
-  },
-  heroLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  heroLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  heroValue: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: OrTrackColors.white,
-  },
-  blurRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    height: 40,
-  },
-  blurBlock: {
-    height: 28,
-    borderRadius: 8,
-    backgroundColor: OrTrackColors.subtext,
-    opacity: 0.25,
-  },
-  heroHint: {
-    fontSize: 12,
-    color: OrTrackColors.tabIconDefault,
-    marginTop: 6,
-  },
-  heroSpinner: {
-    alignSelf: 'flex-start',
-    marginVertical: 8,
-  },
-  gainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  gainValue: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  gainPct: {
-    fontSize: 12,
-    fontWeight: '400',
-  },
-  changePositive: { color: '#4CAF50' },
-  changeNegative: { color: '#E07070' },
+  hero: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.border, overflow: 'hidden', padding: 16, marginBottom: 16, position: 'relative' },
+  heroLabelRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  heroLabel: { fontSize: 11, fontWeight: '600', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1 },
+  heroValue: { fontSize: 30, fontWeight: '700', color: C.white },
 
-  // Net global dans la hero card
-  netGlobalRow: {
-    marginTop: 14,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-  },
-  netGlobalLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  netGlobalValue: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#4CAF50',
-  },
-  netGlobalSub: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
-  reassuranceRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    gap: 6,
-  },
-  reassuranceItem: {
-    fontSize: 10,
-    color: OrTrackColors.subtext,
-  },
-  reassuranceDot: {
-    fontSize: 10,
-    color: OrTrackColors.subtext,
-  },
-  netGlobalNoTax: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 8,
-  },
+  variationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
+  varBadge: { borderRadius: 5, paddingVertical: 2, paddingHorizontal: 7 },
+  varBadgeText: { fontSize: 12.5, fontWeight: '700' },
+  varAbs: { color: C.textMuted, fontSize: 11.5, marginLeft: 8 },
+  varPeriod: { color: C.textDim, fontSize: 11, marginLeft: 'auto' },
 
-  // CTA Simuler
-  simulerCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: OrTrackColors.gold,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    marginTop: 8,
-    marginBottom: 16,
-    gap: 8,
-  },
-  simulerCtaText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-  },
+  netBlock: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, backgroundColor: 'rgba(201,168,76,0.03)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.10)', borderRadius: 9, paddingVertical: 8, paddingHorizontal: 12 },
+  netMasked: { backgroundColor: 'rgba(245,240,232,0.02)', borderColor: 'rgba(245,240,232,0.06)' },
+  netLabel: { color: C.textMuted, fontSize: 11 },
+  netValue: { color: C.gold, fontSize: 17, fontWeight: '700' },
 
-  // Net dans détention
-  detentionValues: {
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  detentionNet: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 0,
-  },
+  ctaFiscal: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 12, paddingVertical: 12, marginTop: 14 },
+  ctaFiscalText: { color: C.gold, fontSize: 13.5, fontWeight: '700', textAlign: 'center' },
+  trustLine: { color: C.textDim, fontSize: 11, textAlign: 'center', marginTop: 5 },
 
-  // Section title (shared)
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
-    marginTop: 4,
-  },
+  secTitle: { fontSize: 12, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10, marginTop: 6 },
+  secRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 6 },
 
-  // 3. MARCHÉS chips
-  marketChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: OrTrackColors.card,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  marketChipName: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: OrTrackColors.white,
-  },
-  marketChipPrice: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-    marginTop: 2,
-  },
-  marketChipUnit: {
-    fontSize: 10,
-    color: OrTrackColors.subtext,
-    marginTop: 1,
-  },
-  marketChipVariation: {
-    fontSize: 10,
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  marketPlaceholder: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 12,
-    backgroundColor: OrTrackColors.card,
-    opacity: 0.5,
-    minWidth: 80,
-    height: 80,
-  },
+  detCard: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, overflow: 'hidden', marginBottom: 4 },
+  detRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 14 },
+  detBadge: { width: 38, height: 38, borderRadius: 19, borderWidth: 1.5, borderColor: C.gold, justifyContent: 'center', alignItems: 'center' },
+  detBadgeText: { color: C.gold, fontSize: 10, fontWeight: '700' },
+  detCenter: { flex: 1, marginLeft: 12 },
+  detName: { color: C.white, fontSize: 14, fontWeight: '600' },
+  detSub: { color: C.textMuted, fontSize: 11, marginTop: 1 },
+  detRight: { alignItems: 'flex-end', marginRight: 8 },
+  detVal: { color: C.white, fontSize: 14, fontWeight: '600' },
+  detNet: { fontSize: 11.5, fontWeight: '600', marginTop: 1 },
+  chev: { color: C.textDim, opacity: 0.65, fontSize: 18 },
+  divider: { borderBottomWidth: 1, borderBottomColor: C.divider },
+  addRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, paddingVertical: 12 },
+  addIcon: { color: C.gold, fontSize: 16 },
+  addText: { color: C.gold, fontSize: 12, fontWeight: '600' },
 
-  // 4. MA DÉTENTION
-  detentionTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  detentionViewAll: {
-    fontSize: 12,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
-  },
-  detentionCard: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  detentionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-  },
-  detentionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  detentionNameCol: {
-    marginLeft: 10,
-  },
-  detentionLabel: {
-    fontSize: 14,
-    color: OrTrackColors.white,
-    fontWeight: '500',
-  },
-  detentionSub: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
-  detentionRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  detentionValue: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  detentionChevron: {
-    fontSize: 20,
-    color: OrTrackColors.subtext,
-    fontWeight: '300',
-    lineHeight: 22,
-  },
-  detentionCta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingTop: 12,
-    gap: 6,
-  },
-  detentionCtaIcon: {
-    fontSize: 18,
-    fontWeight: '300',
-    color: OrTrackColors.gold,
-  },
-  detentionCtaText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.gold,
-  },
-  detentionEmptyText: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  miniBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    backgroundColor: OrTrackColors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  miniBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  separator: {
-    height: 1,
-    backgroundColor: OrTrackColors.border,
-  },
+  expoRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, marginBottom: 8 },
+  expoDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.gold, opacity: 0.45 },
+  expoText: { color: C.textDim, fontSize: 11, flex: 1 },
 
-  // 5. COURS
-  courseTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    marginTop: 4,
-  },
-  courseVariation: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  chartCard: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 16 },
+  chartPerfRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  chartPerfLabel: { color: C.textDim, fontSize: 11 },
+  chartPerfVal: { fontSize: 13, fontWeight: '700' },
+  pillRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  pill: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6, borderWidth: 1, borderColor: 'transparent' },
+  pillAct: { backgroundColor: C.goldDim, borderColor: 'rgba(201,168,76,0.3)' },
+  pillTxt: { fontSize: 11, fontWeight: '600', color: C.textDim },
+  pillTxtAct: { color: C.gold },
+  lockPill: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 'auto', opacity: 0.6 },
+  lockTxt: { color: C.textDim, fontSize: 10 },
+  chartDates: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
+  chartDate: { color: C.textDim, fontSize: 10 },
+  mmRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: 'rgba(201,168,76,0.03)', borderRadius: 8 },
+  mmText: { color: C.textDim, fontSize: 10, fontWeight: '600' },
 
-  // 6. Alertes
-  alertCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-    padding: 14,
-    marginTop: 12,
-  },
-  alertCardInner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  alertCardText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: OrTrackColors.white,
-    opacity: 0.75,
-  },
-  alertCardChevron: {
-    fontSize: 20,
-    color: OrTrackColors.subtext,
-    fontWeight: '300',
-    lineHeight: 22,
-  },
+  alertCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 16 },
+  alertText: { color: C.white, fontSize: 13, fontWeight: '600', flex: 1, marginLeft: 10 },
 
-  // Error banner
-  errorBanner: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(224,112,112,0.3)',
-    padding: 14,
-    marginBottom: 16,
-  },
-  errorRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  errorIcon: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#E07070',
-    lineHeight: 20,
-  },
-  errorText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#E07070',
-    lineHeight: 20,
-  },
-  retryButton: {
-    alignSelf: 'flex-end',
-    marginTop: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#E07070',
-  },
-  retryText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#E07070',
-  },
+  mktCard: { width: CARD_WIDTH, marginRight: 10, backgroundColor: C.card, borderRadius: 13, borderWidth: 1, borderColor: C.border, padding: 12 },
+  mktName: { color: C.textDim, fontSize: 11, fontWeight: '600' },
+  mktPrice: { color: C.white, fontSize: 15, fontWeight: '700', marginTop: 2 },
+  mktUnit: { color: C.textDim, fontSize: 11 },
+  mktChev: { position: 'absolute', top: 10, right: 10, color: C.textDim, fontSize: 12 },
+  dotRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 8, gap: 4, marginBottom: 16 },
+  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(201,168,76,0.18)' },
+  dotAct: { width: 14, height: 5, borderRadius: 3, backgroundColor: C.gold },
 });
