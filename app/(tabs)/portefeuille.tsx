@@ -24,11 +24,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
-import { TAX } from '@/constants/tax';
-import { formatEuro, formatQty, formatPctSigned, truncName } from '@/utils/format';
+import { truncName } from '@/utils/format';
 import { computePositionViewModels, computePortfolioSummary, getBestPerformerName } from '@/utils/portfolio';
 import { OrTrackColors } from '@/constants/theme';
 import PortfolioHero from '@/components/portfolio/PortfolioHero';
+import PositionCard from '@/components/portfolio/PositionCard';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
@@ -244,228 +244,47 @@ export default function PortefeuilleScreen() {
         </View>
 
         {hasFilteredPositions ? (
-          viewModels.map(vm => {
-            const { position: pos, metrics } = vm;
-            const isOpen = openId === pos.id;
-            const isL2 = level2Id === pos.id;
-            const cfg = METAL_CONFIG[pos.metal];
-            const { currentValue, totalCost, gainLoss, gainPct, fiscal, regime: sellerNets, sellerNetForfaitaire: posSellerNet } = metrics;
-
-            return (
-              <View key={pos.id} style={[st.card, isOpen && st.cardOpen]}>
-                {/* ── FERMÉ ── */}
-                <TouchableOpacity
-                  style={st.cardRow}
-                  onPress={() => toggleCard(pos.id)}
-                  activeOpacity={0.7}
-                  disabled={masked}
-                >
-                  <View style={st.badgeCircle}>
-                    <Text style={st.badgeText}>{cfg.symbol}</Text>
-                  </View>
-                  <View style={{ flex: 1, marginLeft: 12 }}>
-                    <Text style={st.cardName} numberOfLines={1}>{pos.product}</Text>
-                    {masked ? null : gainLoss !== null ? (
-                      <Text style={[st.cardGain, { color: gainLoss >= 0 ? C.green : C.red }]}>
-                        {'Gain : '}{gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol} ({formatPctSigned(gainPct ?? 0)})
-                      </Text>
-                    ) : (
-                      <Text style={st.cardGainPlaceholder}>{'\u2014'}</Text>
-                    )}
-                    {!masked && (() => {
-                      const qtyLabel = `${formatQty(pos.quantity)} pièce${pos.quantity > 1 ? 's' : ''}`;
-                      if (!fiscal) return <Text style={st.cardMicro}>{qtyLabel}</Text>;
-                      if (fiscal.isExonere) return <Text style={st.cardMicro}>{qtyLabel} {'\u00B7'} Exonéré</Text>;
-                      const yLeft = fiscal.exemptionYear - new Date().getFullYear();
-                      if (yLeft <= 3) return <Text style={[st.cardMicro, { color: C.textDim }]}>{qtyLabel} {'\u00B7'} Bientôt exonéré ({fiscal.exemptionYear})</Text>;
-                      return <Text style={st.cardMicro}>{qtyLabel} {'\u00B7'} Réduction fiscale : {fiscal.abattement} %</Text>;
-                    })()}
-                  </View>
-                  {!masked && (
-                    <>
-                      <Text style={st.cardValue}>
-                        {currentValue !== null ? `${formatEuro(currentValue)} ${currencySymbol}` : '\u2014'}
-                      </Text>
-                      <Text style={[st.chev, { transform: [{ rotate: isOpen ? '180deg' : '0deg' }] }]}>{'\u203A'}</Text>
-                    </>
-                  )}
-                  {masked && (
-                    <Text style={{ color: C.textDim, fontSize: 13 }}>{'\u2022\u2022\u2022\u2022\u2022\u2022'}</Text>
-                  )}
-                </TouchableOpacity>
-
-                {/* ── L1 — FISCAL ── */}
-                {isOpen && !masked && (() => {
-                  return (
-                  <View style={st.l1}>
-                    <Text style={st.l1Title}>{'NET VENDEUR ESTIMÉ'}</Text>
-                    <View style={st.l1Row}>
-                      <Text style={st.l1Regime}>{'Régime forfaitaire ('}{TAX.labels.forfaitaire}{')'}</Text>
-                      {posSellerNet !== null ? (
-                        <Text style={st.l1NetVendeur}>
-                          {'~'}{formatEuro(posSellerNet)} {currencySymbol}
-                        </Text>
-                      ) : (
-                        <Text style={st.l1NetVendeur}>{'\u2014'}</Text>
-                      )}
-                    </View>
-                    <View style={st.l1Trust}>
-                      <Text style={st.l1TrustText}>
-                        Régime : Forfaitaire {TAX.labels.forfaitaire} {'\u00B7'} Cours du jour
-                        {timeStr ? ` \u00B7 Mis à jour à ${timeStr}` : ''}
-                      </Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={st.ctaSimuler}
-                      onPress={() => router.push({ pathname: '/fiscalite', params: { positionId: pos.id } } as never)}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={st.ctaSimulerText}>{'Simuler ma vente →'}</Text>
-                    </TouchableOpacity>
-
-                    {!isPremium && (
-                      <TouchableOpacity style={st.premiumTeaser} onPress={showPaywall} activeOpacity={0.7}>
-                        <Ionicons name="lock-closed-outline" size={12} color={C.textDim} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={st.premiumTeaserTitle}>
-                            {(() => {
-                              if (!sellerNets) return 'Comparer les 2 régimes fiscaux';
-                              if (sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50)
-                                return `Un autre régime pourrait vous faire économiser ~${formatEuro(sellerNets.delta)}`;
-                              return 'Comparer les 2 régimes fiscaux';
-                            })()}
-                          </Text>
-                          <Text style={st.premiumTeaserSub}>
-                            {sellerNets && sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50
-                              ? 'Comparez en 1 clic'
-                              : 'Quel régime vous laisse le plus de net ?'}
-                          </Text>
-                        </View>
-                        <View style={st.premiumBadge}>
-                          <Text style={st.premiumBadgeText}>PREMIUM</Text>
-                        </View>
-                      </TouchableOpacity>
-                    )}
-
-                    {!isL2 && (
-                      <TouchableOpacity style={st.expandBtn} onPress={() => setLevel2Id(pos.id)}>
-                        <Text style={st.expandBtnText}>{'Voir achat et fiscalité '}{'\u203A'}</Text>
-                      </TouchableOpacity>
-                    )}
-
-                    {/* ── L2 — DÉTAILS ── */}
-                    {isL2 && (
-                      <View style={st.l2}>
-                        {fiscal && (
-                          <>
-                            <Text style={st.l2SectionTitle}>EXONÉRATION FISCALE</Text>
-                            <View style={st.l2FiscalRow}>
-                              <Text style={st.l2FiscalText}>Détention : {fiscal.detentionLabel}</Text>
-                              <Text style={st.l2FiscalText}>Abattement : {fiscal.abattement} %</Text>
-                            </View>
-                            <View style={st.progressBg}>
-                              <View
-                                style={[
-                                  st.progressFill,
-                                  { width: `${Math.max(0, Math.min(fiscal.abattement, 100))}%` },
-                                ]}
-                              />
-                            </View>
-                            {fiscal.isExonere ? (
-                              <Text style={{ color: C.white, fontSize: 12, fontWeight: '600' }}>Exonéré {'\u2713'}</Text>
-                            ) : (
-                              <Text style={{ color: C.white, fontSize: 12, fontWeight: '600' }}>
-                                Totalement exonéré en {fiscal.exemptionLabel}
-                              </Text>
-                            )}
-                          </>
-                        )}
-
-                        <View style={st.l2Grid}>
-                          <View style={st.l2GridItem}>
-                            <Text style={st.l2GridLabel}>Quantité</Text>
-                            <Text style={st.l2GridValue}>
-                              {formatQty(pos.quantity)} pièce{pos.quantity > 1 ? 's' : ''}
-                            </Text>
-                          </View>
-                          <View style={st.l2GridItem}>
-                            <Text style={st.l2GridLabel}>Acheté le</Text>
-                            <Text style={st.l2GridValue}>{pos.purchaseDate}</Text>
-                          </View>
-                          <View style={st.l2GridItem}>
-                            <Text style={st.l2GridLabel}>Prix d{'\u2019'}achat</Text>
-                            <Text style={st.l2GridValue}>{formatEuro(pos.purchasePrice)} {'€'}</Text>
-                          </View>
-                        </View>
-
-                        <View style={st.l2Compare}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={st.l2CompareLabel}>Investi</Text>
-                            <Text style={st.l2CompareValue}>{formatEuro(totalCost)} {currencySymbol}</Text>
-                          </View>
-                          <View style={st.l2CompareDivider} />
-                          <View style={{ flex: 1, alignItems: 'flex-end' }}>
-                            <Text style={st.l2CompareLabel}>Vaut aujourd{'\u2019'}hui</Text>
-                            <Text style={st.l2CompareValue}>
-                              {currentValue !== null ? `${formatEuro(currentValue)} ${currencySymbol}` : '\u2014'}
-                            </Text>
-                          </View>
-                        </View>
-
-                        {pos.note != null && pos.note.trim().length > 0 && pos.note.trim() !== 'Note' && (
-                          <Text style={st.l2Note}>{pos.note}</Text>
-                        )}
-
-                        <View style={st.l2Actions}>
-                          <TouchableOpacity
-                            onPress={() =>
-                              router.replace({ pathname: '/(tabs)/ajouter' as never, params: { editId: pos.id } })
-                            }
-                          >
-                            <Text style={st.l2Edit}>Modifier</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => {
-                              Alert.alert('Position', undefined, [
-                                {
-                                  text: 'Supprimer',
-                                  style: 'destructive',
-                                  onPress: () => {
-                                    Alert.alert('Supprimer cette position ?', 'Cette action est irréversible.', [
-                                      { text: 'Annuler', style: 'cancel' },
-                                      {
-                                        text: 'Supprimer',
-                                        style: 'destructive',
-                                        onPress: () => {
-                                          deletePosition(pos.id);
-                                          setOpenId(null);
-                                          setLevel2Id(null);
-                                        },
-                                      },
-                                    ]);
-                                  },
-                                },
-                                { text: 'Annuler', style: 'cancel' },
-                              ]);
-                            }}
-                          >
-                            <Ionicons name="ellipsis-vertical" size={16} color={C.textDim} />
-                          </TouchableOpacity>
-                        </View>
-
-                        <TouchableOpacity style={st.collapseBtn} onPress={() => setLevel2Id(null)}>
-                          <Text style={st.collapseBtnText}>Réduire</Text>
-                          <Text style={st.collapseChev}>{'\u203A'}</Text>
-                        </TouchableOpacity>
-                      </View>
-                    )}
-                  </View>
-                  );
-                })()}
-              </View>
-            );
-          })
+          viewModels.map(vm => (
+            <PositionCard
+              key={vm.position.id}
+              viewModel={vm}
+              isOpen={openId === vm.position.id}
+              isLevel2={level2Id === vm.position.id}
+              masked={masked}
+              currencySymbol={currencySymbol}
+              isPremium={isPremium}
+              timeStr={timeStr}
+              onToggle={() => toggleCard(vm.position.id)}
+              onExpandL2={() => setLevel2Id(vm.position.id)}
+              onCollapseL2={() => setLevel2Id(null)}
+              onEdit={() => router.replace({ pathname: '/(tabs)/ajouter' as never, params: { editId: vm.position.id } })}
+              onDelete={() => {
+                Alert.alert('Position', undefined, [
+                  {
+                    text: 'Supprimer',
+                    style: 'destructive',
+                    onPress: () => {
+                      Alert.alert('Supprimer cette position ?', 'Cette action est irréversible.', [
+                        { text: 'Annuler', style: 'cancel' },
+                        {
+                          text: 'Supprimer',
+                          style: 'destructive',
+                          onPress: () => {
+                            deletePosition(vm.position.id);
+                            setOpenId(null);
+                            setLevel2Id(null);
+                          },
+                        },
+                      ]);
+                    },
+                  },
+                  { text: 'Annuler', style: 'cancel' },
+                ]);
+              }}
+              onSimulateSale={() => router.push({ pathname: '/fiscalite', params: { positionId: vm.position.id } } as never)}
+              onShowPaywall={showPaywall}
+            />
+          ))
         ) : hasPositions && filterMetal ? (
           <View style={st.emptyState}>
             <Ionicons name="briefcase-outline" size={40} color={C.textMuted} style={{ marginBottom: 12 }} />
@@ -545,59 +364,6 @@ const st = StyleSheet.create({
   posHeaderTitle: { fontSize: 12, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1 },
   quota: { fontSize: 10, color: C.textDim },
   quotaFull: { fontSize: 10, color: C.gold, fontWeight: '600' },
-
-  // Card
-  card: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: C.border, overflow: 'hidden', marginBottom: 10 },
-  cardOpen: { backgroundColor: C.cardOpen, borderColor: C.openBorder },
-  cardRow: { flexDirection: 'row', alignItems: 'center', padding: 14, paddingHorizontal: 16, gap: 0 },
-  badgeCircle: { width: 36, height: 36, borderRadius: 18, borderWidth: 1.5, borderColor: C.gold, justifyContent: 'center', alignItems: 'center' },
-  badgeText: { color: C.gold, fontSize: 9, fontWeight: '700', textAlign: 'center' },
-  cardName: { color: C.white, fontSize: 14, fontWeight: '600' },
-  cardGain: { fontSize: 11, fontWeight: '600', marginTop: 1 },
-  cardGainPlaceholder: { color: C.textMuted, fontSize: 11, marginTop: 1 },
-  cardMicro: { color: C.textMuted, fontSize: 10, marginTop: 2 },
-  cardValue: { color: C.white, fontSize: 14, fontWeight: '600', flexShrink: 0, marginRight: 8, textAlign: 'right' },
-  chev: { color: C.textDim, opacity: 0.75, fontSize: 18 },
-
-  // L1 — Fiscal
-  l1: { borderTopWidth: 1, borderTopColor: C.divider, paddingHorizontal: 16, paddingBottom: 14 },
-  l1Title: { color: C.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 12, marginBottom: 8, textTransform: 'uppercase' },
-  l1Row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  l1Regime: { color: C.textDim, fontSize: 12 },
-  l1NetVendeur: { color: C.gold, fontSize: 16, fontWeight: '700' },
-  l1Trust: { backgroundColor: 'rgba(201,168,76,0.03)', borderRadius: 6, padding: 8, marginBottom: 12 },
-  l1TrustText: { color: C.textDim, fontSize: 10 },
-  ctaSimuler: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 10, paddingVertical: 12, marginBottom: 12 },
-  ctaSimulerText: { color: C.gold, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  premiumTeaser: { backgroundColor: 'rgba(201,168,76,0.03)', borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  premiumTeaserTitle: { color: C.textDim, fontSize: 11, fontWeight: '600' },
-  premiumTeaserSub: { color: C.textDim, fontSize: 9.5, marginTop: 1 },
-  premiumBadge: { backgroundColor: C.goldDim, borderRadius: 3, paddingVertical: 2, paddingHorizontal: 6 },
-  premiumBadgeText: { color: C.gold, fontSize: 8, fontWeight: '700' },
-  expandBtn: { borderTopWidth: 1, borderTopColor: C.divider, paddingVertical: 10, alignItems: 'center' },
-  expandBtnText: { color: C.textDim, fontSize: 11 },
-
-  // L2 — Détails
-  l2: { borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 12, paddingHorizontal: 16 },
-  l2SectionTitle: { color: C.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 8, textTransform: 'uppercase' },
-  l2FiscalRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  l2FiscalText: { color: C.textMuted, fontSize: 11 },
-  progressBg: { height: 6, borderRadius: 3, backgroundColor: C.border, opacity: 0.8, overflow: 'hidden', marginBottom: 8 },
-  progressFill: { height: '100%', borderRadius: 3, backgroundColor: C.gold },
-  l2Grid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14 },
-  l2GridItem: { width: '48%', marginBottom: 8 },
-  l2GridLabel: { color: C.textDim, fontSize: 10, marginBottom: 2 },
-  l2GridValue: { color: C.white, fontSize: 12, fontWeight: '600' },
-  l2Compare: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 12 },
-  l2CompareLabel: { color: C.textDim, fontSize: 10, marginBottom: 4 },
-  l2CompareValue: { color: C.white, fontSize: 15, fontWeight: '700' },
-  l2CompareDivider: { width: 1, backgroundColor: C.border, marginHorizontal: 12, alignSelf: 'stretch' },
-  l2Note: { color: C.gold, fontSize: 11, fontStyle: 'italic', marginBottom: 8 },
-  l2Actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 12, marginBottom: 8 },
-  l2Edit: { color: C.gold, fontSize: 12, fontWeight: '600' },
-  collapseBtn: { borderTopWidth: 1, borderTopColor: C.divider, paddingVertical: 8, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 4 },
-  collapseBtnText: { color: C.textDim, fontSize: 11 },
-  collapseChev: { color: C.textDim, fontSize: 12, transform: [{ rotate: '-90deg' }] },
 
   // Empty state
   emptyState: { alignItems: 'center', paddingVertical: 40 },
