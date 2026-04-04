@@ -23,10 +23,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { formatEuro, formatQty, formatPctSigned, truncName } from '@/utils/format';
-import { computeFiscalCountdown, computeRegimeComparison, computeSellerNetForfaitaire } from '@/utils/fiscal';
+import { computePositionViewModels, computePortfolioSummary, getBestPerformerName } from '@/utils/portfolio';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -134,27 +134,14 @@ export default function PortefeuilleScreen() {
     });
   }, [spotLoading, heldMetals, prices]);
 
-  // ── Portfolio calculations (from filtered) ───────────────────────────
+  // ── View models + summary ────────────────────────────────────────────
 
-  const summary = useMemo(() => {
-    let totalValue = 0;
-    let totalCost = 0;
+  const viewModels = useMemo(
+    () => computePositionViewModels(filteredPositions, (metal) => getSpot(metal, prices)),
+    [filteredPositions, prices],
+  );
 
-    for (const p of filteredPositions) {
-      const spot = getSpot(p.metal, prices);
-      const cost = p.quantity * p.purchasePrice;
-      totalCost += cost;
-      if (spot !== null) {
-        totalValue += p.quantity * (p.weightG / OZ_TO_G) * spot;
-      }
-    }
-
-    const gain = totalCost > 0 ? totalValue - totalCost : 0;
-    const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
-    const sellerNet = computeSellerNetForfaitaire(totalValue);
-
-    return { totalValue, totalCost, gain, gainPct, sellerNet };
-  }, [filteredPositions, prices]);
+  const summary = useMemo(() => computePortfolioSummary(viewModels), [viewModels]);
 
   const hasPositions = positions.length > 0;
   const hasFilteredPositions = filteredPositions.length > 0;
@@ -178,21 +165,7 @@ export default function PortefeuilleScreen() {
 
   const m = (text: string) => (masked ? '\u2022\u2022\u2022\u2022\u2022\u2022' : text);
 
-  const bestPerformerName = useMemo(() => {
-    const source = filterMetal ? filteredPositions : positions;
-    if (source.length < 2) return null;
-    let bestPct = -Infinity;
-    let bestName = '';
-    for (const p of source) {
-      const spot = getSpot(p.metal, prices);
-      if (spot === null) continue;
-      const cost = p.quantity * p.purchasePrice;
-      const val = p.quantity * (p.weightG / OZ_TO_G) * spot;
-      const pct = cost > 0 ? ((val - cost) / cost) * 100 : 0;
-      if (pct > bestPct) { bestPct = pct; bestName = p.product; }
-    }
-    return bestName || null;
-  }, [positions, filteredPositions, filterMetal, prices]);
+  const bestPerformerName = useMemo(() => getBestPerformerName(viewModels), [viewModels]);
 
   // ── Loading guard ─────────────────────────────────────────────────────
 
@@ -310,20 +283,12 @@ export default function PortefeuilleScreen() {
         </View>
 
         {hasFilteredPositions ? (
-          filteredPositions.map(pos => {
+          viewModels.map(vm => {
+            const { position: pos, metrics } = vm;
             const isOpen = openId === pos.id;
             const isL2 = level2Id === pos.id;
             const cfg = METAL_CONFIG[pos.metal];
-            const spotEur = getSpot(pos.metal, prices);
-            const totalCost = pos.quantity * pos.purchasePrice;
-            const currentValue = spotEur !== null ? pos.quantity * (pos.weightG / OZ_TO_G) * spotEur : null;
-            const gainLoss = currentValue !== null ? currentValue - totalCost : null;
-            const gainPct = gainLoss !== null && totalCost > 0 ? (gainLoss / totalCost) * 100 : null;
-            const fiscal = computeFiscalCountdown(pos.purchaseDate);
-            const sellerNets =
-              currentValue !== null && gainLoss !== null && fiscal
-                ? computeRegimeComparison(currentValue, totalCost, fiscal.years)
-                : null;
+            const { currentValue, totalCost, gainLoss, gainPct, fiscal, regime: sellerNets, sellerNetForfaitaire: posSellerNet } = metrics;
 
             return (
               <View key={pos.id} style={[st.card, isOpen && st.cardOpen]}>
@@ -370,9 +335,6 @@ export default function PortefeuilleScreen() {
 
                 {/* ── L1 — FISCAL ── */}
                 {isOpen && !masked && (() => {
-                  const posSellerNet = currentValue !== null
-                    ? computeSellerNetForfaitaire(currentValue)
-                    : null;
                   return (
                   <View style={st.l1}>
                     <Text style={st.l1Title}>{'NET VENDEUR ESTIMÉ'}</Text>
