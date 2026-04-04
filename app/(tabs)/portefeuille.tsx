@@ -2,7 +2,7 @@
 // Hook positions : usePositions (hooks/use-positions.ts) → positions, loading, reloadPositions, deletePosition
 // Hook spot : useSpotPrices (hooks/use-spot-prices.ts) → prices, loading, lastUpdated, currencySymbol, error
 // Fonction suppression position : deletePosition(id: string) → from usePositions
-// Fonction calcul fiscal : computeSellerNets (locale), computeFiscalCountdown (locale)
+// Fonction calcul fiscal : utils/fiscal.ts (computeRegimeComparison, computeFiscalCountdown, computeSellerNetForfaitaire)
 // Route fiscalité : /fiscalite-globale (stack push)
 // Route Ajouter (édition) : /(tabs)/ajouter + param editId
 // Structure position : { id, metal, product, weightG, quantity, purchasePrice, purchaseDate, createdAt, note? }
@@ -25,8 +25,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
-import { parseDate } from '@/utils/tax-helpers';
-import { formatEuro, formatQty } from '@/utils/format';
+import { formatEuro, formatQty, formatPctSigned, truncName } from '@/utils/format';
+import { computeFiscalCountdown, computeRegimeComparison, computeSellerNetForfaitaire } from '@/utils/fiscal';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -45,102 +45,6 @@ function symbolToMetal(sym: string): MetalType | null {
     ([, cfg]) => cfg.symbol === sym,
   );
   return entry ? entry[0] : null;
-}
-
-function computeSellerNets(
-  currentValue: number,
-  gainLoss: number,
-  abattement: number,
-): { sellerNetForfaitaire: number; sellerNetPlusValues: number; bestRegime: 'forfaitaire' | 'plusvalues' } {
-  // Forfaitaire : taxe TOUJOURS le prix de cession (pas le gain)
-  const sellerNetForfaitaire = currentValue * (1 - TAX.forfaitaireRate);
-
-  let sellerNetPlusValues: number;
-  if (gainLoss > 0) {
-    const gainTaxable = gainLoss * (1 - abattement / 100);
-    const taxePV = gainTaxable * TAX.plusValueRate;
-    sellerNetPlusValues = currentValue - taxePV;
-  } else {
-    // Pas de plus-value = pas de taxe PV → net vendeur = valeur actuelle
-    sellerNetPlusValues = currentValue;
-  }
-
-  const bestRegime = sellerNetPlusValues >= sellerNetForfaitaire ? ('plusvalues' as const) : ('forfaitaire' as const);
-  return { sellerNetForfaitaire, sellerNetPlusValues, bestRegime };
-}
-
-function computeFiscalCountdown(purchaseDate: string) {
-  const buyDate = parseDate(purchaseDate);
-  if (!buyDate) return null;
-
-  const now = new Date();
-  if (now.getTime() - buyDate.getTime() < 0) return null;
-
-  let years = now.getFullYear() - buyDate.getFullYear();
-  let months = now.getMonth() - buyDate.getMonth();
-  if (now.getDate() < buyDate.getDate()) months--;
-  if (months < 0) {
-    years--;
-    months += 12;
-  }
-
-  const abattement = years < 3 ? 0 : Math.min((years - 2) * 5, 100);
-  const isExonere = abattement >= 100;
-
-  const exemptionDate = new Date(buyDate);
-  exemptionDate.setFullYear(exemptionDate.getFullYear() + 22);
-
-  let remainingYears = 0;
-  let remainingMonths = 0;
-  if (!isExonere) {
-    remainingYears = exemptionDate.getFullYear() - now.getFullYear();
-    remainingMonths = exemptionDate.getMonth() - now.getMonth();
-    if (exemptionDate.getDate() < now.getDate()) remainingMonths--;
-    if (remainingMonths < 0) {
-      remainingYears--;
-      remainingMonths += 12;
-    }
-  }
-
-  const moisNoms = [
-    'janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin',
-    'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
-  ];
-  const exemptionLabel = moisNoms[exemptionDate.getMonth()] + ' ' + exemptionDate.getFullYear();
-
-  const buildLabel = (y: number, m: number): string => {
-    const parts: string[] = [];
-    if (y > 0) parts.push(y + ' an' + (y > 1 ? 's' : ''));
-    if (m > 0) parts.push(m + ' mois');
-    return parts.length > 0 ? parts.join(' ') : "Moins d\u2019un mois";
-  };
-
-  return {
-    years,
-    months,
-    detentionLabel: buildLabel(years, months),
-    abattement,
-    isExonere,
-    remainingLabel: buildLabel(remainingYears, remainingMonths),
-    exemptionLabel,
-    exemptionYear: exemptionDate.getFullYear(),
-    progress: abattement / 100,
-  };
-}
-
-function truncName(name: string, max = 20): string {
-  if (name.length <= max) return name;
-  const cut = name.lastIndexOf(' ', max);
-  return (cut > 0 ? name.slice(0, cut) : name.slice(0, max)) + '\u2026';
-}
-
-function fmtPct(pct: number): string {
-  if (pct === 0) return '0 %';
-  const abs = Math.abs(pct);
-  const sign = pct >= 0 ? '+' : '';
-  if (abs >= 100) return `${sign}${Math.round(pct)} %`;
-  if (abs >= 1) return `${sign}${pct.toFixed(1).replace('.', ',')} %`;
-  return `${sign}${pct.toFixed(2).replace('.', ',')} %`;
 }
 
 // ─── Composant ───────────────────────────────────────────────────────────────
@@ -247,8 +151,7 @@ export default function PortefeuilleScreen() {
 
     const gain = totalCost > 0 ? totalValue - totalCost : 0;
     const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
-    // Net vendeur = ce que l'utilisateur touche si vente (forfaitaire taxe TOUJOURS le prix de cession)
-    const sellerNet = totalValue * (1 - TAX.forfaitaireRate);
+    const sellerNet = computeSellerNetForfaitaire(totalValue);
 
     return { totalValue, totalCost, gain, gainPct, sellerNet };
   }, [filteredPositions, prices]);
@@ -346,7 +249,7 @@ export default function PortefeuilleScreen() {
                     <Text style={[st.resumeGain, { color: summary.gain >= 0 ? C.green : C.red }]}>
                       {'Gain brut : '}{summary.gain >= 0 ? '+' : ''}{formatEuro(summary.gain)} {currencySymbol}
                     </Text>
-                    <Text style={st.resumeGainPct}>({fmtPct(summary.gainPct)})</Text>
+                    <Text style={st.resumeGainPct}>({formatPctSigned(summary.gainPct)})</Text>
                   </View>
                   <View style={st.resumeNetRow}>
                     <Text style={st.resumeNetVendeur}>
@@ -417,9 +320,10 @@ export default function PortefeuilleScreen() {
             const gainLoss = currentValue !== null ? currentValue - totalCost : null;
             const gainPct = gainLoss !== null && totalCost > 0 ? (gainLoss / totalCost) * 100 : null;
             const fiscal = computeFiscalCountdown(pos.purchaseDate);
-            const abattement = fiscal?.abattement ?? 0;
             const sellerNets =
-              currentValue !== null && gainLoss !== null ? computeSellerNets(currentValue, gainLoss, abattement) : null;
+              currentValue !== null && gainLoss !== null && fiscal
+                ? computeRegimeComparison(currentValue, totalCost, fiscal.years)
+                : null;
 
             return (
               <View key={pos.id} style={[st.card, isOpen && st.cardOpen]}>
@@ -437,7 +341,7 @@ export default function PortefeuilleScreen() {
                     <Text style={st.cardName} numberOfLines={1}>{pos.product}</Text>
                     {masked ? null : gainLoss !== null ? (
                       <Text style={[st.cardGain, { color: gainLoss >= 0 ? C.green : C.red }]}>
-                        {'Gain : '}{gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol} ({fmtPct(gainPct ?? 0)})
+                        {'Gain : '}{gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol} ({formatPctSigned(gainPct ?? 0)})
                       </Text>
                     ) : (
                       <Text style={st.cardGainPlaceholder}>{'\u2014'}</Text>
@@ -467,7 +371,7 @@ export default function PortefeuilleScreen() {
                 {/* ── L1 — FISCAL ── */}
                 {isOpen && !masked && (() => {
                   const posSellerNet = currentValue !== null
-                    ? currentValue * (1 - TAX.forfaitaireRate)
+                    ? computeSellerNetForfaitaire(currentValue)
                     : null;
                   return (
                   <View style={st.l1}>
@@ -504,13 +408,13 @@ export default function PortefeuilleScreen() {
                           <Text style={st.premiumTeaserTitle}>
                             {(() => {
                               if (!sellerNets) return 'Comparer les 2 régimes fiscaux';
-                              const delta = sellerNets.sellerNetPlusValues - sellerNets.sellerNetForfaitaire;
-                              if (delta > 50) return `Un autre régime pourrait vous faire économiser ~${formatEuro(delta)}`;
+                              if (sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50)
+                                return `Un autre régime pourrait vous faire économiser ~${formatEuro(sellerNets.delta)}`;
                               return 'Comparer les 2 régimes fiscaux';
                             })()}
                           </Text>
                           <Text style={st.premiumTeaserSub}>
-                            {sellerNets && (sellerNets.sellerNetPlusValues - sellerNets.sellerNetForfaitaire) > 50
+                            {sellerNets && sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50
                               ? 'Comparez en 1 clic'
                               : 'Quel régime vous laisse le plus de net ?'}
                           </Text>

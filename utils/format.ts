@@ -65,3 +65,19 @@ export function formatMonthShortFR(date: Date): string {
 export function formatDateShortFR(date: Date): string {
   return `${String(date.getDate()).padStart(2, '0')} ${MOIS_COURT_FR[date.getMonth()]} ${date.getFullYear()}`;
 }
+
+/** Percentage with sign and adaptive decimals: >=100% → 0 dec, >=1% → 1 dec, <1% → 2 dec */
+export function formatPctSigned(pct: number): string {
+  if (pct === 0) return '0 %';
+  const abs = Math.abs(pct);
+  const sign = pct >= 0 ? '+' : '';
+  if (abs >= 100) return `${sign}${Math.round(pct)} %`;
+  if (abs >= 1) return `${sign}${pct.toFixed(1).replace('.', ',')} %`;
+  return `${sign}${pct.toFixed(2).replace('.', ',')} %`;
+}
+
+export function truncName(name: string, max = 20): string {
+  if (name.length <= max) return name;
+  const cut = name.lastIndexOf(' ', max);
+  return (cut > 0 ? name.slice(0, cut) : name.slice(0, max)) + '\u2026';
+}
