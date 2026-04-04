@@ -29,6 +29,8 @@ import { computePositionViewModels, computePortfolioSummary, getBestPerformerNam
 import { OrTrackColors } from '@/constants/theme';
 import PortfolioHero from '@/components/portfolio/PortfolioHero';
 import PositionCard from '@/components/portfolio/PositionCard';
+import PortfolioEmptyState from '@/components/portfolio/PortfolioEmptyState';
+import PortfolioStatsTeaser from '@/components/portfolio/PortfolioStatsTeaser';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
@@ -62,6 +64,8 @@ export default function PortefeuilleScreen() {
   const prevParamRef = useRef<string | undefined>(undefined);
   const [openId, setOpenId] = useState<string | null>(null);
   const [level2Id, setLevel2Id] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const deletingRef = useRef<string | null>(null);
 
   // ── Privacy mode ─────────────────────────────────────────────────────
 
@@ -269,10 +273,20 @@ export default function PortefeuilleScreen() {
                         {
                           text: 'Supprimer',
                           style: 'destructive',
-                          onPress: () => {
-                            deletePosition(vm.position.id);
-                            setOpenId(null);
-                            setLevel2Id(null);
+                          onPress: async () => {
+                            if (deletingRef.current) return;
+                            deletingRef.current = vm.position.id;
+                            setDeletingId(vm.position.id);
+                            try {
+                              await deletePosition(vm.position.id);
+                              if (openId === vm.position.id) setOpenId(null);
+                              if (level2Id === vm.position.id) setLevel2Id(null);
+                            } catch {
+                              Alert.alert('Erreur', 'La suppression a échoué. Réessayez.');
+                            } finally {
+                              deletingRef.current = null;
+                              setDeletingId(null);
+                            }
                           },
                         },
                       ]);
@@ -283,49 +297,31 @@ export default function PortefeuilleScreen() {
               }}
               onSimulateSale={() => router.push({ pathname: '/fiscalite', params: { positionId: vm.position.id } } as never)}
               onShowPaywall={showPaywall}
+              isDeleting={deletingId !== null}
             />
           ))
         ) : hasPositions && filterMetal ? (
-          <View style={st.emptyState}>
-            <Ionicons name="briefcase-outline" size={40} color={C.textMuted} style={{ marginBottom: 12 }} />
-            <Text style={st.emptyTitle}>Aucune position en {filterMetalName?.toLowerCase()}</Text>
-            <TouchableOpacity onPress={clearFilter}>
-              <Text style={st.emptyAction}>{'Tout afficher →'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.replace('/(tabs)/ajouter' as never)}>
-              <Text style={st.emptyAction}>{'Ajouter une position →'}</Text>
-            </TouchableOpacity>
-          </View>
+          <PortfolioEmptyState
+            isFilterActive
+            metalName={filterMetalName}
+            onAdd={() => router.replace('/(tabs)/ajouter' as never)}
+            onClearFilter={clearFilter}
+          />
         ) : !hasPositions ? (
-          <View style={st.emptyState}>
-            <Ionicons name="briefcase-outline" size={40} color={C.textMuted} style={{ marginBottom: 12 }} />
-            <Text style={st.emptyTitle}>Aucune position</Text>
-            <Text style={st.emptyText}>Ajoutez votre premier achat pour suivre votre portefeuille.</Text>
-            <TouchableOpacity onPress={() => router.replace('/(tabs)/ajouter' as never)}>
-              <Text style={st.emptyAction}>{'Ajouter une position →'}</Text>
-            </TouchableOpacity>
-          </View>
+          <PortfolioEmptyState
+            isFilterActive={false}
+            onAdd={() => router.replace('/(tabs)/ajouter' as never)}
+            onClearFilter={clearFilter}
+          />
         ) : null}
 
         {/* ── 5. STATS TEASER ────────────────────────────── */}
-        <TouchableOpacity
-          style={st.statsTeaser}
+        <PortfolioStatsTeaser
+          subtitleText={bestPerformerName
+            ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
+            : 'Voyez quelles positions tirent vraiment votre performance'}
           onPress={() => Alert.alert('Premium', 'Débloquez les statistiques avec OrTrack Premium')}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="bar-chart-outline" size={18} color={C.gold} />
-          <View style={{ flex: 1 }}>
-            <Text style={st.statsTeaserTitle}>Statistiques</Text>
-            <Text style={st.statsTeaserSub}>
-              {bestPerformerName
-                ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
-                : 'Voyez quelles positions tirent vraiment votre performance'}
-            </Text>
-          </View>
-          <View style={st.premiumBadgeLg}>
-            <Text style={st.premiumBadgeLgText}>PREMIUM</Text>
-          </View>
-        </TouchableOpacity>
+        />
 
         {/* ── 6. TRUST FOOTER ────────────────────────────── */}
         <View style={st.trustFooter}>
@@ -364,19 +360,6 @@ const st = StyleSheet.create({
   posHeaderTitle: { fontSize: 12, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1 },
   quota: { fontSize: 10, color: C.textDim },
   quotaFull: { fontSize: 10, color: C.gold, fontWeight: '600' },
-
-  // Empty state
-  emptyState: { alignItems: 'center', paddingVertical: 40 },
-  emptyTitle: { color: C.textDim, fontSize: 14, fontWeight: '600', marginBottom: 6 },
-  emptyText: { color: C.textMuted, fontSize: 12, textAlign: 'center', lineHeight: 18, paddingHorizontal: 20, marginBottom: 8 },
-  emptyAction: { color: C.gold, fontSize: 13, fontWeight: '600', marginTop: 14 },
-
-  // Stats teaser
-  statsTeaser: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16 },
-  statsTeaserTitle: { color: C.white, fontSize: 13, fontWeight: '600' },
-  statsTeaserSub: { color: C.textDim, fontSize: 10, marginTop: 1 },
-  premiumBadgeLg: { backgroundColor: C.goldDim, borderRadius: 4, paddingVertical: 3, paddingHorizontal: 8 },
-  premiumBadgeLgText: { color: C.gold, fontSize: 9, fontWeight: '700' },
 
   // Trust footer
   trustFooter: { marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.divider, alignItems: 'center' },

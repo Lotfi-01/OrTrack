@@ -23,6 +23,7 @@ type PositionCardProps = {
   onDelete: () => void;
   onSimulateSale: () => void;
   onShowPaywall: () => void;
+  isDeleting?: boolean;
 };
 
 export default function PositionCard({
@@ -40,6 +41,7 @@ export default function PositionCard({
   onDelete,
   onSimulateSale,
   onShowPaywall,
+  isDeleting,
 }: PositionCardProps) {
   const pos = viewModel.position;
   const { currentValue, totalCost, gainLoss, gainPct, fiscal, regime: sellerNets, sellerNetForfaitaire: posSellerNet } = viewModel.metrics;
@@ -214,7 +216,7 @@ export default function PositionCard({
                 <TouchableOpacity onPress={onEdit}>
                   <Text style={st.l2Edit}>Modifier</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={onDelete}>
+                <TouchableOpacity onPress={onDelete} disabled={isDeleting} style={isDeleting ? { opacity: 0.4 } : undefined}>
                   <Ionicons name="ellipsis-vertical" size={16} color={C.textDim} />
                 </TouchableOpacity>
               </View>
