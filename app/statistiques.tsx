@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,885 +15,551 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { OrTrackColors } from '@/constants/theme';
+import { STATS } from '@/constants/stats-config';
 import { formatEuro, formatG, formatPct } from '@/utils/format';
+import { parseDate } from '@/utils/tax-helpers';
+import { computePortfolioFiscalSummary, computeFiscalCountdown } from '@/utils/fiscal';
+import {
+  selectInsight,
+  selectDecisionCards,
+  computeMetalBreakdown,
+  computePositionRanking,
+} from '@/utils/stats-helpers';
 import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
 
-const PREMIUM_STATS_FEATURES = [
-  { icon: '🏆', title: 'Vos positions les plus rentables', sub: 'Voyez ce qui vous rapporte le plus aujourd\'hui' },
-  { icon: '📊', title: 'Votre rendement réel', sub: 'Combien vous gagnez sur chaque position' },
-  { icon: '💡', title: 'Forces et risques de votre portefeuille', sub: 'Identifiez déséquilibres et opportunités' },
+const C = OrTrackColors;
+
+const PREMIUM_FEATURES = [
+  { icon: '\uD83C\uDFC6', title: 'Classement de vos positions', sub: 'Par gain, performance et net estimé' },
+  { icon: '\uD83D\uDCCA', title: 'Aide à la décision fiscale', sub: 'Net estimé, régime, fenêtre fiscale' },
+  { icon: '\uD83D\uDCA1', title: 'Insights personnalisés', sub: 'Concentration, exposition, paliers' },
 ];
 
-
-// ─── Composant ────────────────────────────────────────────────────────────────
+// ─── Composant ──────────────────────────────────────────────────────────────
 
 export default function StatistiquesScreen() {
   const { positions, reloadPositions } = usePositions();
-  const { prices, currencySymbol } = useSpotPrices();
+  const { prices, currencySymbol, lastUpdated } = useSpotPrices();
   const { isPremium, showPaywall } = usePremium();
+  const [masked, setMasked] = useState(false);
+  const [rankMode, setRankMode] = useState<'eur' | 'pct' | 'sale'>('eur');
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       reloadPositions();
-    }, [reloadPositions])
+      AsyncStorage.getItem('@ortrack_privacy_mode')
+        .then(v => setMasked(v === 'true'))
+        .catch(() => {});
+    }, [reloadPositions]),
   );
 
-  // ── Calculs ───────────────────────────────────────────────────────────────
+  const m = (text: string) => (masked ? '\u2022\u2022\u2022\u2022\u2022\u2022' : text);
+
+  // ── Snapshot ────────────────────────────────────────────────────────────
 
   const hasPositions = positions.length > 0;
 
-  // Performance globale
-  let totalCost = 0;
-  let totalValue = 0;
-  for (const p of positions) {
-    const spot = getSpot(p.metal, prices);
-    totalCost += p.quantity * p.purchasePrice;
-    if (spot !== null) {
-      totalValue += p.quantity * (p.weightG / OZ_TO_G) * spot;
+  const { totalCost, totalValue, totalGain, totalGainPct } = useMemo(() => {
+    let cost = 0;
+    let value = 0;
+    for (const p of positions) {
+      const spot = getSpot(p.metal, prices);
+      cost += p.quantity * p.purchasePrice;
+      if (spot !== null) value += p.quantity * (p.weightG / OZ_TO_G) * spot;
     }
-  }
-  const totalGainLoss = totalCost > 0 ? totalValue - totalCost : null;
-  const totalGainLossPct = totalGainLoss !== null && totalCost > 0
-    ? (totalGainLoss / totalCost) * 100 : null;
+    const gain = cost > 0 ? value - cost : 0;
+    const gainPct = cost > 0 ? (gain / cost) * 100 : null;
+    return { totalCost: cost, totalValue: value, totalGain: gain, totalGainPct: gainPct };
+  }, [positions, prices]);
 
-  // Répartition par métal
-  const metalKeys: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre'];
-  const metalValues = metalKeys.map((m) => {
-    const spot = getSpot(m, prices);
-    const value = positions
-      .filter((p) => p.metal === m)
-      .reduce((s, p) => {
-        if (spot === null) return s;
-        return s + p.quantity * (p.weightG / OZ_TO_G) * spot;
-      }, 0);
-    return { metal: m, value };
-  }).filter((m) => m.value > 0);
+  const fiscal = useMemo(
+    () => computePortfolioFiscalSummary(positions, prices),
+    [positions, prices],
+  );
 
-  // Podium positions
-  const positionsWithPerf = positions.map((p) => {
-    const spot = getSpot(p.metal, prices);
-    const currentValue = spot !== null
-      ? p.quantity * (p.weightG / OZ_TO_G) * spot : null;
-    const cost = p.quantity * p.purchasePrice;
-    const gainPct = currentValue !== null && cost > 0
-      ? ((currentValue - cost) / cost) * 100 : null;
-    return { ...p, gainPct };
-  }).filter((p) => p.gainPct !== null);
+  const metalBreakdown = useMemo(
+    () => computeMetalBreakdown(positions, prices),
+    [positions, prices],
+  );
 
-  const sorted = [...positionsWithPerf].sort((a, b) => (b.gainPct ?? 0) - (a.gainPct ?? 0));
-  const best = sorted[0] ?? null;
-  const worst = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+  const insight = useMemo(
+    () => selectInsight(fiscal, metalBreakdown, totalGain, positions.length),
+    [fiscal, metalBreakdown, totalGain, positions.length],
+  );
 
-  const bestSpot = best ? getSpot(best.metal, prices) : null;
-  const bestCurrentValue = best && bestSpot !== null
-    ? best.quantity * (best.weightG / OZ_TO_G) * bestSpot : null;
-  const bestCost = best ? best.quantity * best.purchasePrice : 0;
-  const bestGainEur = bestCurrentValue !== null ? bestCurrentValue - bestCost : null;
+  const decisionCards = useMemo(
+    () => selectDecisionCards(fiscal, totalGain, positions.length),
+    [fiscal, totalGain, positions.length],
+  );
 
-  // Métriques par métal
-  const metalMetrics = metalKeys.map((m) => {
-    const filtered = positions.filter((p) => p.metal === m);
-    if (filtered.length === 0) return null;
-    const totalG = filtered.reduce((s, p) => s + p.quantity * p.weightG, 0);
-    const totalQty = filtered.reduce((s, p) => s + p.quantity, 0);
-    const avgPrice = filtered.reduce((s, p) => s + p.purchasePrice, 0) / filtered.length;
-    const avgMonths = filtered.reduce((s, p) => {
-      const parts = p.purchaseDate.split('/');
-      if (parts.length !== 3) return s;
-      const purchase = new Date(
-        parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0])
-      );
-      const now = new Date();
-      const months = (now.getFullYear() - purchase.getFullYear()) * 12 +
-        (now.getMonth() - purchase.getMonth());
-      return s + months;
-    }, 0) / filtered.length;
-    return { metal: m, totalG, totalQty, avgPrice, avgMonths };
-  }).filter(Boolean) as {
-    metal: MetalType;
-    totalG: number;
-    totalQty: number;
-    avgPrice: number;
-    avgMonths: number;
-  }[];
+  const ranking = useMemo(
+    () => computePositionRanking(fiscal, positions, prices),
+    [fiscal, positions, prices],
+  );
 
-  // Durée de détention moyenne globale
-  const globalAvgMonths = metalMetrics.length > 0
-    ? Math.round(metalMetrics.reduce((s, m) => s + m.avgMonths, 0) / metalMetrics.length)
-    : 0;
+  const oldestDate = useMemo(() => {
+    let oldest: string | null = null;
+    let oldestTime = Infinity;
+    for (const p of positions) {
+      const d = parseDate(p.purchaseDate);
+      if (d && d.getTime() < oldestTime) { oldestTime = d.getTime(); oldest = p.purchaseDate; }
+    }
+    return oldest;
+  }, [positions]);
+
+  // Metal metrics for details
+  const metalMetrics = useMemo(() => {
+    const metalKeys: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre'];
+    return metalKeys.map(mk => {
+      const filtered = positions.filter(p => p.metal === mk);
+      if (filtered.length === 0) return null;
+      const totalG = filtered.reduce((s, p) => s + p.quantity * p.weightG, 0);
+      const avgPrice = filtered.reduce((s, p) => s + p.purchasePrice, 0) / filtered.length;
+      const avgMonths = filtered.reduce((s, p) => {
+        const parts = p.purchaseDate.split('/');
+        if (parts.length !== 3) return s;
+        const purchase = new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+        const now = new Date();
+        return s + (now.getFullYear() - purchase.getFullYear()) * 12 + (now.getMonth() - purchase.getMonth());
+      }, 0) / filtered.length;
+      return { metal: mk, totalG, avgPrice, avgMonths };
+    }).filter(Boolean) as { metal: MetalType; totalG: number; avgPrice: number; avgMonths: number }[];
+  }, [positions]);
+
+  const globalAvgMonths = metalMetrics.length > 0 ? Math.round(metalMetrics.reduce((s, mm) => s + mm.avgMonths, 0) / metalMetrics.length) : 0;
 
   function fmtMonths(months: number): string {
-    if (months < 1) return "Moins d'1 mois";
+    if (months < 1) return "Moins d\u20191 mois";
     if (months < 12) return `${months} mois`;
-    const years = Math.floor(months / 12);
-    const rem = months % 12;
-    return rem > 0
-      ? `${years} an${years > 1 ? 's' : ''} ${rem} mois`
-      : `${years} an${years > 1 ? 's' : ''}`;
+    const y = Math.floor(months / 12);
+    const r = months % 12;
+    return r > 0 ? `${y} an${y > 1 ? 's' : ''} ${r} mois` : `${y} an${y > 1 ? 's' : ''}`;
   }
 
-  // Ratio or/argent
-  const goldG = positions
-    .filter(p => p.metal === 'or')
-    .reduce((s, p) => s + p.quantity * p.weightG, 0);
-  const silverG = positions
-    .filter(p => p.metal === 'argent')
-    .reduce((s, p) => s + p.quantity * p.weightG, 0);
-  const hasRatio = goldG > 0 && silverG > 0;
-  const ratioNum = hasRatio ? silverG / goldG : null;
-  const ratio = ratioNum !== null
-    ? (Number.isInteger(Math.round(ratioNum * 10) / 10)
-        ? Math.round(ratioNum).toString()
-        : ratioNum.toFixed(1).replace('.', ','))
-    : null;
+  const timeStr = lastUpdated ? `${String(lastUpdated.getHours()).padStart(2, '0')}:${String(lastUpdated.getMinutes()).padStart(2, '0')}` : null;
 
-  // Conseil intelligent
-  const getAdvice = (): { text: string; type: 'warning' | 'good' | 'info' } => {
-    if (!hasPositions) return {
-      text: 'Ajoutez des positions pour obtenir une analyse personnalisée.',
-      type: 'info',
-    };
-    const goldPct = totalValue > 0
-      ? (metalValues.find(m => m.metal === 'or')?.value ?? 0) / totalValue * 100
-      : 0;
-    if (goldPct > 80) return {
-      text: `Votre portefeuille est concentré à ${formatPct(goldPct, 2)} sur l'or. Les experts recommandent de diversifier avec de l'argent (ratio 1:10) pour réduire le risque.`,
-      type: 'warning',
-    };
-    if (goldG > 0 && silverG === 0) return {
-      text: "Vous ne détenez pas d'argent. L'argent offre un potentiel de hausse plus fort que l'or sur le long terme.",
-      type: 'info',
-    };
-    if (totalGainLossPct !== null && totalGainLossPct > 50) return {
-      text: `Excellente performance ! Votre portefeuille a progressé de +${formatPct(totalGainLossPct, 2)}. Pensez à la simulation fiscale avant toute cession.`,
-      type: 'good',
-    };
-    return {
-      text: "Portefeuille bien diversifié. Continuez à accumuler régulièrement pour lisser votre prix de revient.",
-      type: 'good',
-    };
-  };
-  const advice = getAdvice();
+  // Ranking sorted
+  const sortedRanking = useMemo(() => {
+    const r = [...ranking];
+    if (rankMode === 'eur') r.sort((a, b) => b.gainEur - a.gainEur);
+    else if (rankMode === 'pct') r.sort((a, b) => b.gainPct - a.gainPct);
+    else r.sort((a, b) => (b.netEstimate ?? 0) - (a.netEstimate ?? 0));
+    return r.slice(0, STATS.MAX_VISIBLE_POSITIONS);
+  }, [ranking, rankMode]);
 
-  // ─────────────────────────────────────────────────────────────────────────
+  const useTabsMode = ranking.length > STATS.MAX_VISIBLE_POSITIONS;
+  const dominantMetal = metalBreakdown.length > 0 ? metalBreakdown[0] : null;
+
+  // ─── Rendu ──────────────────────────────────────────────────────────────
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-
+    <SafeAreaView style={st.container}>
+      <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Retour</Text>
+        <View style={st.headerRow}>
+          <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
+            <Text style={st.backText}>{'\u2190'} Retour</Text>
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Statistiques</Text>
+          <Text style={st.headerTitle}>Statistiques</Text>
         </View>
 
         {!hasPositions ? (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyTitle}>Aucune position</Text>
-            <Text style={styles.emptyText}>
-              Ajoutez des actifs pour voir vos statistiques.
-            </Text>
+          <View style={st.emptyState}>
+            <Text style={st.emptyTitle}>Aucune position</Text>
+            <Text style={st.emptyText}>Ajoutez des actifs pour voir vos statistiques.</Text>
           </View>
         ) : (
           <>
-            {/* ── 1. Hero card performance globale ── */}
-            <View style={[
-              styles.heroCard,
-              totalGainLoss !== null && totalGainLoss >= 0
-                ? styles.heroCardPositive
-                : styles.heroCardNegative,
-            ]}>
-              <Text style={styles.sectionLabel}>PERFORMANCE GLOBALE</Text>
-              {totalGainLoss !== null && (
-                <Text style={[
-                  styles.heroValue,
-                  totalGainLoss >= 0 ? styles.positive : styles.negative,
-                ]}>
-                  {totalGainLoss >= 0 ? '+' : ''}{formatEuro(totalGainLoss)} {currencySymbol}
+            {/* ── BLOC 1 — HERO PERFORMANCE ── */}
+            <View style={st.heroCard}>
+              <Text style={st.sectionLabel}>PERFORMANCE GLOBALE</Text>
+              <Text style={[st.heroValue, totalGain >= 0 ? st.positive : st.negative]}>
+                {m(`${totalGain >= 0 ? '+' : ''}${formatEuro(totalGain)} ${currencySymbol}`)}
+              </Text>
+              {totalGainPct !== null && (
+                <Text style={[st.heroPercent, totalGain >= 0 ? st.positive : st.negative]}>
+                  {totalGain >= 0 ? '+' : ''}{formatPct(totalGainPct, 2)}
                 </Text>
               )}
-              {totalGainLossPct !== null && (
-                <Text style={[
-                  styles.heroPercent,
-                  totalGainLoss !== null && totalGainLoss >= 0
-                    ? styles.positive : styles.negative,
-                ]}>
-                  {totalGainLoss !== null && totalGainLoss >= 0 ? '+' : ''}
-                  {formatPct(totalGainLossPct, 2)}
-                </Text>
-              )}
-              <View style={styles.heroRow}>
-                <View style={styles.heroCol}>
-                  <Text style={styles.heroLabel}>Investi</Text>
-                  <Text style={styles.heroAmount}>
-                    {formatEuro(totalCost)} {currencySymbol}
-                  </Text>
+              {oldestDate && <Text style={st.heroRef}>Depuis votre 1ère position ({oldestDate})</Text>}
+
+              <View style={st.heroRow}>
+                <View style={st.heroCol}>
+                  <Text style={st.heroLabel}>Investi</Text>
+                  <Text style={st.heroAmount}>{m(`${formatEuro(totalCost)} ${currencySymbol}`)}</Text>
                 </View>
-                <View style={styles.heroSeparator} />
-                <View style={[styles.heroCol, { alignItems: 'flex-end' }]}>
-                  <Text style={styles.heroLabel}>Valeur actuelle</Text>
-                  <Text style={styles.heroAmount}>
-                    {formatEuro(totalValue)} {currencySymbol}
-                  </Text>
+                <View style={st.heroSep} />
+                <View style={[st.heroCol, { alignItems: 'flex-end' }]}>
+                  <Text style={st.heroLabel}>Valeur actuelle</Text>
+                  <Text style={st.heroAmount}>{m(`${formatEuro(totalValue)} ${currencySymbol}`)}</Text>
                 </View>
               </View>
+
+              {fiscal ? (
+                <View style={st.heroNetBlock}>
+                  <View style={st.heroNetRow}>
+                    <Text style={st.heroNetLabel}>Net estimé si vente aujourd{'\u2019'}hui</Text>
+                    <TouchableOpacity onPress={() => Alert.alert('Net estimé', 'Estimé selon le régime le plus favorable aujourd\u2019hui. Hors frais de revente.')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                      <Ionicons name="information-circle-outline" size={14} color={C.textDim} />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={st.heroNetValue}>{m(`${formatEuro(fiscal.bestNet)} ${currencySymbol}`)}</Text>
+                  {(() => {
+                    // Dériver la fiscalité du même totalValue affiché pour garantir A - B = C visuellement
+                    const fiscDisplayed = totalValue - fiscal.bestNet;
+                    return <Text style={st.heroNetFiscal}>Fiscalité estimée : {m(`${formatEuro(fiscDisplayed)} ${currencySymbol}`)}</Text>;
+                  })()}
+                  <Text style={st.heroMethod}>(Régime le plus favorable {'\u00B7'} hors frais)</Text>
+                </View>
+              ) : (
+                <Text style={st.heroNetUnavailable}>Net estimé indisponible {'\u00B7'} Simulation requise</Text>
+              )}
+
+              <TouchableOpacity onPress={() => router.push('/fiscalite-globale' as never)} style={st.heroBridge} activeOpacity={0.7}>
+                <Text style={st.heroBridgeText}>{'Estimer mon net après impôt \u2192'}</Text>
+              </TouchableOpacity>
             </View>
 
-            {/* ── 2. Analyse OrTrack (premium only, remontée) ── */}
-            {isPremium && (
+            {/* ── BLOC 2 — INSIGHT PREMIUM ── */}
+            {isPremium && insight.type !== 'fallback' && (
               <>
-                <Text style={styles.sectionTitle}>ANALYSE ORTRACK</Text>
-                <View style={[
-                  styles.adviceCard,
-                  advice.type === 'warning' && styles.adviceWarning,
-                  advice.type === 'good' && styles.adviceGood,
-                  advice.type === 'info' && styles.adviceInfo,
-                ]}>
-                  <Text style={styles.adviceIcon}>
-                    {advice.type === 'warning' ? '⚠️' : advice.type === 'good' ? '✅' : '💡'}
-                  </Text>
-                  <View style={styles.adviceContent}>
-                    <Text style={styles.adviceText}>{advice.text}</Text>
-                    {advice.type === 'good' && totalGainLossPct !== null && totalGainLossPct > 50 && (
-                      <TouchableOpacity
-                        onPress={() => router.push('/fiscalite-globale' as never)}
-                        style={styles.adviceLink}
-                        activeOpacity={0.7}
-                      >
-                        <Text style={styles.adviceLinkText}>Simuler ma fiscalité →</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
+                <Text style={st.sectionTitle}>INSIGHT ORTRACK</Text>
+                <View style={st.insightCard}>
+                  <Text style={st.insightTitle}>{insight.title}</Text>
+                  <Text style={st.insightPhrase}>{insight.phrase}</Text>
+                  {insight.subtext ? <Text style={st.insightSub}>{insight.subtext}</Text> : null}
+                  {insight.method ? <Text style={st.insightMethod}>{insight.method}</Text> : null}
+                  {insight.action && (
+                    <TouchableOpacity onPress={() => router.push({ pathname: insight.action!.route as any, params: insight.action!.params })} style={st.insightAction} activeOpacity={0.7}>
+                      <Text style={st.insightActionText}>{insight.action.label}</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </>
+            )}
+            {isPremium && insight.type === 'fallback' && (
+              <>
+                <Text style={st.sectionTitle}>ANALYSE</Text>
+                <View style={st.insightCard}>
+                  <Text style={st.insightPhrase}>{insight.phrase}</Text>
                 </View>
               </>
             )}
 
-            {/* ── 3. Répartition barres horizontales ── */}
-            <Text style={styles.sectionTitle}>RÉPARTITION DU PORTEFEUILLE</Text>
-            <View style={styles.card}>
-              {metalValues.map((m) => {
-                const pct = totalValue > 0 ? (m.value / totalValue) * 100 : 0;
-                const cfg = METAL_CONFIG[m.metal];
-                return (
-                  <View key={m.metal} style={styles.barRow}>
-                    <View style={styles.barMeta}>
-                      <View style={styles.barLabelRow}>
-                        <View style={[styles.metalBadgeSmall, { borderColor: cfg.chipBorder }]}>
-                          <Text style={[styles.metalBadgeSmallText, { color: cfg.chipText }]}>{cfg.symbol}</Text>
-                        </View>
-                        <Text style={[styles.barLabel, { color: cfg.chipText }]}>
-                          {cfg.name}
-                        </Text>
-                      </View>
-                      <Text style={styles.barPct}>{formatPct(pct, 1)}</Text>
-                    </View>
-                    <View style={styles.barTrack}>
-                      <View style={[
-                        styles.barFill,
-                        {
-                          width: `${pct}%` as any,
-                          backgroundColor: cfg.chipBorder,
-                        },
-                      ]} />
-                    </View>
+            {/* ── BLOC 3 — VOTRE PORTEFEUILLE ── */}
+            <Text style={st.sectionTitle}>VOTRE PORTEFEUILLE</Text>
+            {/* Metal summary */}
+            <View style={st.card}>
+              {metalBreakdown.map(mb => (
+                <View key={mb.metal} style={st.metalRow}>
+                  <View style={[st.metalBadge, { borderColor: METAL_CONFIG[mb.metal].chipBorder }]}>
+                    <Text style={[st.metalBadgeText, { color: METAL_CONFIG[mb.metal].chipText }]}>{METAL_CONFIG[mb.metal].symbol}</Text>
                   </View>
-                );
-              })}
-            </View>
-
-            {/* ── 4. Contenu premium ── */}
-            {isPremium ? (
-              <>
-                {/* Podium positions */}
-                {positionsWithPerf.length > 1 && (
-                  <>
-                    <Text style={styles.sectionTitle}>VOS POSITIONS</Text>
-                    <View style={styles.card}>
-                      {best && (
-                        <View style={styles.podiumRow}>
-                          <View style={styles.rankBadge}>
-                            <Text style={styles.rankBadgeText}>1</Text>
-                          </View>
-                          <View style={styles.podiumInfo}>
-                            <Text style={styles.podiumProduct}>{best.product}</Text>
-                            <Text style={styles.podiumMetal}>
-                              {METAL_CONFIG[best.metal].name}
-                            </Text>
-                          </View>
-                          <Text style={styles.positive}>
-                            +{formatPct(best.gainPct ?? 0, 2)}
-                          </Text>
-                        </View>
-                      )}
-                      {sorted.length > 2 && sorted[1] && (
-                        <>
-                          <View style={styles.divider} />
-                          <View style={styles.podiumRow}>
-                            <View style={[styles.rankBadge, styles.rankBadgeSilver]}>
-                              <Text style={[styles.rankBadgeText, styles.rankBadgeTextSilver]}>2</Text>
-                            </View>
-                            <View style={styles.podiumInfo}>
-                              <Text style={styles.podiumProduct}>{sorted[1].product}</Text>
-                              <Text style={styles.podiumMetal}>
-                                {METAL_CONFIG[sorted[1].metal].name}
-                              </Text>
-                            </View>
-                            <Text style={
-                              (sorted[1].gainPct ?? 0) >= 0
-                                ? styles.positive : styles.negative
-                            }>
-                              {(sorted[1].gainPct ?? 0) >= 0 ? '+' : ''}
-                              {formatPct(sorted[1].gainPct ?? 0, 2)}
-                            </Text>
-                          </View>
-                        </>
-                      )}
-                      {worst && worst.id !== best?.id &&
-                        (worst.gainPct ?? 0) < (best?.gainPct ?? 0) &&
-                        (sorted.length < 3 || (worst.gainPct ?? 0) < (sorted[1]?.gainPct ?? 0)) && (
-                        <>
-                          <View style={styles.divider} />
-                          <View style={styles.podiumRow}>
-                            <View style={[styles.rankBadge, styles.rankBadgeLast]}>
-                              <Text style={[styles.rankBadgeText, styles.rankBadgeTextLast]}>
-                                {sorted.length}
-                              </Text>
-                            </View>
-                            <View style={styles.podiumInfo}>
-                              <Text style={styles.podiumProduct}>{worst.product}</Text>
-                              <Text style={styles.podiumMetal}>
-                                {METAL_CONFIG[worst.metal].name}
-                              </Text>
-                            </View>
-                            <Text style={
-                              (worst.gainPct ?? 0) >= 0
-                                ? styles.positive : styles.negative
-                            }>
-                              {(worst.gainPct ?? 0) >= 0 ? '+' : ''}
-                              {formatPct(worst.gainPct ?? 0, 2)}
-                            </Text>
-                          </View>
-                        </>
-                      )}
-                    </View>
-                  </>
-                )}
-
-                {/* Grid 2x2 métriques */}
-                <Text style={styles.sectionTitle}>MÉTRIQUES CLÉS</Text>
-                <View style={styles.grid}>
-                  <View style={styles.gridCard}>
-                    <Text style={styles.gridLabel}>COÛT MOYEN</Text>
-                    {metalMetrics.map((m) => (
-                      <Text key={m.metal} style={styles.gridValue}>
-                        {METAL_CONFIG[m.metal].name} — {formatEuro(m.avgPrice)} {currencySymbol}
-                      </Text>
-                    ))}
-                  </View>
-
-                  <View style={styles.gridCard}>
-                    <Text style={styles.gridLabel}>POIDS TOTAL</Text>
-                    {metalMetrics.map((m) => (
-                      <Text key={m.metal} style={styles.gridValue}>
-                        {METAL_CONFIG[m.metal].name} — {formatG(m.totalG)}
-                      </Text>
-                    ))}
-                  </View>
-
-                  <View style={styles.gridCard}>
-                    <Text style={styles.gridLabel}>ANCIENNETÉ</Text>
-                    <Text style={[styles.gridValue, styles.gridValueLarge]}>
-                      {fmtMonths(globalAvgMonths)}
+                  <View style={{ flex: 1 }}>
+                    <Text style={st.metalName}>{mb.name}</Text>
+                    <Text style={st.metalSub}>
+                      {m(`${formatEuro(mb.value)} ${currencySymbol}`)} {'\u00B7'} {Math.round(mb.partValue * 100)} % du portefeuille
+                      {totalGain > 0 && mb.gainEur > 0 ? ` \u00B7 ${Math.round(mb.partGain * 100)} % du gain` : ''}
                     </Text>
-                    {metalMetrics.map((m) => (
-                      <Text key={m.metal} style={styles.gridSub}>
-                        {METAL_CONFIG[m.metal].name} — {fmtMonths(Math.round(m.avgMonths))}
-                      </Text>
-                    ))}
-                  </View>
-
-                  <View style={styles.gridCard}>
-                    <Text style={styles.gridLabel}>ALLOCATION</Text>
-                    {hasRatio ? (
-                      <>
-                        <Text style={[styles.gridValue, styles.gridValueLarge]}>
-                          1 : {ratio}
-                        </Text>
-                        <Text style={styles.gridSub}>Poids argent / poids or</Text>
-                      </>
-                    ) : (
-                      <Text style={styles.gridSub}>
-                        {goldG > 0
-                          ? "Pas d'argent en portefeuille"
-                          : "Pas d'or en portefeuille"}
-                      </Text>
-                    )}
                   </View>
                 </View>
-              </>
-            ) : (
+              ))}
+            </View>
+
+            {/* Position ranking (premium) */}
+            {isPremium && ranking.length > 1 && (
               <>
-                <Text style={styles.sectionTitle}>ANALYSES PREMIUM</Text>
-                {best && (
-                  <View style={{
-                    backgroundColor: OrTrackColors.card,
-                    borderRadius: 12,
-                    borderWidth: 1,
-                    borderColor: OrTrackColors.border,
-                    padding: 16,
-                    marginBottom: 12,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                  }}>
-                    <Text style={{ fontSize: 20, marginRight: 10 }}>🥇</Text>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{
-                        fontSize: 13,
-                        fontWeight: '600',
-                        color: OrTrackColors.white,
-                      }}>
-                        Meilleure position : {best.product}
+                <Text style={st.sectionTitle}>
+                  {rankMode === 'eur' ? 'VOS POSITIONS (par gain \u20AC)' : rankMode === 'pct' ? 'VOS POSITIONS (par performance %)' : 'VOS POSITIONS (par net estimé)'}
+                </Text>
+                <View style={st.toggleRow}>
+                  {(useTabsMode ? (['eur', 'pct', 'sale'] as const) : (['eur', 'pct'] as const)).map(mode => (
+                    <TouchableOpacity key={mode} style={[st.toggleBtn, rankMode === mode && st.toggleBtnActive]} onPress={() => setRankMode(mode)}>
+                      <Text style={[st.toggleBtnText, rankMode === mode && st.toggleBtnTextActive]}>
+                        {mode === 'eur' ? 'Gain \u20AC' : mode === 'pct' ? 'Perf %' : 'Vente'}
                       </Text>
-                      <Text style={{
-                        fontSize: 16,
-                        fontWeight: '700',
-                        color: '#4CAF50',
-                        marginTop: 4,
-                      }}>
-                        +{bestGainEur !== null ? formatEuro(bestGainEur) : '0,00'} €
-                      </Text>
-                      <Text style={{
-                        fontSize: 12,
-                        color: OrTrackColors.subtext,
-                        marginTop: 2,
-                      }}>
-                        +{formatPct(best.gainPct ?? 0, 2)}
-                      </Text>
-                      <Text style={{
-                        fontSize: 12,
-                        color: OrTrackColors.gold,
-                        fontWeight: '500',
-                        marginTop: 8,
-                      }}>
-                        Vendre maintenant ou attendre ?
-                      </Text>
-                    </View>
-                    <Ionicons name="lock-closed" size={16} color={OrTrackColors.gold} />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={st.card}>
+                  {sortedRanking.map((pos, idx) => {
+                    const badgeStyle = idx === 0 ? st.rankGold : idx === 1 ? st.rankSilver : idx === 2 ? st.rankBronze : st.rankGray;
+                    const badgeTextStyle = idx === 0 ? st.rankGoldText : idx === 1 ? st.rankSilverText : idx === 2 ? st.rankBronzeText : st.rankGrayText;
+                    return (
+                      <View key={pos.id}>
+                        {idx > 0 && <View style={st.divider} />}
+                        <View style={st.podiumRow}>
+                          <View style={[st.rankBadge, badgeStyle]}><Text style={[st.rankBadgeText, badgeTextStyle]}>{idx + 1}</Text></View>
+                          <View style={st.podiumInfo}>
+                            <Text style={st.podiumProduct}>{pos.product}</Text>
+                            <Text style={st.podiumMetal}>{METAL_CONFIG[pos.metal].name}</Text>
+                          </View>
+                          <View style={{ alignItems: 'flex-end' }}>
+                            {rankMode === 'eur' && (
+                              <>
+                                <Text style={pos.gainEur >= 0 ? st.positive : st.negative}>
+                                  {m(`${pos.gainEur >= 0 ? '+' : ''}${formatEuro(pos.gainEur)} \u20AC`)}
+                                </Text>
+                                <Text style={st.podiumSecondary}>{pos.gainEur >= 0 ? '+' : ''}{formatPct(pos.gainPct, 2)}</Text>
+                                {!useTabsMode && (() => {
+                                  // Differentiate: if this position's sub-line is identical to a previous one, use the next priority level
+                                  const primary = pos.fiscalNote || pos.regimeLabel;
+                                  if (!primary) return null;
+                                  const prevLines = sortedRanking.slice(0, idx).map(p => p.fiscalNote || p.regimeLabel);
+                                  const line = prevLines.includes(primary) ? (pos.regimeLabel && pos.regimeLabel !== primary ? pos.regimeLabel : null) : primary;
+                                  const display = line?.replace('Régime le plus favorable', 'Régime favorable');
+                                  return display ? <Text style={st.podiumFiscalNote}>{display}</Text> : null;
+                                })()}
+                              </>
+                            )}
+                            {rankMode === 'pct' && (
+                              <>
+                                <Text style={pos.gainPct >= 0 ? st.positive : st.negative}>
+                                  {pos.gainPct >= 0 ? '+' : ''}{formatPct(pos.gainPct, 2)}
+                                </Text>
+                                <Text style={st.podiumSecondary}>{m(`${pos.gainEur >= 0 ? '+' : ''}${formatEuro(pos.gainEur)} \u20AC`)}</Text>
+                              </>
+                            )}
+                            {rankMode === 'sale' && pos.netEstimate !== null && (
+                              <>
+                                <Text style={st.podiumNet}>{m(`${formatEuro(pos.netEstimate)} \u20AC`)}</Text>
+                                {pos.regimeLabel && <Text style={st.podiumSecondary}>{pos.regimeLabel.replace('Régime le plus favorable', 'Régime favorable')}</Text>}
+                                {pos.fiscalNote && <Text style={st.podiumFiscalNote}>{pos.fiscalNote}</Text>}
+                              </>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+                {ranking.length > STATS.MAX_VISIBLE_POSITIONS && (
+                  <TouchableOpacity style={st.showAllBtn} activeOpacity={0.7}>
+                    <Text style={st.showAllText}>Voir toutes les positions {'\u2192'}</Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+
+            {/* ── BLOC 4 — AIDE À LA DÉCISION (premium) ── */}
+            {isPremium && (
+              <>
+                <Text style={st.sectionTitle}>AIDE À LA DÉCISION</Text>
+                {decisionCards.length >= 3 ? (
+                  <View style={st.decisionGrid}>
+                    {decisionCards.slice(0, 4).map(card => (
+                      <View key={card.id} style={st.decisionCard}>
+                        <Text style={st.decisionTitle}>{card.title}</Text>
+                        <Text style={st.decisionValue}>{masked && card.id !== 'regime' ? '\u2022\u2022\u2022\u2022\u2022\u2022' : card.value}</Text>
+                        <Text style={st.decisionSub}>{masked && (card.id === 'net' || card.id === 'window') ? '\u2022\u2022\u2022\u2022\u2022\u2022' : card.subtext}</Text>
+                        <Text style={st.decisionMethod}>{card.method.replace('Comparaison TMP vs TPV', 'Forfaitaire vs plus-values')}</Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={st.card}>
+                    <Text style={st.decisionTitle}>AUCUNE ACTION FISCALE PRIORITAIRE</Text>
+                    <Text style={st.decisionSub}>Pas d{'\u2019'}optimisation majeure immédiate identifiée.</Text>
                   </View>
                 )}
-                <View style={styles.card}>
-                  {PREMIUM_STATS_FEATURES.map((item, index) => (
-                    <View
-                      key={item.title}
-                      style={[
-                        styles.premiumFeatureRow,
-                        index < PREMIUM_STATS_FEATURES.length - 1 && {
-                          borderBottomWidth: 1,
-                          borderBottomColor: OrTrackColors.border,
-                        },
-                      ]}
-                      accessibilityLabel={`${item.title} — fonctionnalité premium`}
-                    >
-                      <View style={styles.premiumFeatureIcon}>
-                        <Text style={{ fontSize: 20 }}>{item.icon}</Text>
+              </>
+            )}
+
+            {/* ── BLOC 5 — DÉTAILS DU PORTEFEUILLE (accordion) ── */}
+            {isPremium && (
+              <>
+                <TouchableOpacity style={st.detailsToggle} onPress={() => setDetailsOpen(v => !v)} activeOpacity={0.7}>
+                  <Text style={st.detailsToggleText}>DÉTAILS DU PORTEFEUILLE</Text>
+                  <Ionicons name={detailsOpen ? 'chevron-up' : 'chevron-down'} size={14} color={C.gold} />
+                </TouchableOpacity>
+                {detailsOpen && (
+                  <View style={st.card}>
+                    <View style={st.detailRow}>
+                      <Text style={st.detailKey}>Nombre de positions</Text>
+                      <Text style={st.detailVal}>{positions.length}</Text>
+                    </View>
+                    {dominantMetal && (
+                      <View style={st.detailRow}>
+                        <Text style={st.detailKey}>Métal dominant</Text>
+                        <Text style={st.detailVal}>{dominantMetal.name} ({Math.round(dominantMetal.partValue * 100)} %)</Text>
                       </View>
-                      <View style={styles.premiumFeatureText}>
-                        <Text style={styles.premiumFeatureTitle}>{item.title}</Text>
-                        <Text style={styles.premiumFeatureSub}>{item.sub}</Text>
+                    )}
+                    <View style={st.detailRow}>
+                      <Text style={st.detailKey}>Ancienneté moyenne</Text>
+                      <Text style={st.detailVal}>{fmtMonths(globalAvgMonths)}</Text>
+                    </View>
+                    {metalMetrics.length > 1 && metalMetrics.map(mm => (
+                      <View key={mm.metal} style={st.detailRow}>
+                        <Text style={st.detailKeySub}>{METAL_CONFIG[mm.metal].name}</Text>
+                        <Text style={st.detailValSub}>{fmtMonths(Math.round(mm.avgMonths))}</Text>
                       </View>
-                      <Ionicons name="lock-closed" size={16} color={OrTrackColors.gold} />
+                    ))}
+                    <View style={st.detailDivider} />
+                    {metalMetrics.map(mm => (
+                      <View key={mm.metal}>
+                        <View style={st.detailRow}>
+                          <Text style={st.detailKey}>Coût moyen {METAL_CONFIG[mm.metal].name}</Text>
+                          <Text style={st.detailVal}>{m(`${formatEuro(mm.avgPrice)} ${currencySymbol}/pièce`)}</Text>
+                        </View>
+                        <View style={st.detailRow}>
+                          <Text style={st.detailKey}>Poids total {METAL_CONFIG[mm.metal].name}</Text>
+                          <Text style={st.detailVal}>{formatG(mm.totalG)}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            )}
+
+            {/* Non-premium CTA */}
+            {!isPremium && (
+              <>
+                <Text style={st.sectionTitle}>ANALYSES PREMIUM</Text>
+                <View style={st.card}>
+                  {PREMIUM_FEATURES.map((item, i) => (
+                    <View key={item.title} style={[st.premiumRow, i < PREMIUM_FEATURES.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border }]}>
+                      <View style={st.premiumIcon}><Text style={{ fontSize: 20 }}>{item.icon}</Text></View>
+                      <View style={{ flex: 1, marginLeft: 10 }}>
+                        <Text style={st.premiumTitle}>{item.title}</Text>
+                        <Text style={st.premiumSub}>{item.sub}</Text>
+                      </View>
+                      <Ionicons name="lock-closed" size={16} color={C.gold} />
                     </View>
                   ))}
                 </View>
-                <TouchableOpacity
-                  style={styles.premiumCtaButton}
-                  onPress={showPaywall}
-                  activeOpacity={0.7}
-                  accessibilityLabel="Voir combien je gagne réellement"
-                >
-                  <Text style={styles.premiumCtaText}>Voir combien je gagne réellement</Text>
+                <TouchableOpacity style={st.premiumCta} onPress={showPaywall} activeOpacity={0.7}>
+                  <Text style={st.premiumCtaText}>Débloquer les analyses</Text>
                 </TouchableOpacity>
-                <Text style={{
-                  fontSize: 12,
-                  color: OrTrackColors.subtext,
-                  textAlign: 'center',
-                  marginTop: 6,
-                }}>
-                  Accès immédiat · 3 analyses disponibles
-                </Text>
               </>
             )}
 
+            {/* Timestamp */}
+            {timeStr && <Text style={st.timestamp}>Cours du jour à {timeStr}</Text>}
           </>
         )}
-
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+// ─── Styles ─────────────────────────────────────────────────────────────────
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: OrTrackColors.background,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 48,
-  },
+const st = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.background },
+  scroll: { padding: 20, paddingBottom: 48 },
 
-  // Header
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-    gap: 12,
-  },
-  backBtn: {
-    paddingVertical: 4,
-  },
-  backText: {
-    fontSize: 13,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 24, gap: 12 },
+  backBtn: { paddingVertical: 4 },
+  backText: { fontSize: 13, color: C.gold, fontWeight: '600' },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: C.white },
 
-  // Empty state
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 48,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: OrTrackColors.subtext,
-    textAlign: 'center',
-  },
+  emptyState: { alignItems: 'center', paddingVertical: 48 },
+  emptyTitle: { fontSize: 18, fontWeight: '600', color: C.white, marginBottom: 8 },
+  emptyText: { fontSize: 14, color: C.subtext, textAlign: 'center' },
 
-  // Section title
-  sectionTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    marginBottom: 10,
-    marginTop: 4,
-  },
+  sectionTitle: { fontSize: 11, fontWeight: '700', color: C.gold, textTransform: 'uppercase', letterSpacing: 1.2, marginBottom: 10, marginTop: 4 },
+  sectionLabel: { fontSize: 11, color: C.subtext, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 8 },
 
-  // Hero card
-  heroCard: {
-    borderRadius: 14,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-  },
-  heroCardPositive: {
-    backgroundColor: OrTrackColors.card,
-    borderColor: 'rgba(76,175,80,0.3)',
-  },
-  heroCardNegative: {
-    backgroundColor: OrTrackColors.card,
-    borderColor: 'rgba(224,112,112,0.3)',
-  },
-  sectionLabel: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  heroValue: {
-    fontSize: 36,
-    fontWeight: '800',
-    marginBottom: 2,
-  },
-  heroPercent: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 16,
-  },
-  heroRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-    paddingTop: 12,
-    marginTop: 4,
-  },
-  heroCol: {
-    flex: 1,
-  },
-  heroLabel: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  heroAmount: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-  },
-  heroSeparator: {
-    width: 1,
-    height: 32,
-    backgroundColor: OrTrackColors.border,
-    marginHorizontal: 12,
-  },
+  // Hero
+  heroCard: { backgroundColor: C.card, borderRadius: 14, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(201,168,76,0.25)' },
+  heroValue: { fontSize: 32, fontWeight: '800', marginBottom: 2 },
+  heroPercent: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
+  heroRef: { fontSize: 11, color: C.textDim, marginBottom: 12, fontStyle: 'italic' },
+  heroRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12, marginTop: 4 },
+  heroCol: { flex: 1 },
+  heroLabel: { fontSize: 11, color: C.subtext, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  heroAmount: { fontSize: 15, fontWeight: '600', color: C.white },
+  heroSep: { width: 1, height: 32, backgroundColor: C.border, marginHorizontal: 12 },
+  heroNetBlock: { marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.border },
+  heroNetRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  heroNetLabel: { fontSize: 12, color: C.textDim },
+  heroNetValue: { fontSize: 20, fontWeight: '700', color: C.gold, marginBottom: 2 },
+  heroNetFiscal: { fontSize: 12, color: C.subtext, marginBottom: 2 },
+  heroMethod: { fontSize: 10, color: C.textDim },
+  heroNetUnavailable: { fontSize: 12, color: C.textDim, marginTop: 12, fontStyle: 'italic' },
+  heroBridge: { marginTop: 12, alignItems: 'center' },
+  heroBridgeText: { fontSize: 13, color: C.gold, fontWeight: '600' },
 
-  // Card générique
-  card: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: OrTrackColors.border,
-    marginVertical: 10,
-  },
+  // Insight
+  insightCard: { backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 20 },
+  insightTitle: { fontSize: 10, fontWeight: '700', color: C.gold, letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' },
+  insightPhrase: { fontSize: 13, color: C.white, lineHeight: 20, marginBottom: 4 },
+  insightSub: { fontSize: 12, color: C.textDim, marginBottom: 4 },
+  insightMethod: { fontSize: 10, color: C.textDim, fontStyle: 'italic', marginTop: 4 },
+  insightAction: { marginTop: 8 },
+  insightActionText: { fontSize: 13, color: C.gold, fontWeight: '600' },
 
-  // Barres répartition
-  barRow: {
-    marginBottom: 12,
-  },
-  barMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  barLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  metalBadgeSmall: {
-    borderWidth: 1,
-    borderRadius: 4,
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-  },
-  metalBadgeSmallText: {
-    fontSize: 8,
-    fontWeight: '700',
-  },
-  barLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  barPct: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  barTrack: {
-    height: 8,
-    backgroundColor: OrTrackColors.border,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  barFill: {
-    height: 8,
-    borderRadius: 4,
-  },
+  // Card
+  card: { backgroundColor: C.card, borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: C.border },
+  divider: { height: 1, backgroundColor: C.border, marginVertical: 10 },
+
+  // Metal breakdown
+  metalRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  metalBadge: { borderWidth: 1, borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 },
+  metalBadgeText: { fontSize: 8, fontWeight: '700' },
+  metalName: { fontSize: 14, fontWeight: '600', color: C.white },
+  metalSub: { fontSize: 11, color: C.subtext, marginTop: 1 },
+
+  // Toggle
+  toggleRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  toggleBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: C.border },
+  toggleBtnActive: { borderColor: C.gold, backgroundColor: 'rgba(201,168,76,0.12)' },
+  toggleBtnText: { fontSize: 12, color: C.subtext, fontWeight: '500' },
+  toggleBtnTextActive: { color: C.gold, fontWeight: '700' },
 
   // Podium
-  podiumRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 4,
-  },
-  rankBadge: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#1F1B0A',
-    borderWidth: 2,
-    borderColor: OrTrackColors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  rankBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-  },
-  rankBadgeSilver: {
-    borderColor: '#A8A8B8',
-    backgroundColor: '#18181F',
-  },
-  rankBadgeTextSilver: {
-    color: '#A8A8B8',
-  },
-  rankBadgeLast: {
-    borderColor: '#E07070',
-    backgroundColor: '#1F1414',
-  },
-  rankBadgeTextLast: {
-    color: '#E07070',
-  },
-  podiumInfo: {
-    flex: 1,
-  },
-  podiumProduct: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-  },
-  podiumMetal: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginTop: 1,
-  },
+  podiumRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 4 },
+  rankBadge: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 2 },
+  rankBadgeText: { fontSize: 12, fontWeight: '700' },
+  rankGold: { backgroundColor: '#1F1B0A', borderColor: C.gold },
+  rankGoldText: { color: C.gold },
+  rankSilver: { backgroundColor: '#18181F', borderColor: '#A8A8B8' },
+  rankSilverText: { color: '#A8A8B8' },
+  rankBronze: { backgroundColor: '#1F1A10', borderColor: '#CD7F32' },
+  rankBronzeText: { color: '#CD7F32' },
+  rankGray: { backgroundColor: '#1A1A1A', borderColor: '#666' },
+  rankGrayText: { color: '#666' },
+  podiumInfo: { flex: 1 },
+  podiumProduct: { fontSize: 14, fontWeight: '600', color: C.white },
+  podiumMetal: { fontSize: 11, color: C.subtext, marginTop: 1 },
+  podiumSecondary: { fontSize: 11, color: C.textDim, marginTop: 1 },
+  podiumNet: { fontSize: 14, fontWeight: '600', color: C.gold },
+  podiumFiscalNote: { fontSize: 10, color: C.textDim, marginTop: 2, fontStyle: 'italic' },
+  showAllBtn: { alignItems: 'center', paddingVertical: 8 },
+  showAllText: { fontSize: 13, color: C.gold, fontWeight: '600' },
 
-  // Grid 2x2
-  grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 20,
-  },
-  gridCard: {
-    width: '47.5%',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-    minHeight: 90,
-  },
-  gridLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  gridValue: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-    marginBottom: 2,
-  },
-  gridValueLarge: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  gridSub: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
+  // Decision grid
+  decisionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 20 },
+  decisionCard: { width: '47%', backgroundColor: C.card, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.border, minHeight: 100 },
+  decisionTitle: { fontSize: 9, fontWeight: '700', color: C.gold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
+  decisionValue: { fontSize: 16, fontWeight: '700', color: C.white, marginBottom: 4 },
+  decisionSub: { fontSize: 11, color: C.subtext, marginBottom: 4 },
+  decisionMethod: { fontSize: 10, color: C.textDim, fontStyle: 'italic' },
 
-  // Conseil intelligent
-  adviceCard: {
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    borderWidth: 1,
-    marginBottom: 20,
-  },
-  adviceWarning: {
-    backgroundColor: 'rgba(255,193,7,0.08)',
-    borderColor: 'rgba(255,193,7,0.3)',
-  },
-  adviceGood: {
-    backgroundColor: 'rgba(76,175,80,0.08)',
-    borderColor: 'rgba(76,175,80,0.3)',
-  },
-  adviceInfo: {
-    backgroundColor: 'rgba(201,168,76,0.08)',
-    borderColor: 'rgba(201,168,76,0.2)',
-  },
-  adviceIcon: {
-    fontSize: 20,
-    lineHeight: 24,
-  },
-  adviceContent: {
-    flex: 1,
-  },
-  adviceText: {
-    fontSize: 13,
-    color: OrTrackColors.white,
-    lineHeight: 20,
-  },
-  adviceLink: {
-    marginTop: 8,
-  },
-  adviceLinkText: {
-    fontSize: 13,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
-  },
+  // Details accordion
+  detailsToggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.border, marginTop: 8 },
+  detailsToggleText: { fontSize: 11, fontWeight: '700', color: C.gold, letterSpacing: 1 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  detailKey: { fontSize: 13, color: C.subtext },
+  detailVal: { fontSize: 13, fontWeight: '600', color: C.white },
+  detailKeySub: { fontSize: 12, color: C.textDim, paddingLeft: 12 },
+  detailValSub: { fontSize: 12, color: C.textDim },
+  detailDivider: { height: 1, backgroundColor: C.border, marginVertical: 8 },
 
-  // Premium features list
-  premiumFeatureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  premiumFeatureIcon: {
-    width: 36,
-    alignItems: 'center',
-  },
-  premiumFeatureText: {
-    flex: 1,
-    marginLeft: 10,
-  },
-  premiumFeatureTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: OrTrackColors.white,
-  },
-  premiumFeatureSub: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 2,
-  },
-  premiumCtaButton: {
-    backgroundColor: OrTrackColors.gold,
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    alignItems: 'center',
-  },
-  premiumCtaText: {
-    color: OrTrackColors.background,
-    fontSize: 15,
-    fontWeight: '700',
-  },
+  // Premium features
+  premiumRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  premiumIcon: { width: 36, alignItems: 'center' },
+  premiumTitle: { fontSize: 14, fontWeight: '600', color: C.white },
+  premiumSub: { fontSize: 12, color: C.subtext, marginTop: 2 },
+  premiumCta: { backgroundColor: C.gold, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  premiumCtaText: { color: C.background, fontSize: 15, fontWeight: '700' },
 
-  // Colors
+  timestamp: { fontSize: 11, color: C.textDim, textAlign: 'center', marginTop: 16 },
+
   positive: { color: '#4CAF50' },
   negative: { color: '#E07070' },
 });

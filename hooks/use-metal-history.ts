@@ -42,6 +42,8 @@ export async function loadPriceHistory(
   currency: string = 'EUR',
   metal?: string
 ): Promise<PricePoint[]> {
+  // price_eur only available from 2021-03-07 for most metals, copper from 2026-03-08
+  // Long-term periods (10A, 20A) use USD to avoid silent EUR/USD mixing via fallback
   const effectiveCurrency = LONG_TERM_PERIODS.includes(period) ? 'USD' : currency;
   const cacheKey = `${STORAGE_KEYS.historyCachePrefix}${period}_${effectiveCurrency}${metal ? '_' + metal : ''}`;
 

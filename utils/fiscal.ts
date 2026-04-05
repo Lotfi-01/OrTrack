@@ -1,5 +1,10 @@
 import { TAX } from '@/constants/tax';
-import { parseDate } from '@/utils/tax-helpers';
+import { parseDate, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
+import { type MetalType, getSpot, OZ_TO_G } from '@/constants/metals';
+import { Position } from '@/types/position';
+
+/** Seuil en € en dessous duquel les deux régimes sont considérés équivalents */
+export const REGIME_EQUALITY_THRESHOLD = 1;
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -24,7 +29,12 @@ export type RegimeComparison = {
 
 // ── Fonctions ──────────────────────────────────────────────────────────────
 
-/** 0% si < 3 ans, 5%/an dès la 3e année, plafonné à 100% (22 ans) */
+/**
+ * Calcule l'abattement pour détention longue.
+ * @returns abattement en pourcentage 0–100 (ex: 20 pour 20%).
+ * ⚠️ Convention : pourcentage, pas décimal. Diviser par 100 avant multiplication.
+ * Note : computeTax (tax-helpers.ts) utilise la convention décimal 0–1. Unification à prévoir.
+ */
 export function computeAbatement(holdingYears: number): number {
   if (holdingYears < TAX.abatementStartYear) return 0;
   return Math.min((holdingYears - (TAX.abatementStartYear - 1)) * (TAX.abatementPerYear * 100), 100);
@@ -111,5 +121,97 @@ export function computeFiscalCountdown(purchaseDate: string): FiscalCountdown | 
     exemptionLabel,
     exemptionYear: exemptionDate.getFullYear(),
     progress: abattement / 100,
+  };
+}
+
+// ── Portfolio-level fiscal summary ─────────────────────────────────────
+
+export type PortfolioFiscalSummary = {
+  totalSalePrice: number;
+  totalCostPrice: number;
+  grossGain: number;
+  totalForfaitaireTax: number;
+  totalPVTax: number;
+  netForfaitaire: number;
+  netPlusValues: number;
+  bestNet: number;
+  bestRegime: 'forfaitaire' | 'plusvalues' | null;
+  delta: number;
+  isEquality: boolean;
+  /** Per-position fiscal data (for insights) */
+  positionFiscals: {
+    pos: Position;
+    salePrice: number;
+    costPrice: number;
+    years: number;
+    forfaitaireTax: number;
+    pvTax: number;
+    netForf: number;
+    netPV: number;
+    abatement: number;
+    isExempt: boolean;
+    gainEur: number;
+  }[];
+};
+
+/**
+ * Compute portfolio-level fiscal summary. Same logic as app/fiscalite-globale.tsx.
+ * Uses computeTax() per position then aggregates.
+ */
+export function computePortfolioFiscalSummary(
+  positions: Position[],
+  prices: Record<string, number | null>,
+): PortfolioFiscalSummary | null {
+  const now = new Date();
+  const positionFiscals: PortfolioFiscalSummary['positionFiscals'] = [];
+
+  for (const pos of positions) {
+    const spot = getSpot(pos.metal as MetalType, prices as any);
+    if (spot === null) continue;
+    const salePrice = pos.quantity * (pos.weightG / OZ_TO_G) * spot;
+    const costPrice = pos.quantity * pos.purchasePrice;
+    if (!Number.isFinite(costPrice) || costPrice <= 0) continue;
+
+    const purchaseDate = parseDate(pos.purchaseDate);
+    if (!purchaseDate) continue;
+    const years = calcYearsHeld(purchaseDate, now);
+    if (years < 0) continue;
+
+    const tax = computeTax(salePrice, costPrice, years);
+    positionFiscals.push({
+      pos,
+      salePrice,
+      costPrice,
+      years,
+      forfaitaireTax: tax.forfaitaire,
+      pvTax: tax.plusValuesTax,
+      netForf: salePrice - tax.forfaitaire,
+      netPV: salePrice - tax.plusValuesTax,
+      abatement: tax.abatement,
+      isExempt: tax.isExempt,
+      gainEur: salePrice - costPrice,
+    });
+  }
+
+  if (positionFiscals.length === 0) return null;
+
+  const totalSalePrice = positionFiscals.reduce((s, p) => s + p.salePrice, 0);
+  const totalCostPrice = positionFiscals.reduce((s, p) => s + p.costPrice, 0);
+  const grossGain = totalSalePrice - totalCostPrice;
+  const totalForfaitaireTax = positionFiscals.reduce((s, p) => s + p.forfaitaireTax, 0);
+  const totalPVTax = positionFiscals.reduce((s, p) => s + p.pvTax, 0);
+  const netForfaitaire = totalSalePrice - totalForfaitaireTax;
+  const netPlusValues = totalSalePrice - totalPVTax;
+  const delta = Math.abs(netPlusValues - netForfaitaire);
+  const isEquality = delta < REGIME_EQUALITY_THRESHOLD;
+  const bestRegime = isEquality ? null : netPlusValues > netForfaitaire ? ('plusvalues' as const) : ('forfaitaire' as const);
+  const bestNet = bestRegime === 'plusvalues' ? netPlusValues : netForfaitaire;
+
+  return {
+    totalSalePrice, totalCostPrice, grossGain,
+    totalForfaitaireTax, totalPVTax,
+    netForfaitaire, netPlusValues,
+    bestNet, bestRegime, delta, isEquality,
+    positionFiscals,
   };
 }

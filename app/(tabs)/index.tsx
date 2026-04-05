@@ -81,13 +81,21 @@ const MOIS_COURT = [
   'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.',
 ];
 
-function formatChartDate(dateStr: string, period?: string): string {
+function formatChartDate(dateStr: string, period?: string, shortRange?: boolean): string {
   if (!dateStr || dateStr.length < 10) return dateStr;
   const parts = dateStr.split('-').map(Number);
   const yr = parts[0];
   const mo = parts[1];
   const d = parts[2];
   if (!mo || !d) return dateStr;
+  // 5A, 10A, 20A: year only
+  if (period === '5A' || period === '10A' || period === '20A') {
+    return String(yr);
+  }
+  // 1A with short range (< 90 days of data): use day-level granularity
+  if (period === '1A' && shortRange) {
+    return `${d} ${MOIS_COURT[mo - 1]}`;
+  }
   if (period === '1A') {
     return `${MOIS_COURT[mo - 1]} ${String(yr).slice(2)}`;
   }
@@ -257,23 +265,18 @@ export default function AccueilScreen() {
     setActiveMarketIdx(idx);
   }, []);
 
-  const handleMarketScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+  // Scroll end only resets programmatic flag — does NOT update selectedMetal
+  const handleMarketScrollEnd = useCallback(() => {
     if (isProgrammaticScroll.current) {
       isProgrammaticScroll.current = false;
-      return;
     }
-    const x = e.nativeEvent.contentOffset.x;
-    const idx = Math.max(0, Math.min(Math.round(x / SNAP_INTERVAL), MARKET_METALS.length - 1));
-    const mm = MARKET_METALS[idx];
-    if (mm && mm.spotKey !== selectedMetal.spotKey) {
-      const cfg = METAL_CONFIG[mm.key];
-      setSelectedMetal({ key: mm.key, spotKey: mm.spotKey, symbol: cfg.symbol });
-    }
-  }, [selectedMetal.spotKey]);
+  }, []);
 
   const m = (text: string) => masked ? '••••••' : text;
 
   const chartW = SCREEN_WIDTH - 68;
+  // 10A/20A use USD source (price_eur unavailable before 2021)
+  const chartCurrencySymbol = selectedPeriod === '10A' || selectedPeriod === '20A' ? '$' : currencySymbol;
 
   // ─────────────────────────────────────────────────────────────────────
 
@@ -435,16 +438,17 @@ export default function AccueilScreen() {
           </View>
 
           <View style={st.pillRow}>
-            {(['1S', '1M', '3M', '1A'] as HistoryPeriod[]).map(p => (
+            {/* BYPASS PREMIUM — À RETIRER : toutes les périodes déverrouillées */}
+            {(['1S', '1M', '3M', '1A', '5A', '10A', '20A'] as HistoryPeriod[]).map(p => (
               <TouchableOpacity key={p} style={[st.pill, selectedPeriod === p && st.pillAct]} onPress={() => setSelectedPeriod(p)}>
                 <Text style={[st.pillTxt, selectedPeriod === p && st.pillTxtAct]}>{p}</Text>
               </TouchableOpacity>
             ))}
-            <TouchableOpacity style={st.lockPill} onPress={() => Alert.alert('Premium', 'Débloquez l\'historique 5 ans avec OrTrack Premium')} activeOpacity={0.7}>
-              <Ionicons name="lock-closed-outline" size={10} color={C.textDim} />
-              <Text style={st.lockTxt}>5A+</Text>
-            </TouchableOpacity>
           </View>
+
+          {(selectedPeriod === '10A' || selectedPeriod === '20A') && (
+            <Text style={{ color: C.textMuted, fontSize: 11, textAlign: 'right', marginBottom: 4, opacity: 0.7 }}>Cours en USD (source historique)</Text>
+          )}
 
           {chartData && (
             <TouchableOpacity activeOpacity={0.8} onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: 'EUR' } })}>
@@ -461,18 +465,32 @@ export default function AccueilScreen() {
             </TouchableOpacity>
           )}
 
-          {chartHistory.length > 2 && (
-            <View style={st.chartDates}>
-              <Text style={st.chartDate}>{formatChartDate(chartHistory[0]?.date ?? '', selectedPeriod)}</Text>
-              <Text style={st.chartDate}>{formatChartDate(chartHistory[Math.floor(chartHistory.length / 2)]?.date ?? '', selectedPeriod)}</Text>
-              <Text style={st.chartDate}>{formatChartDate(chartHistory[chartHistory.length - 1]?.date ?? '', selectedPeriod)}</Text>
-            </View>
-          )}
+          {chartHistory.length > 2 && (() => {
+            const first = chartHistory[0]?.date ?? '';
+            const mid = chartHistory[Math.floor(chartHistory.length / 2)]?.date ?? '';
+            const last = chartHistory[chartHistory.length - 1]?.date ?? '';
+            // Detect short range: < 90 days between first and last data point
+            const t0 = new Date(first).getTime();
+            const t1 = new Date(last).getTime();
+            const shortRange = !isNaN(t0) && !isNaN(t1) && (t1 - t0) < 90 * 24 * 60 * 60 * 1000;
+            const l1 = formatChartDate(first, selectedPeriod, shortRange);
+            const l2 = formatChartDate(mid, selectedPeriod, shortRange);
+            const l3 = formatChartDate(last, selectedPeriod, shortRange);
+            // Anti-duplicate guard: hide middle label if it matches first or last
+            const showMid = l2 !== l1 && l2 !== l3;
+            return (
+              <View style={st.chartDates}>
+                <Text style={st.chartDate}>{l1}</Text>
+                <Text style={st.chartDate}>{showMid ? l2 : ''}</Text>
+                <Text style={st.chartDate}>{l3 !== l1 ? l3 : ''}</Text>
+              </View>
+            );
+          })()}
 
           {chartData && (
             <View style={st.mmRow}>
-              <Text style={st.mmText}>Min {formatEuro(chartData.minVal)} {currencySymbol}</Text>
-              <Text style={st.mmText}>Max {formatEuro(chartData.maxVal)} {currencySymbol}</Text>
+              <Text style={st.mmText}>Min {formatEuro(chartData.minVal)} {chartCurrencySymbol}</Text>
+              <Text style={st.mmText}>Max {formatEuro(chartData.maxVal)} {chartCurrencySymbol}</Text>
             </View>
           )}
 
@@ -559,13 +577,11 @@ export default function AccueilScreen() {
         </ScrollView>
 
         <View style={st.dotRow}>
-          {MARKET_METALS.map((mm, i) => (
+          {MARKET_METALS.map((_, i) => (
             <TouchableOpacity key={i} onPress={() => {
               isProgrammaticScroll.current = true;
               marketScrollRef.current?.scrollTo({ x: i * SNAP_INTERVAL, animated: true });
               setActiveMarketIdx(i);
-              const cfg = METAL_CONFIG[mm.key];
-              setSelectedMetal({ key: mm.key, spotKey: mm.spotKey, symbol: cfg.symbol });
             }} style={[st.dot, i === activeMarketIdx && st.dotAct]} />
           ))}
         </View>

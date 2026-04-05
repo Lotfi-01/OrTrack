@@ -82,7 +82,8 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   const gradId = gradIdRef.current;
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
-  const { isPeriodLocked, showPaywall } = usePremium();
+  const { isPeriodLocked: _isPeriodLocked, showPaywall } = usePremium();
+  const isPeriodLocked = (_k: string) => false; // BYPASS PREMIUM — À RETIRER
   const [period, setPeriod] = useState<Period>('1S');
   const [touchIndex, setTouchIndex] = useState<number | null>(null);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);
@@ -147,7 +148,8 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   }, [chartData]);
 
   const color = LINE_COLORS[metal];
-  const currencySymbol = currency === 'USD' ? '$' : currency === 'CHF' ? 'CHF' : '€';
+  const isLongTerm = LONG_TERM_PERIODS.includes(period);
+  const currencySymbol = isLongTerm ? '$' : currency === 'USD' ? '$' : currency === 'CHF' ? 'CHF' : '€';
   const title = TITLES[metal];
 
   // ── SVG layout computation ─────────────────────────────────────────────
@@ -236,7 +238,14 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   return (
     <View style={styles.card}>
       <View style={styles.headerRow}>
-        <Text style={styles.cardLabel}>{title}</Text>
+        <View>
+          <Text style={styles.cardLabel}>{title}</Text>
+          {variation !== null && (
+            <Text style={{ fontSize: 10, color: OrTrackColors.subtext, marginTop: 2 }}>
+              {displayPoint ? 'Performance totale sur la période' : 'Performance sur la période'}
+            </Text>
+          )}
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           {variation !== null && (
             <Text style={[styles.variation, variation >= 0 ? styles.positive : styles.negative]}>
@@ -254,11 +263,12 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
         </View>
       </View>
 
-      {LONG_TERM_PERIODS.includes(period) && (
-        <Text style={{ color: '#888', fontSize: 10, marginBottom: 4, textAlign: 'right' }}>
-          Données affichées en USD
+      {isLongTerm && (
+        <Text style={{ color: '#888', fontSize: 10, marginBottom: 4, textAlign: 'right', opacity: 0.7 }}>
+          Cours en USD (source historique)
         </Text>
       )}
+
 
       {/* Period selector */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.periodRow, { marginHorizontal: -16 }]} contentContainerStyle={{ gap: 8, paddingHorizontal: 16 }}>
@@ -311,12 +321,15 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
               <Text style={styles.tooltipCompactDate}>
                 {formatDateFR(displayPoint.x)}
               </Text>
-              {variationInfo && (
+            </View>
+            {variationInfo && (
+              <View style={{ marginTop: 2 }}>
+                <Text style={{ fontSize: 9, color: OrTrackColors.subtext }}>Évolution depuis ce point</Text>
                 <Text style={[styles.tooltipCompactVariation, { color: variationInfo.couleur }]}>
                   {variationInfo.label}
                 </Text>
-              )}
-            </View>
+              </View>
+            )}
           </View>
         ) : null}
       </View>

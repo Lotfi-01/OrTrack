@@ -143,7 +143,7 @@ export default function AjouterScreen() {
   const [metal, setMetal] = useState<MetalType>('or');
   const [product, setProduct] = useState<Product | null>(null);
   const [customWeight, setCustomWeight] = useState('');
-  const [quantity, setQuantity] = useState('');
+  const [quantity, setQuantity] = useState('1');
   const [purchasePrice, setPurchasePrice] = useState('');
   const [purchaseDate, setPurchaseDate] = useState('');
   const [note, setNote] = useState('');
@@ -175,7 +175,7 @@ export default function AjouterScreen() {
           setMetal('or');
           setProduct(null);
           setCustomWeight('');
-          setQuantity('');
+          setQuantity('1');
           setPurchasePrice('');
           setPurchaseDate('');
           setNote('');
@@ -218,7 +218,7 @@ export default function AjouterScreen() {
         setMetal('or');
         setProduct(null);
         setCustomWeight('');
-        setQuantity('');
+        setQuantity('1');
         setPurchasePrice('');
         setPurchaseDate('');
         setNote('');
@@ -406,8 +406,8 @@ export default function AjouterScreen() {
     if (product === null) return 'Choisissez un produit pour continuer';
     if (!(effectiveWeightG > 0)) return 'Renseignez le poids du produit';
     if (!(qty > 0)) return 'Renseignez la quantité';
-    if (!(price > 0)) return 'Ajoutez un prix d\'achat';
-    if (purchaseDate.length !== 10) return 'Complétez la date d\'achat';
+    if (!(price > 0)) return 'Renseignez le prix d\u2019achat';
+    if (purchaseDate.length !== 10) return 'Renseignez la date d\u2019achat';
     return 'Complétez les champs requis';
   }, [product, effectiveWeightG, qty, price, purchaseDate]);
 
@@ -455,7 +455,7 @@ export default function AjouterScreen() {
     }
     if (product && !isStep2Active) {
       return {
-        text: 'Continuer',
+        text: `Continuer avec ${product.label}`,
         disabled: false,
         bgColor: '#C9A84C',
         textColor: '#12110F',
@@ -473,7 +473,7 @@ export default function AjouterScreen() {
       };
     }
     return {
-      text: effectiveEditMode ? 'Mettre à jour la position' : 'Ajouter au portefeuille',
+      text: effectiveEditMode ? 'Enregistrer les modifications' : 'Ajouter au portefeuille',
       disabled: false,
       bgColor: '#C9A84C',
       textColor: '#12110F',
@@ -512,7 +512,7 @@ export default function AjouterScreen() {
       }
 
       setCustomWeight('');
-      setQuantity('');
+      setQuantity('1');
       setPurchasePrice('');
       setPurchaseDate('');
       setNote('');
@@ -576,7 +576,7 @@ export default function AjouterScreen() {
           compact && styles.productChipLabelCompact,
           active && styles.productChipLabelActive,
         ]}>
-          {p.label}
+          {p.category === 'autre' ? 'Autre lingot' : p.label}
         </Text>
         {p.weightG !== null && (
           <Text style={[
@@ -687,7 +687,7 @@ export default function AjouterScreen() {
                 {showAllPieces && (
                   <TextInput
                     placeholder="Rechercher une pièce..."
-                    placeholderTextColor={OrTrackColors.subtext}
+                    placeholderTextColor={OrTrackColors.textDim}
                     value={coinSearch}
                     onChangeText={setCoinSearch}
                     autoFocus={false}
@@ -821,10 +821,11 @@ export default function AjouterScreen() {
               {isStep2Active && (
                 <View
                   style={styles.section}
-                  onLayout={() => {
+                  onLayout={(e) => {
                     if (justTappedContinue.current) {
+                      const y = e.nativeEvent.layout.y;
                       InteractionManager.runAfterInteractions(() => {
-                        scrollRef.current?.scrollToEnd({ animated: true });
+                        scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
                       });
                       justTappedContinue.current = false;
                     }
@@ -850,7 +851,7 @@ export default function AjouterScreen() {
                         <TextInput
                           style={styles.input}
                           keyboardType="decimal-pad"
-                          placeholder="1"
+                          placeholder="Quantité"
                           placeholderTextColor={OrTrackColors.tabIconDefault}
                           value={quantity}
                           onChangeText={setQuantity}
@@ -884,7 +885,10 @@ export default function AjouterScreen() {
                           keyboardType="decimal-pad"
                           placeholder="Ex : 1 700"
                           placeholderTextColor={OrTrackColors.tabIconDefault}
-                          value={isPriceFocused ? purchasePrice : purchasePrice.replace(/\./g, ',')}
+                          value={isPriceFocused ? purchasePrice : (() => {
+                            const num = parseFloat(purchasePrice.replace(',', '.'));
+                            return !isNaN(num) && num > 0 ? formatEuro(num) : purchasePrice.replace(/\./g, ',');
+                          })()}
                           onFocus={() => setIsPriceFocused(true)}
                           onBlur={() => setIsPriceFocused(false)}
                           onChangeText={(text) => {
@@ -992,15 +996,20 @@ export default function AjouterScreen() {
                   })()}
 
                   {spotEur !== null && (
-                    <Text style={styles.estimationHint}>
-                      Cours spot : {formatEuro(spotEur)} €/oz · {effectiveWeightG}g par unité
-                    </Text>
+                    <>
+                      <Text style={styles.estimationHint}>
+                        Cours spot : {formatEuro(spotEur)} {'\u20AC'}/oz {'\u00B7'} {formatG(effectiveWeightG)} par unité
+                      </Text>
+                      <Text style={styles.estimationDisclaimer}>
+                        Estimation basée sur le cours spot {'\u00B7'} Hors prime revendeur
+                      </Text>
+                    </>
                   )}
                 </View>
               )}
 
               {/* Spacer */}
-              <View style={{ height: 80 }} />
+              <View style={{ height: 110 }} />
             </>
           )}
 
@@ -1393,6 +1402,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: OrTrackColors.tabIconDefault,
     marginTop: 2,
+  },
+  estimationDisclaimer: {
+    fontSize: 10,
+    color: OrTrackColors.textDim,
+    marginTop: 4,
+    fontStyle: 'italic',
   },
 
   // Sticky CTA
