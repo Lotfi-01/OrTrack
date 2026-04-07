@@ -82,11 +82,6 @@ const PRODUCTS: Record<MetalType, Product[]> = {
     { label: 'Palladium 1oz', weightG: 31.10, popular: true, category: 'piece' },
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
-  cuivre: [
-    { label: 'Lingot Cuivre 1kg', weightG: 1000, category: 'lingot' },
-    { label: 'Lingot Cuivre 5kg', weightG: 5000, category: 'lingot' },
-    { label: 'Autre', weightG: null, category: 'autre' },
-  ],
 };
 
 const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CONFIG[MetalType]][];
@@ -95,6 +90,11 @@ const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CO
 
 function toNum(s: string): number {
   return parseFloat(s.replace(',', '.')) || 0;
+}
+
+function formatPriceDisplay(val: string): string {
+  const num = parseFloat(val.replace(',', '.'));
+  return !isNaN(num) && num > 0 ? formatEuro(num) : val.replace(/\./g, ',');
 }
 
 function autoFormatDate(raw: string): string {
@@ -117,10 +117,16 @@ function formatDateDMY(d: Date): string {
 // ─── Composant ────────────────────────────────────────────────────────────────
 
 export default function AjouterScreen() {
-  const { editId } = useLocalSearchParams<{ editId?: string }>();
+  const { editId, editTs } = useLocalSearchParams<{ editId?: string; editTs?: string }>();
   const isEditMode = editId != null && editId !== '' && editId !== 'undefined';
   const [staleEditId, setStaleEditId] = useState<string | null>(null);
-  const effectiveEditMode = isEditMode && editId !== staleEditId;
+  const [activeEditId, setActiveEditId] = useState<string | null>(null);
+  const activeEditIdRef = useRef<string | null>(null);
+  const lastHandledEditKeyRef = useRef<string | null>(null);
+  const effectiveEditMode =
+    activeEditId != null &&
+    activeEditId === editId &&
+    activeEditId !== staleEditId;
   const { prices, currencySymbol, refresh } = useSpotPrices();
   const { canAddPosition, showPaywall } = usePremium();
   const { positions, reloadPositions, addPosition, updatePosition } = usePositions();
@@ -154,9 +160,51 @@ export default function AjouterScreen() {
   const [isStep2Active, setIsStep2Active] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
   const [isPriceFocused, setIsPriceFocused] = useState(false);
+  const priceLocalRef = useRef(purchasePrice);
+  const [priceKey, setPriceKey] = useState(0);
+  const [priceDisplay, setPriceDisplay] = useState('');
 
   const dateRef = useRef(purchaseDate);
   dateRef.current = purchaseDate;
+
+  // ── Focus effect : edit session resolution ──────────────────────────────
+
+  useFocusEffect(
+    useCallback(() => {
+      const now = Date.now();
+      const editTsMs = Number(editTs);
+
+      const currentEditKey =
+        isEditMode && Number.isFinite(editTsMs) && editTsMs > 0
+          ? `${editId}:${editTsMs}`
+          : null;
+
+      const isNewFreshEdit =
+        currentEditKey != null &&
+        now - editTsMs >= 0 &&
+        now - editTsMs < 10000 &&
+        currentEditKey !== lastHandledEditKeyRef.current;
+
+      let nextActiveEditId = activeEditIdRef.current;
+
+      if (isNewFreshEdit) {
+        lastHandledEditKeyRef.current = currentEditKey;
+        nextActiveEditId = editId!;
+      } else if (!isEditMode || editId === staleEditId) {
+        nextActiveEditId = null;
+      }
+
+      if (nextActiveEditId !== activeEditIdRef.current) {
+        activeEditIdRef.current = nextActiveEditId;
+        setActiveEditId(nextActiveEditId);
+      }
+
+      return () => {
+        activeEditIdRef.current = null;
+        setActiveEditId(null);
+      };
+    }, [isEditMode, editId, editTs, staleEditId]),
+  );
 
   // ── Focus effect : load or reset ────────────────────────────────────────
 
@@ -168,7 +216,12 @@ export default function AjouterScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      if (effectiveEditMode) {
+      const localEffectiveEdit =
+        activeEditIdRef.current != null &&
+        activeEditIdRef.current === editId &&
+        activeEditIdRef.current !== staleEditId;
+
+      if (localEffectiveEdit) {
         const existing = positions.find(p => p.id === editId);
         if (positions.length > 0 && !existing) {
           setStaleEditId(editId!);
@@ -176,7 +229,7 @@ export default function AjouterScreen() {
           setProduct(null);
           setCustomWeight('');
           setQuantity('1');
-          setPurchasePrice('');
+          setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
           setPurchaseDate('');
           setNote('');
           setShowAllPieces(false);
@@ -201,11 +254,10 @@ export default function AjouterScreen() {
           setCustomWeight(String(existing.weightG));
         }
         setQuantity(String(existing.quantity));
-        setPurchasePrice(
-          typeof existing.purchasePrice === 'number'
-            ? existing.purchasePrice.toFixed(2)
-            : String(existing.purchasePrice).replace(/[\s\u00A0]/g, '').replace(/,/g, '.')
-        );
+        const epv = typeof existing.purchasePrice === 'number'
+          ? existing.purchasePrice.toFixed(2)
+          : String(existing.purchasePrice).replace(/[\s\u00A0]/g, '').replace(/,/g, '.');
+        setPurchasePrice(epv); setPriceDisplay(formatPriceDisplay(epv)); setPriceKey(k => k + 1);
         setPurchaseDate(existing.purchaseDate);
         setNote(existing.note ?? '');
         setShowAllPieces(false);
@@ -219,7 +271,7 @@ export default function AjouterScreen() {
         setProduct(null);
         setCustomWeight('');
         setQuantity('1');
-        setPurchasePrice('');
+        setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
         setPurchaseDate('');
         setNote('');
         setShowAllPieces(false);
@@ -233,7 +285,7 @@ export default function AjouterScreen() {
           showPaywall();
         }
       }
-    }, [effectiveEditMode, editId, positions, canAddPosition, showPaywall])
+    }, [isEditMode, editId, staleEditId, positions, canAddPosition, showPaywall])
   );
 
   // Cleanup timeout
@@ -249,7 +301,7 @@ export default function AjouterScreen() {
     setMetal(m);
     setProduct(null);
     setCustomWeight('');
-    setPurchasePrice('');
+    setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
     setIsPriceFocused(false);
     setShowAllPieces(false);
     setShowAllBars(false);
@@ -364,12 +416,13 @@ export default function AjouterScreen() {
     if (spot !== null && w > 0) {
       const unitVal = (w / OZ_TO_G) * spot;
       if (unitVal > 0 && !isNaN(unitVal)) {
-        setPurchasePrice(unitVal.toFixed(2));
+        const pv = unitVal.toFixed(2);
+        setPurchasePrice(pv); setPriceDisplay(formatPriceDisplay(pv)); setPriceKey(k => k + 1);
       } else {
-        setPurchasePrice('');
+        setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
       }
     } else {
-      setPurchasePrice('');
+      setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
     }
     setIsPriceFocused(false);
 
@@ -513,7 +566,7 @@ export default function AjouterScreen() {
 
       setCustomWeight('');
       setQuantity('1');
-      setPurchasePrice('');
+      setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
       setPurchaseDate('');
       setNote('');
       setIsPriceFocused(false);
@@ -870,40 +923,47 @@ export default function AjouterScreen() {
                               // NOTE: estimatedValue is computed from spot price at load time.
                               // If the user stays on screen for a long time, this value may be stale.
                               // Consider refreshing on "Cours du jour" tap in a future version.
-                              setPurchasePrice(estimatedValue!.toFixed(2));
+                              const spotVal = estimatedValue!.toFixed(2);
+                              const spotFr = spotVal.replace('.', ',');
+                              setPurchasePrice(spotVal);
+                              setPriceDisplay(formatPriceDisplay(spotVal));
+                              priceLocalRef.current = spotFr;
+                              setPriceKey(k => k + 1);
                               setIsPriceFocused(false);
                             }}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.quickFillBtn}>Cours du jour</Text>
+                            <Text style={styles.quickFillBtn}>Cours spot</Text>
                           </TouchableOpacity>
                         )}
                       </View>
                       <View style={styles.inputWrapper}>
                         <TextInput
+                          key={`price-${priceKey}`}
                           style={styles.input}
-                          keyboardType="decimal-pad"
+                          keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
                           placeholder="Ex : 1 700"
                           placeholderTextColor={OrTrackColors.tabIconDefault}
-                          value={isPriceFocused ? purchasePrice : (() => {
-                            const num = parseFloat(purchasePrice.replace(',', '.'));
-                            return !isNaN(num) && num > 0 ? formatEuro(num) : purchasePrice.replace(/\./g, ',');
-                          })()}
+                          defaultValue={priceDisplay}
                           onFocus={() => setIsPriceFocused(true)}
-                          onBlur={() => setIsPriceFocused(false)}
-                          onChangeText={(text) => {
-                            let n = text.replace(/[\s\u00A0]/g, '');
+                          onBlur={() => {
+                            let n = priceLocalRef.current;
+                            n = n.replace(/[\s\u00A0]/g, '');
                             n = n.replace(/,/g, '.');
                             n = n.replace(/[^0-9.]/g, '');
                             const dot = n.indexOf('.');
-                            if (dot !== -1) {
-                              n = n.slice(0, dot + 1) + n.slice(dot + 1).replace(/\./g, '');
-                            }
+                            if (dot !== -1) { n = n.slice(0, dot + 1) + n.slice(dot + 1).replace(/\./g, ''); }
                             const parts = n.split('.');
-                            if (parts.length === 2 && parts[1].length > 2) {
-                              n = parts[0] + '.' + parts[1].slice(0, 2);
-                            }
-                            setPurchasePrice(n);
+                            if (parts.length === 2 && parts[1].length > 2) { n = parts[0] + '.' + parts[1].slice(0, 2); }
+                            if (n !== purchasePrice) setPurchasePrice(n);
+                            const num = parseFloat(n);
+                            const formatted = !isNaN(num) && num > 0 ? formatEuro(num) : n.replace(/\./g, ',');
+                            setPriceDisplay(formatted);
+                            setPriceKey(k => k + 1);
+                            setIsPriceFocused(false);
+                          }}
+                          onChangeText={(text) => {
+                            priceLocalRef.current = text;
                           }}
                         />
                         <Text style={styles.inputSuffix}>{currencySymbol}</Text>

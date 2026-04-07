@@ -1,0 +1,18 @@
+export const RADAR_EVENTS = {
+  DASHBOARD_VIEW: 'radar_dashboard_view',
+  DASHBOARD_CTA_TAP: 'radar_dashboard_cta_tap',
+  SCREEN_VIEW: 'radar_screen_view',
+  FILTER_CHANGE: 'radar_filter_change',
+  PRODUCT_OPEN: 'radar_product_open',
+  LOCKED_PRODUCT_TAP: 'radar_locked_product_tap',
+  PAYWALL_OPEN: 'radar_paywall_open',
+  DETAIL_OPEN: 'radar_detail_open',
+  DETAIL_TOUCH: 'radar_detail_touch',
+  COMPARISON_VIEW: 'radar_comparison_view',
+  FOLLOW_TOGGLE_ON: 'prime_follow_toggle_on',
+  FOLLOW_TOGGLE_OFF: 'prime_follow_toggle_off',
+  FOLLOW_LIMIT_HIT: 'prime_follow_limit_hit',
+  FOLLOW_DETECTED: 'prime_follow_detected',
+  FOLLOW_BANNER_TAP: 'prime_follow_banner_tap',
+  FOLLOW_BANNER_DISMISS: 'prime_follow_banner_dismiss',
+} as const;

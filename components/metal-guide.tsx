@@ -8,12 +8,11 @@ import { OrTrackColors } from '@/constants/theme';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { formatEuro } from '@/utils/format';
 
-const PRICE_KEY: Record<string, 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper'> = {
+const PRICE_KEY: Record<string, 'gold' | 'silver' | 'platinum' | 'palladium'> = {
   or: 'gold',
   argent: 'silver',
   platine: 'platinum',
   palladium: 'palladium',
-  cuivre: 'copper',
 };
 
 type SpotPrices = ReturnType<typeof useSpotPrices>['prices'];
@@ -23,10 +22,6 @@ function getDisplayPrice(key: string, prices: SpotPrices): string | null {
   if (!priceKey) return null;
   const spot = prices[priceKey];
   if (spot === null) return null;
-  if (key === 'cuivre') {
-    const kgPrice = spot * (1000 / OZ_TO_G);
-    return formatEuro(kgPrice) + ' \u20AC/kg';
-  }
   return formatEuro(spot) + ' \u20AC/oz';
 }
 
@@ -35,7 +30,6 @@ const metalWithPrep: Record<string, string> = {
   argent: "de l'argent",
   platine: 'du platine',
   palladium: 'du palladium',
-  cuivre: 'du cuivre',
 };
 
 type MetalInfo = {
@@ -134,24 +128,6 @@ const METALS: MetalInfo[] = [
     priceFactor: ['Normes antipollution', 'Production russe', 'Véhicules hybrides'],
     tip: 'Très concentré géographiquement. Sensible aux sanctions russes et normes Euro 7.',
   },
-  {
-    key: 'cuivre',
-    name: 'Cuivre',
-    symbol: 'XCU',
-    color: '#B87333',
-    description:
-      'Indicateur de santé économique mondiale, le cuivre est le métal industriel de référence. Sa demande reflète directement l\u2019activité économique globale.',
-    units: 'Once troy pour cohérence \u00B7 coté en $/lb sur marchés',
-    funFact: 'Le cuivre est 100% recyclable sans perte de qualité.',
-    usages: ['\u26A1 Électricité', '\uD83C\uDFD7\uFE0F Construction', '\uD83D\uDE97 Véhicules électriques'],
-    production: [
-      { country: 'Chili', pct: '27%' },
-      { country: 'Pérou', pct: '10%' },
-      { country: 'Congo', pct: '8%' },
-    ],
-    priceFactor: ['Croissance chinoise', 'Transition énergétique', 'Dollar US'],
-    tip: 'Baromètre de l\'économie mondiale. Forte demande liée aux véhicules électriques et énergies renouvelables.',
-  },
 ];
 
 const DisclaimerFooter = () => (
@@ -204,7 +180,7 @@ export function MetalGuide() {
                 </View>
 
                 <View style={styles.priceRow}>
-                  <Text style={styles.sectionLabel}>COURS ACTUEL</Text>
+                  <Text style={styles.sectionLabel}>COURS SPOT</Text>
                   {displayPrice !== null ? (
                     <Text style={styles.priceValue}>{displayPrice}</Text>
                   ) : (

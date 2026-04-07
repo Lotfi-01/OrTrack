@@ -226,13 +226,13 @@ export default function PortefeuilleScreen() {
             <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
               {positions.length >= limits.maxPositions ? (
                 <Text style={st.quotaFull}>
-                  <Text style={{ color: C.gold }}>{positions.length}/{limits.maxPositions} incluses</Text>
+                  <Text style={{ color: C.gold }}>{positions.length}/{limits.maxPositions} positions gratuites</Text>
                   {' \u00B7 '}
                   <Text style={{ color: C.gold, fontWeight: '600' }}>Passez à Premium</Text>
                 </Text>
               ) : (
                 <Text style={st.quota}>
-                  {positions.length}/{limits.maxPositions} incluses{' \u00B7 '}
+                  {positions.length}/{limits.maxPositions} positions gratuites{' \u00B7 '}
                   <Text style={{ color: C.gold, opacity: 0.85 }}>Premium illimité</Text>
                 </Text>
               )}
@@ -254,7 +254,7 @@ export default function PortefeuilleScreen() {
               onToggle={() => toggleCard(vm.position.id)}
               onExpandL2={() => setLevel2Id(vm.position.id)}
               onCollapseL2={() => setLevel2Id(null)}
-              onEdit={() => router.replace({ pathname: '/(tabs)/ajouter' as never, params: { editId: vm.position.id } })}
+              onEdit={() => router.replace({ pathname: '/(tabs)/ajouter' as never, params: { editId: vm.position.id, editTs: String(Date.now()) } })}
               onDelete={() => {
                 Alert.alert('Position', undefined, [
                   {
@@ -319,7 +319,7 @@ export default function PortefeuilleScreen() {
         {/* ── 6. TRUST FOOTER ────────────────────────────── */}
         <View style={st.trustFooter}>
           <Text style={st.trustLine1}>
-            Cours du jour{timeStr ? ` \u00B7 Mis à jour à ${timeStr}` : ''}
+            Cours spot{timeStr ? ` \u00B7 Mis à jour à ${timeStr}` : ''}
           </Text>
           <Text style={st.trustLine2}>Estimation indicative {'\u00B7'} Ne constitue pas un conseil fiscal</Text>
         </View>

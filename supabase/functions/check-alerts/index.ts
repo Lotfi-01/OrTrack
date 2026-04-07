@@ -8,15 +8,14 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const METALS_API_KEY = Deno.env.get('METALS_API_KEY')!
 
 // metals.dev retourne les clés en anglais :
-// gold, silver, platinum, palladium, copper
+// gold, silver, platinum, palladium
 // La base Supabase stocke en français :
-// or, argent, platine, palladium, cuivre
+// or, argent, platine, palladium
 const METAL_MAPPING: Record<string, string> = {
   gold: 'or',
   silver: 'argent',
   platinum: 'platine',
   palladium: 'palladium',
-  copper: 'cuivre',
 }
 
 const METAL_LABELS: Record<string, string> = {
@@ -24,7 +23,6 @@ const METAL_LABELS: Record<string, string> = {
   argent: 'Argent',
   platine: 'Platine',
   palladium: 'Palladium',
-  cuivre: 'Cuivre',
 }
 
 Deno.serve(async (_req) => {

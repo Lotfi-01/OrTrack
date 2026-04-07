@@ -8,7 +8,7 @@ import { usePremium } from '@/contexts/premium-context';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod, LONG_TERM_PERIODS } from '@/hooks/use-metal-history';
 import { formatEuro, formatShortDateFR, formatMonthShortFR } from '@/utils/format';
 
-type Metal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
+type Metal = 'gold' | 'silver' | 'platinum' | 'palladium';
 type Period = HistoryPeriod;
 
 const PERIODS: { key: HistoryPeriod; label: string }[] = [
@@ -26,7 +26,6 @@ const LINE_COLORS: Record<Metal, string> = {
   silver: '#A8A8B8',
   platinum: '#E0E0E0',
   palladium: '#CBA135',
-  copper: '#B87333',
 };
 
 const TITLES: Record<Metal, string> = {
@@ -34,7 +33,6 @@ const TITLES: Record<Metal, string> = {
   silver: 'Argent (XAG)',
   platinum: 'Platine (XPT)',
   palladium: 'Palladium (XPD)',
-  copper: 'Cuivre (XCU)',
 };
 
 const CHART_HEIGHT = 220;

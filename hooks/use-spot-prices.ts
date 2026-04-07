@@ -14,7 +14,6 @@ export type SpotPrices = {
   silver: number | null;
   platinum: number | null;
   palladium: number | null;
-  copper: number | null;
 };
 
 export type UseSpotPricesResult = {
@@ -98,14 +97,12 @@ async function fetchSpotFromSupabase(
         silver: map.silver ?? null,
         platinum: map.platinum ?? null,
         palladium: map.palladium ?? null,
-        copper: map.copper ?? null,
       },
       pricesUsd: {
         gold: mapUsd.gold ?? null,
         silver: mapUsd.silver ?? null,
         platinum: mapUsd.platinum ?? null,
         palladium: mapUsd.palladium ?? null,
-        copper: mapUsd.copper ?? null,
       },
     };
   } finally {
@@ -115,10 +112,10 @@ async function fetchSpotFromSupabase(
 
 export function useSpotPrices(): UseSpotPricesResult {
   const [prices, setPrices] = useState<SpotPrices>({
-    gold: null, silver: null, platinum: null, palladium: null, copper: null,
+    gold: null, silver: null, platinum: null, palladium: null,
   });
   const [pricesUsdState, setPricesUsdState] = useState<SpotPrices>({
-    gold: null, silver: null, platinum: null, palladium: null, copper: null,
+    gold: null, silver: null, platinum: null, palladium: null,
   });
   const [loading, setLoading] = useState(true);       // premier chargement uniquement
   const [refreshing, setRefreshing] = useState(false); // refreshs silencieux

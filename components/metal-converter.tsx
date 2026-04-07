@@ -13,7 +13,7 @@ import { OrTrackColors } from '@/constants/theme';
 import { formatEuro } from '@/utils/format';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 
-type MetalKey = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
+type MetalKey = 'gold' | 'silver' | 'platinum' | 'palladium';
 type Mode = 'weightToEur' | 'eurToWeight';
 type Unit = 'g' | 'oz' | 'kg';
 
@@ -22,7 +22,6 @@ const METALS: { key: MetalKey; label: string; symbol: string; color: string }[] 
   { key: 'silver', label: 'Argent', symbol: 'XAG', color: '#A8A8B8' },
   { key: 'platinum', label: 'Platine', symbol: 'XPT', color: '#E0E0E0' },
   { key: 'palladium', label: 'Palladium', symbol: 'XPD', color: '#CBA135' },
-  { key: 'copper', label: 'Cuivre', symbol: 'XCU', color: '#B87333' },
 ];
 
 const PRESETS: { label: string; value: string; unit: Unit }[] = [
@@ -240,12 +239,6 @@ export function MetalConverter() {
         {/* Content */}
         {mode === 'weightToEur' ? renderWeightToEur() : renderEurToWeight()}
 
-        {/* Copper note */}
-        {selectedMetal === 'copper' && (
-          <Text style={styles.copperNote}>
-            Le cuivre est coté à ~0,35 €/oz, son prix unitaire est naturellement bas.
-          </Text>
-        )}
       </View>
 
       <DisclaimerFooter />
@@ -400,13 +393,6 @@ const styles = StyleSheet.create({
     color: OrTrackColors.gold,
     fontSize: 14,
     fontWeight: '500',
-  },
-  copperNote: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-    marginTop: 12,
-    textAlign: 'center',
-    lineHeight: 18,
   },
   disclaimer: {
     color: OrTrackColors.subtext,

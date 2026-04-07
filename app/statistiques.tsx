@@ -112,7 +112,7 @@ export default function StatistiquesScreen() {
 
   // Metal metrics for details
   const metalMetrics = useMemo(() => {
-    const metalKeys: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre'];
+    const metalKeys: MetalType[] = ['or', 'argent', 'platine', 'palladium'];
     return metalKeys.map(mk => {
       const filtered = positions.filter(p => p.metal === mk);
       if (filtered.length === 0) return null;

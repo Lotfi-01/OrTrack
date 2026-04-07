@@ -36,23 +36,26 @@ import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
 
 import type { MetalType } from '@/constants/metals';
+import { RADAR_PRODUCT_LABELS } from '@/utils/radar/types';
+import RadarDashboardCard from '@/components/radar/RadarDashboardCard';
+
+const SHOW_PRIME_MARKET = false;
 
 const C = OrTrackColors;
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_WIDTH = 138;
 const SNAP_INTERVAL = CARD_WIDTH + 10;
 
-const MARKET_METALS: { key: MetalType; spotKey: 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper'; unit: string }[] = [
+const MARKET_METALS: { key: MetalType; spotKey: 'gold' | 'silver' | 'platinum' | 'palladium'; unit: string }[] = [
   { key: 'or', spotKey: 'gold', unit: '€/oz' },
   { key: 'argent', spotKey: 'silver', unit: '€/oz' },
   { key: 'platine', spotKey: 'platinum', unit: '€/oz' },
   { key: 'palladium', spotKey: 'palladium', unit: '€/oz' },
-  { key: 'cuivre', spotKey: 'copper', unit: '€/kg' },
 ];
 
 // Articles pour construction de phrase : "Créer une alerte sur {article}"
 const METAL_ARTICLE: Record<string, string> = {
-  XAU: "l\u2019or", XAG: "l\u2019argent", XPT: 'le platine', XPD: 'le palladium', XCU: 'le cuivre',
+  XAU: "l\u2019or", XAG: "l\u2019argent", XPT: 'le platine', XPD: 'le palladium',
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -160,7 +163,7 @@ export default function AccueilScreen() {
       const pt = history.find(p => p.date === ydStr) ?? history[history.length - 2];
       if (!pt) return;
       const changes: Partial<Record<string, number>> = {};
-      for (const k of ['gold', 'silver', 'platinum', 'palladium', 'copper'] as const) {
+      for (const k of ['gold', 'silver', 'platinum', 'palladium'] as const) {
         const cur = prices[k];
         const past = pt[k];
         if (cur && past && past > 0) changes[k] = ((cur - past) / past) * 100;
@@ -198,6 +201,14 @@ export default function AccueilScreen() {
   }, [positions, prices]);
 
   const hasPositions = positions.length > 0;
+
+  // Reverse mapping: product label → PRIME_CONFIG key for Radar dashboard
+  const portfolioProductIds = useMemo(() => {
+    const labelToId = Object.fromEntries(
+      Object.entries(RADAR_PRODUCT_LABELS).map(([id, label]) => [label, id]),
+    );
+    return [...new Set(positions.map(p => labelToId[p.product]).filter((id): id is string => !!id))];
+  }, [positions]);
 
   // ── Init chart on dominant metal (anti-flash) ────────────────────────
 
@@ -237,10 +248,7 @@ export default function AccueilScreen() {
   const chartData = useMemo(() => {
     if (chartLoading) return null;
     const metalKey = selectedMetal.spotKey as keyof PricePoint;
-    const isCopper = selectedMetal.spotKey === 'copper';
-    // Cuivre : historique converti oz → kg pour cohérence avec la carte Marchés
-    const factor = isCopper ? 32.1507 : 1;
-    const pts = chartHistory.map(p => (Number(p[metalKey]) || 0) * factor).filter(v => v > 0);
+    const pts = chartHistory.map(p => (Number(p[metalKey]) || 0)).filter(v => v > 0);
     if (pts.length < 2) return null;
     const first = pts[0];
     const last = pts[pts.length - 1];
@@ -295,8 +303,8 @@ export default function AccueilScreen() {
             <View style={st.headerDot} />
             <Text style={st.headerTime}>
               {lastUpdated
-                ? `Mis à jour à ${String(lastUpdated.getHours()).padStart(2, '0')}:${String(lastUpdated.getMinutes()).padStart(2, '0')} \u00B7 Cours du jour`
-                : 'Cours du jour'}
+                ? `Mis à jour à ${String(lastUpdated.getHours()).padStart(2, '0')}:${String(lastUpdated.getMinutes()).padStart(2, '0')} \u00B7 Cours spot`
+                : 'Cours spot'}
             </Text>
           </View>
         </View>
@@ -340,7 +348,7 @@ export default function AccueilScreen() {
 
               {hasPositions && portfolio.gain > 0 && (
                 <View style={[st.netBlock, masked && st.netMasked]}>
-                  <Text style={st.netLabel}>Gain net estimé après impôts</Text>
+                  <Text style={st.netLabel}>Plus-value nette estimée</Text>
                   <Text style={[st.netValue, masked && { color: C.textDim }]}>
                     {m(`${formatEuro(portfolio.netEstime)} ${currencySymbol}`)}
                   </Text>
@@ -425,7 +433,7 @@ export default function AccueilScreen() {
           {(() => {
             const ch = change24h[selectedMetal.spotKey];
             if (ch != null && ch !== 0) {
-              return <Text style={{ color: ch > 0 ? C.green : C.red, fontSize: 11 }}>Dernière clôture : {ch > 0 ? '+' : ''}{formatPct(ch, 2)}</Text>;
+              return <Text style={{ color: ch > 0 ? C.green : C.red, fontSize: 11 }}>Variation séance : {ch > 0 ? '+' : ''}{formatPct(ch, 2)}</Text>;
             }
             return <Text style={{ color: C.textDim, fontSize: 11 }}>Inchangé</Text>;
           })()}
@@ -495,7 +503,7 @@ export default function AccueilScreen() {
           )}
 
           <TouchableOpacity onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: 'EUR' } })} activeOpacity={0.7}>
-            <Text style={{ color: C.gold, fontSize: 12, fontWeight: '600', textAlign: 'right', marginTop: 6 }}>Voir le détail →</Text>
+            <Text style={{ color: C.gold, fontSize: 12, fontWeight: '600', textAlign: 'right', marginTop: 6 }}>Voir le cours complet →</Text>
           </TouchableOpacity>
         </View>
         </View>
@@ -516,6 +524,11 @@ export default function AccueilScreen() {
               <View style={{ width: 80, height: 10, borderRadius: 4, backgroundColor: C.border }} />
             </View>
           </View>
+        )}
+
+        {/* ── 4b. RADAR PRIME ─────────────────────────────── */}
+        {SHOW_PRIME_MARKET && (
+          <RadarDashboardCard portfolioProductIds={portfolioProductIds} />
         )}
 
         {/* ── 5. ALERTES ─────────────────────────────────── */}
@@ -542,8 +555,7 @@ export default function AccueilScreen() {
           {MARKET_METALS.map(mm => {
             const cfg = METAL_CONFIG[mm.key];
             const rawSpot = prices[mm.spotKey];
-            // Cuivre : source en €/oz troy, conversion × 32.1507 vers €/kg
-            const spot = rawSpot !== null && mm.spotKey === 'copper' ? rawSpot * 32.1507 : rawSpot;
+            const spot = rawSpot;
             const ch = change24h[mm.spotKey];
             const isActive = selectedMetal.spotKey === mm.spotKey;
             return (
@@ -612,17 +624,17 @@ const st = StyleSheet.create({
   variationRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   varBadge: { borderRadius: 5, paddingVertical: 2, paddingHorizontal: 7 },
   varBadgeText: { fontSize: 12.5, fontWeight: '700' },
-  varAbs: { color: C.textMuted, fontSize: 11.5, marginLeft: 8 },
+  varAbs: { color: C.textDim, fontSize: 12, marginLeft: 8 },
   varPeriod: { color: C.textDim, fontSize: 11, marginLeft: 'auto' },
 
   netBlock: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, backgroundColor: 'rgba(201,168,76,0.03)', borderWidth: 1, borderColor: 'rgba(201,168,76,0.10)', borderRadius: 9, paddingVertical: 8, paddingHorizontal: 12 },
   netMasked: { backgroundColor: 'rgba(245,240,232,0.02)', borderColor: 'rgba(245,240,232,0.06)' },
-  netLabel: { color: C.textMuted, fontSize: 11 },
+  netLabel: { color: C.textDim, fontSize: 12 },
   netValue: { color: C.gold, fontSize: 17, fontWeight: '700' },
 
   ctaFiscal: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 12, paddingVertical: 12, marginTop: 14 },
   ctaFiscalText: { color: C.gold, fontSize: 13.5, fontWeight: '700', textAlign: 'center' },
-  trustLine: { color: C.textDim, fontSize: 11, textAlign: 'center', marginTop: 5 },
+  trustLine: { color: C.textDim, fontSize: 12, textAlign: 'center', marginTop: 5 },
 
   secTitle: { fontSize: 12, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10, marginTop: 6 },
   secRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, marginTop: 6 },
@@ -633,7 +645,7 @@ const st = StyleSheet.create({
   detBadgeText: { color: C.gold, fontSize: 10, fontWeight: '700' },
   detCenter: { flex: 1, marginLeft: 12 },
   detName: { color: C.white, fontSize: 14, fontWeight: '600' },
-  detSub: { color: C.textMuted, fontSize: 11, marginTop: 1 },
+  detSub: { color: C.textDim, fontSize: 12, marginTop: 1 },
   detRight: { alignItems: 'flex-end', marginRight: 8 },
   detVal: { color: C.white, fontSize: 14, fontWeight: '600' },
   detNet: { fontSize: 11.5, fontWeight: '600', marginTop: 1 },

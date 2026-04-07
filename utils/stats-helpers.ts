@@ -287,7 +287,7 @@ export function computeMetalBreakdown(
   positions: Position[],
   prices: Record<string, number | null>,
 ): MetalBreakdown[] {
-  const metalKeys: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre'];
+  const metalKeys: MetalType[] = ['or', 'argent', 'platine', 'palladium'];
   const result: MetalBreakdown[] = [];
   let totalValue = 0;
   let totalGain = 0;

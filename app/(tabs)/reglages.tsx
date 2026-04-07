@@ -201,7 +201,7 @@ export default function ReglagesScreen() {
       await AsyncStorage.removeItem(STORAGE_KEYS.spotCache);
       const periods = ['1M', '3M', '1A', '5A', '10A', '20A'];
       const currencies = ['EUR', 'USD', 'CHF'];
-      const metals = ['gold', 'silver', 'platinum', 'palladium', 'copper'];
+      const metals = ['gold', 'silver', 'platinum', 'palladium'];
       const histCacheKeys = [
         // Nouveau format avec métal
         ...periods.flatMap(p =>

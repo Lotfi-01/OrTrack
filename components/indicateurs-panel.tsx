@@ -91,14 +91,20 @@ function IndicatorCard({ ind }: { ind: Indicator }) {
       </View>
 
       <View style={styles.gaugeLabels}>
-        <Text style={styles.gaugeLabel}>{ind.low}</Text>
-        <Text style={styles.gaugeLabel}>{ind.high}</Text>
+        <Text style={styles.gaugeLabel}>{String(ind.low).replace('.', ',')}</Text>
+        <Text style={styles.gaugeLabel}>{String(ind.high).replace('.', ',')}</Text>
       </View>
+
+      {ind.value < ind.low * 0.7 || ind.value > ind.high * 1.3 ? (
+        <View style={styles.outOfRangeBadge}>
+          <Text style={styles.outOfRangeText}>Hors fourchette historique</Text>
+        </View>
+      ) : null}
 
       {!expanded && (
         <View style={styles.ratioSummaryBlock}>
           <Text style={styles.ratioSummary}>
-            {ind.unit} · Historique {ind.low}–{ind.high}
+            {ind.value.toFixed(2).replace('.', ',')}x {ind.unit} {'\u00B7'} Fourchette historique : {String(ind.low).replace('.', ',')}{'\u2013'}{String(ind.high).replace('.', ',')}
           </Text>
           {ind.spotLine && (
             <Text style={styles.ratioSpotLine}>{ind.spotLine}</Text>
@@ -109,7 +115,10 @@ function IndicatorCard({ ind }: { ind: Indicator }) {
       {expanded && (
         <>
           <Text style={[styles.ratioUnit, { marginBottom: 8 }]}>
-            {ind.unit}
+            {ind.value.toFixed(2).replace('.', ',')}x {ind.unit}
+          </Text>
+          <Text style={styles.ratioSummary}>
+            Fourchette historique : {String(ind.low).replace('.', ',')}{'\u2013'}{String(ind.high).replace('.', ',')}
           </Text>
           <Text style={styles.explanation}>{ind.explanation}</Text>
         </>
@@ -162,7 +171,7 @@ export function IndicateursPanel() {
       lowSignal: 'ATTENTION',
       midSignal: 'NEUTRE',
       highSignal: 'OPPORTUNITÉ',
-      explanation: 'Historiquement l\'or et le platine s\'échangeaient à parité. Un ratio > 1.2 signale le platine comme potentiellement sous-évalué.',
+      explanation: 'Historiquement l\'or et le platine s\'échangeaient à parité. Un ratio > 1,2 signale le platine comme potentiellement sous-évalué.',
     },
     {
       label: 'Ratio Or / Palladium',
@@ -298,5 +307,18 @@ const styles = StyleSheet.create({
     color: OrTrackColors.subtext,
     lineHeight: 20,
     marginTop: 12,
+  },
+  outOfRangeBadge: {
+    backgroundColor: 'rgba(224,112,112,0.12)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: 'flex-start',
+    marginTop: 6,
+  },
+  outOfRangeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#E07070',
   },
 });

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { Position } from '@/types/position';
+import type { MetalType } from '@/constants/metals';
+
+const SUPPORTED_METALS: Set<string> = new Set<MetalType>(['or', 'argent', 'platine', 'palladium']);
 
 let memoryCache: Position[] | null = null;
 let writePromise: Promise<void> = Promise.resolve();
@@ -20,13 +23,14 @@ export function usePositions() {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
       const parsed = raw ? JSON.parse(raw) : [];
-      // Garde-fou : élimine les entrées corrompues ou mal formées
+      // Garde-fou : élimine les entrées corrompues, mal formées ou de métaux retirés
       const safe: Position[] = Array.isArray(parsed)
         ? parsed.filter(
             (p: any): p is Position =>
               p != null &&
               typeof p.id === 'string' &&
               typeof p.metal === 'string' &&
+              SUPPORTED_METALS.has(p.metal) &&
               typeof p.product === 'string' &&
               typeof p.quantity === 'number' &&
               typeof p.purchasePrice === 'number' &&

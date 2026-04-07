@@ -49,7 +49,8 @@
       "Bash(cd:*)",
       "Bash(ls \"app/\\(tabs\\)/explore.tsx\" components/hello-wave.tsx components/themed-text.tsx)",
       "Bash(npx jest:*)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(git checkout:*)"
     ]
   }
 }

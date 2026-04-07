@@ -4,7 +4,7 @@ import { STORAGE_KEYS } from '@/constants/storage-keys';
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
 const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 const CACHE_TTL_MS = 60 * 60 * 1000;
-const VALID_METALS = ['gold', 'silver', 'platinum', 'palladium', 'copper'] as const;
+const VALID_METALS = ['gold', 'silver', 'platinum', 'palladium'] as const;
 
 export type PricePoint = {
   timestamp: number;
@@ -13,7 +13,6 @@ export type PricePoint = {
   silver: number;
   platinum: number;
   palladium: number;
-  copper: number;
 };
 
 type CacheEntry = {
@@ -42,7 +41,6 @@ export async function loadPriceHistory(
   currency: string = 'EUR',
   metal?: string
 ): Promise<PricePoint[]> {
-  // price_eur only available from 2021-03-07 for most metals, copper from 2026-03-08
   // Long-term periods (10A, 20A) use USD to avoid silent EUR/USD mixing via fallback
   const effectiveCurrency = LONG_TERM_PERIODS.includes(period) ? 'USD' : currency;
   const cacheKey = `${STORAGE_KEYS.historyCachePrefix}${period}_${effectiveCurrency}${metal ? '_' + metal : ''}`;
@@ -101,7 +99,7 @@ export async function loadPriceHistory(
         byDate[row.date] = {
           date: row.date,
           timestamp: new Date(row.date).getTime(),
-          gold: 0, silver: 0, platinum: 0, palladium: 0, copper: 0,
+          gold: 0, silver: 0, platinum: 0, palladium: 0,
         };
       }
       let price: number;
@@ -140,7 +138,6 @@ export async function savePricePoint(prices: {
   silver: number | null;
   platinum: number | null;
   palladium: number | null;
-  copper: number | null;
 }): Promise<void> {
   const MAX_POINTS = 200;
   try {
@@ -153,7 +150,6 @@ export async function savePricePoint(prices: {
       silver: prices.silver ?? 0,
       platinum: prices.platinum ?? 0,
       palladium: prices.palladium ?? 0,
-      copper: prices.copper ?? 0,
     });
     const trimmed = history.length > MAX_POINTS ? history.slice(-MAX_POINTS) : history;
     await AsyncStorage.setItem(STORAGE_KEYS.priceHistory, JSON.stringify(trimmed));

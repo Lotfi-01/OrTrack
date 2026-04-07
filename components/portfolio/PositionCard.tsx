@@ -74,7 +74,7 @@ export default function PositionCard({
             if (fiscal.isExonere) return <Text style={st.cardMicro}>{qtyLabel} {'\u00B7'} Exonéré</Text>;
             const yLeft = fiscal.exemptionYear - new Date().getFullYear();
             if (yLeft <= 3) return <Text style={[st.cardMicro, { color: C.textDim }]}>{qtyLabel} {'\u00B7'} Bientôt exonéré ({fiscal.exemptionYear})</Text>;
-            return <Text style={st.cardMicro}>{qtyLabel} {'\u00B7'} Réduction fiscale : {fiscal.abattement} %</Text>;
+            return <Text style={st.cardMicro}>{qtyLabel} {'\u00B7'} Abattement fiscal : {fiscal.abattement} %</Text>;
           })()}
         </View>
         {!masked && (
@@ -106,7 +106,7 @@ export default function PositionCard({
           </View>
           <View style={st.l1Trust}>
             <Text style={st.l1TrustText}>
-              Régime : Forfaitaire {TAX.labels.forfaitaire} {'\u00B7'} Cours du jour
+              Régime : Forfaitaire {TAX.labels.forfaitaire} {'\u00B7'} Cours spot
               {timeStr ? ` \u00B7 Mis à jour à ${timeStr}` : ''}
             </Text>
           </View>
@@ -154,7 +154,7 @@ export default function PositionCard({
             <View style={st.l2}>
               {fiscal && (
                 <>
-                  <Text style={st.l2SectionTitle}>EXONÉRATION FISCALE</Text>
+                  <Text style={st.l2SectionTitle}>{'EXONÉRATION FISCALE \u00B7 Régime des plus-values'}</Text>
                   <View style={st.l2FiscalRow}>
                     <Text style={st.l2FiscalText}>Détention : {fiscal.detentionLabel}</Text>
                     <Text style={st.l2FiscalText}>Abattement : {fiscal.abattement} %</Text>

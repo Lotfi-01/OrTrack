@@ -5,14 +5,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { PriceChart } from '@/components/price-chart';
 import { OrTrackColors } from '@/constants/theme';
 
-type Metal = 'gold' | 'silver' | 'platinum' | 'palladium' | 'copper';
+type Metal = 'gold' | 'silver' | 'platinum' | 'palladium';
 
 const METAL_LABELS: Record<Metal, string> = {
   gold: 'Or',
   silver: 'Argent',
   platinum: 'Platine',
   palladium: 'Palladium',
-  copper: 'Cuivre',
 };
 
 export default function GraphiqueScreen() {

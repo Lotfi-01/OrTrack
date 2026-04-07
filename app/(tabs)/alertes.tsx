@@ -35,7 +35,7 @@ import { useSpotPrices } from '../../hooks/use-spot-prices'
 import { formatEuro } from '@/utils/format'
 import { STORAGE_KEYS } from '@/constants/storage-keys'
 
-const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium', 'cuivre']
+const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium']
 
 export default function AlertesScreen() {
   const params = useLocalSearchParams<{ metal?: string }>()
@@ -175,14 +175,6 @@ export default function AlertesScreen() {
         {/* HEADER */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Alertes</Text>
-          {pushToken && (alertsLoading || alerts.length > 0) && (
-            <TouchableOpacity
-              onPress={openNewAlert}
-              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            >
-              <Text style={styles.headerPlus}>+</Text>
-            </TouchableOpacity>
-          )}
         </View>
 
         {/* CAS 1 : chargement token */}
@@ -213,14 +205,23 @@ export default function AlertesScreen() {
         {/* CAS 3 : token disponible */}
         {!tokenLoading && pushToken && (
           <>
-            {/* CTA pleine largeur quand 0 alertes (chargées) */}
-            {!alertsLoading && alerts.length === 0 && (
-              <TouchableOpacity
-                style={styles.createButton}
-                onPress={openNewAlert}
-              >
-                <Text style={styles.createButtonText}>+ Nouvelle alerte</Text>
-              </TouchableOpacity>
+            {/* CTA pleine largeur — adapté au quota */}
+            {!alertsLoading && (
+              !isPremium && !canAddAlert(alerts.length) ? (
+                <TouchableOpacity
+                  style={[styles.createButton, styles.createButtonPremium]}
+                  onPress={showPaywall}
+                >
+                  <Text style={styles.createButtonText}>Débloquer les alertes illimitées</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={styles.createButton}
+                  onPress={openNewAlert}
+                >
+                  <Text style={styles.createButtonText}>+ Nouvelle alerte</Text>
+                </TouchableOpacity>
+              )
             )}
 
             <View style={styles.alertsHeader}>
@@ -228,11 +229,17 @@ export default function AlertesScreen() {
                 MES ALERTES
               </Text>
               {!isPremium && (
-                <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
-                  <Text style={alerts.length >= limits.maxAlerts ? styles.alertsLimitFull : styles.alertsLimit}>
-                    {alerts.length}/{limits.maxAlerts} · {alerts.length >= limits.maxAlerts ? 'Débloquer les alertes illimitées' : 'Passer à illimité'}
+                canAddAlert(alerts.length) ? (
+                  <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
+                    <Text style={styles.alertsLimit}>
+                      {alerts.length}/{limits.maxAlerts} utilisée{alerts.length === 1 ? '' : 's'} {'\u00B7'} <Text style={styles.alertsLimitAccent}>Passe à l{'\u2019'}illimité {'\u203A'}</Text>
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.alertsLimit}>
+                    {alerts.length}/{limits.maxAlerts} utilisées {'\u00B7'} Limite atteinte
                   </Text>
-                </TouchableOpacity>
+                )
               )}
             </View>
 
@@ -251,15 +258,24 @@ export default function AlertesScreen() {
                   Aucune alerte active
                 </Text>
                 <Text style={styles.emptyAlertsHint}>
-                  Définissez un seuil de prix pour être notifié
+                  Définissez un seuil. L{'\u2019'}app vous prévient avant le niveau visé.
                 </Text>
                 <Text style={styles.emptyAlertsExample}>
-                  Ex : être alerté quand un métal atteint votre prix cible
+                  Ex : être alerté si l{'\u2019'}or dépasse 5 000 {'\u20AC'}/oz
                 </Text>
               </View>
             )}
 
-            {alerts.map((alert) => {
+            {[...alerts].sort((a, b) => {
+              const pa = getSpot(a.metal, prices)
+              const pb = getSpot(b.metal, prices)
+              if (pa == null && pb == null) return 0
+              if (pa == null) return 1
+              if (pb == null) return -1
+              const gapA = a.target_price > 0 ? Math.abs(pa - a.target_price) / a.target_price : Infinity
+              const gapB = b.target_price > 0 ? Math.abs(pb - b.target_price) / b.target_price : Infinity
+              return gapA - gapB // smallest relative gap first (closest to trigger)
+            }).map((alert) => {
               const currentPrice = getSpot(alert.metal, prices)
               const isAbove = alert.condition === 'above'
               const isTriggered = currentPrice != null && (
@@ -330,7 +346,7 @@ export default function AlertesScreen() {
                         <>
                           <View style={styles.priceGrid}>
                             <View style={styles.priceGridItem}>
-                              <Text style={styles.priceGridLabel}>Cours actuel</Text>
+                              <Text style={styles.priceGridLabel}>Cours spot</Text>
                               <Text style={styles.priceGridValue}>
                                 {formatEuro(currentPrice)} {'€'}/oz
                               </Text>
@@ -346,13 +362,12 @@ export default function AlertesScreen() {
 
                           <Text style={[styles.gapText, {
                             color: isAbove
-                              ? (gap > 0 ? OrTrackColors.subtext : '#4CAF50')
-                              : (gap < 0 ? OrTrackColors.subtext : '#F44336'),
+                              ? (gap > 0 ? OrTrackColors.textDim : '#4CAF50')
+                              : (gap < 0 ? OrTrackColors.textDim : '#F44336'),
                           }]}>
-                            Écart : {gap > 0 ? '+' : ''}
-                            {formatEuro(gap)}
-                            {' €'} ({gapPct > 0 ? '+' : ''}
-                            {gapPct.toFixed(1)} %)
+                            {isAbove
+                              ? `Encore ${formatEuro(Math.abs(gap))} \u20AC/oz avant l\u2019alerte`
+                              : `${formatEuro(Math.abs(gap))} \u20AC/oz de baisse avant l\u2019alerte`}
                           </Text>
 
                           <View style={styles.proximityBarBg}>
@@ -385,8 +400,8 @@ export default function AlertesScreen() {
                     >
                       <Ionicons
                         name="trash-outline"
-                        size={20}
-                        color={OrTrackColors.subtext}
+                        size={18}
+                        color={OrTrackColors.textDim}
                       />
                     </TouchableOpacity>
                   </View>
@@ -418,8 +433,8 @@ export default function AlertesScreen() {
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                style={{ marginBottom: 16 }}
-                contentContainerStyle={{ paddingRight: 16 }}
+                style={{ marginBottom: 12, marginHorizontal: -20 }}
+                contentContainerStyle={{ paddingLeft: 20, paddingRight: 48 }}
               >
                 {METALS.map((metal) => (
                   <TouchableOpacity
@@ -501,7 +516,7 @@ export default function AlertesScreen() {
               </View>
 
               {/* Input prix */}
-              <Text style={[styles.inputLabel, { marginTop: 16 }]}>
+              <Text style={[styles.inputLabel, { marginTop: 12 }]}>
                 PRIX CIBLE
               </Text>
               {(() => {
@@ -515,7 +530,7 @@ export default function AlertesScreen() {
                       color={OrTrackColors.gold}
                     />
                     <Text style={styles.spotHintText}>
-                      Cours actuel :{' '}
+                      Cours spot :{' '}
                       <Text style={{ color: OrTrackColors.white, fontWeight: '700' }}>
                         {formatEuro(spot)} {'€'}/oz
                       </Text>
@@ -535,23 +550,50 @@ export default function AlertesScreen() {
                 <Text style={styles.priceUnit}>€/oz</Text>
               </View>
 
-              {/* Boutons */}
-              <TouchableOpacity
-                style={[
-                  styles.confirmButton,
-                  { opacity: creating || !targetPrice ? 0.5 : 1 },
-                ]}
-                onPress={handleCreate}
-                disabled={creating || !targetPrice}
-              >
-                {creating ? (
-                  <ActivityIndicator color="#000000" />
-                ) : (
-                  <Text style={styles.confirmButtonText}>
-                    {editingAlertId ? "Modifier l'alerte" : "Créer l'alerte"}
-                  </Text>
-                )}
-              </TouchableOpacity>
+              {/* Validation + Boutons */}
+              {(() => {
+                const spot = getSpot(selectedMetal, prices)
+                const parsed = parseFloat(targetPrice)
+                const hasValue = targetPrice.trim() !== '' && !isNaN(parsed) && parsed > 0
+                const isValid = hasValue && spot != null && (
+                  selectedCondition === 'above' ? parsed > spot : parsed < spot
+                )
+                const showError = hasValue && spot != null && !isValid
+                const canCreate = hasValue && isValid && !creating
+
+                return (
+                  <>
+                    {showError && (
+                      <Text style={styles.validationError}>
+                        {selectedCondition === 'above'
+                          ? 'Le seuil doit être supérieur au cours actuel'
+                          : 'Le seuil doit être inférieur au cours actuel'}
+                      </Text>
+                    )}
+                    <TouchableOpacity
+                      style={[
+                        styles.confirmButton,
+                        !canCreate && styles.confirmButtonDisabled,
+                      ]}
+                      onPress={handleCreate}
+                      disabled={!canCreate}
+                    >
+                      {creating ? (
+                        <ActivityIndicator color="#000000" />
+                      ) : (
+                        <Text style={[
+                          styles.confirmButtonText,
+                          !canCreate && styles.confirmButtonTextDisabled,
+                        ]}>
+                          {editingAlertId ? "Modifier l'alerte" : "Créer l'alerte"}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                )
+              })()}
+
+              <Text style={styles.modalReassurance}>Notification envoyée quand le seuil est atteint</Text>
 
               <TouchableOpacity
                 style={styles.cancelButton}
@@ -614,6 +656,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 15,
   },
+  createButtonPremium: {
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    borderColor: OrTrackColors.gold,
+  },
 
   // Section header
   sectionTitle: {
@@ -640,6 +686,11 @@ const styles = StyleSheet.create({
     color: OrTrackColors.gold,
     fontWeight: '600',
   },
+  alertsLimitAccent: {
+    color: OrTrackColors.gold,
+    fontWeight: '700',
+    fontSize: 12,
+  },
 
   // Empty alerts
   emptyAlerts: {
@@ -654,10 +705,10 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   emptyAlertsHint: {
-    color: OrTrackColors.subtext,
+    color: OrTrackColors.textDim,
     fontSize: 12,
-    opacity: 0.6,
     textAlign: 'center',
+    lineHeight: 18,
   },
   emptyAlertsExample: {
     color: OrTrackColors.subtext,
@@ -732,8 +783,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 10,
+    marginTop: 12,
+    paddingTop: 12,
     borderTopWidth: 1,
     borderTopColor: OrTrackColors.border,
   },
@@ -742,7 +793,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: OrTrackColors.gold,
   },
-  deleteButton: { padding: 8 },
+  deleteButton: { padding: 10, minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(224,112,112,0.06)', borderRadius: 8 },
 
   // Price grid
   priceGrid: {
@@ -780,7 +831,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   proximityLabel: {
-    color: OrTrackColors.subtext,
+    color: OrTrackColors.textDim,
     fontSize: 10,
     textAlign: 'right',
   },
@@ -795,14 +846,14 @@ const styles = StyleSheet.create({
     backgroundColor: OrTrackColors.card,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    padding: 24,
-    paddingBottom: 40,
+    padding: 20,
+    paddingBottom: 36,
   },
   modalTitle: {
     color: OrTrackColors.white,
     fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   inputLabel: {
     color: OrTrackColors.gold,
@@ -844,14 +895,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 14,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 16,
   },
   confirmButtonText: {
     color: '#000000',
     fontWeight: 'bold',
     fontSize: 15,
   },
-  cancelButton: { padding: 12, alignItems: 'center', marginTop: 4 },
+  cancelButton: { padding: 10, alignItems: 'center', marginTop: 2 },
   cancelButtonText: { color: OrTrackColors.subtext, fontSize: 14 },
   spotHintRow: {
     flexDirection: 'row',
@@ -866,5 +917,24 @@ const styles = StyleSheet.create({
   spotHintText: {
     color: OrTrackColors.subtext,
     fontSize: 12,
+  },
+  validationError: {
+    color: '#E07070',
+    fontSize: 11,
+    marginTop: 8,
+    marginBottom: -4,
+  },
+  confirmButtonDisabled: {
+    backgroundColor: OrTrackColors.border,
+    opacity: 0.6,
+  },
+  confirmButtonTextDisabled: {
+    color: OrTrackColors.subtext,
+  },
+  modalReassurance: {
+    color: OrTrackColors.textDim,
+    fontSize: 11,
+    textAlign: 'center',
+    marginTop: 6,
   },
 })
