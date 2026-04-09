@@ -33,6 +33,7 @@ type PremiumContextType = {
   isPremium: boolean;
   isLoading: boolean;
   showPaywall: () => void;
+  activateLaunchFree: () => Promise<void>;
   canAddPosition: (currentCount: number) => boolean;
   canAddAlert: (currentCount: number) => boolean;
   isPeriodLocked: (period: string) => boolean;
@@ -79,14 +80,18 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
           RC_INIT_TIMEOUT_MS
         );
 
+        // Launch-free activation persisted locally
+        const launchFlag = await AsyncStorage.getItem(STORAGE_KEYS.launchPremium).catch(() => null);
+        const resolvedPremium = premiumStatus || launchFlag === 'true';
+
         if (mounted) {
-          setIsPremium(premiumStatus);
+          setIsPremium(resolvedPremium);
           setOfferings(offeringsResult);
           setIsLoading(false);
 
           // Migration du flag "Me pr\u00e9venir au lancement"
           // TODO: supprimer ce bloc apr\u00e8s 2-3 mois en production
-          if (premiumStatus) {
+          if (resolvedPremium) {
             AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(() => {});
           } else {
             const notifyFlag = await AsyncStorage.getItem(STORAGE_KEYS.premiumNotify);
@@ -123,6 +128,12 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
       if (prev) return prev;
       return true;
     });
+  }, []);
+
+  const activateLaunchFree = useCallback(async () => {
+    setIsPremium(true);
+    setShowPaywallModal(false);
+    await AsyncStorage.setItem(STORAGE_KEYS.launchPremium, 'true').catch(() => {});
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -191,6 +202,7 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
     isPremium,
     isLoading,
     showPaywall,
+    activateLaunchFree,
     canAddPosition,
     canAddAlert,
     isPeriodLocked,
@@ -201,7 +213,7 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
     handlePurchase,
     handleRestore,
     retryLoadOfferings,
-  }), [isPremium, isLoading, showPaywall, canAddPosition,
+  }), [isPremium, isLoading, showPaywall, activateLaunchFree, canAddPosition,
        canAddAlert, isPeriodLocked, isSourceLocked,
        offerings, isPurchasing, handlePurchase, handleRestore, retryLoadOfferings]);
 

@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Animated, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -44,9 +44,15 @@ const useStaggerAnim = (delay: number) => {
 
 // ─── Composant ───────────────────────────────────────────────────────────────
 
+// ─── Source de vérité produit ────────────────────────────────────────────────
+
+type PremiumReleaseMode = 'launch_free' | 'waitlist';
+const PREMIUM_RELEASE_MODE: PremiumReleaseMode = 'launch_free';
+
+// ─── Composant ──────────────────────────────────────────────────────────────
+
 export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
-  const { isPremium } = usePremium();
-  const [selectedPlan, setSelectedPlan] = useState<'monthly' | 'annual'>('annual');
+  const { isPremium, activateLaunchFree } = usePremium();
 
   // Stagger groups
   const animA = useStaggerAnim(0);
@@ -138,6 +144,14 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
         </Text>
       </Animated.View>
 
+      {/* 4b. Statut produit */}
+      <Animated.View style={[s.launchBanner, { opacity: animB.fade, transform: [{ translateY: animB.slide }] }]}>
+        <Text style={s.launchBannerTitle}>Gratuit pendant le lancement</Text>
+        <Text style={s.launchBannerSub}>
+          Activez toutes les fonctionnalités Premium sans frais pendant la phase de lancement.
+        </Text>
+      </Animated.View>
+
       {/* 5. Bloc 3 bénéfices */}
       <Animated.View style={[s.benefitsOuter, { opacity: animC.fade, transform: [{ translateY: animC.slide }] }]}>
         <LinearGradient
@@ -217,65 +231,30 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
         })}
 
         {/* 9. Réassurance */}
-        <Text style={s.reassurance}>Sans engagement {'·'} Annulez {'à'} tout moment {'·'} Fiscalité française officielle 2025</Text>
+        <Text style={s.reassurance}>Fiscalité française officielle 2026</Text>
 
-        {/* 10. Pricing cards */}
+        {/* 10. Pricing cards — informational */}
+        <Text style={s.pricingFutureLabel}>Tarifs après lancement</Text>
         <View style={s.pricingRow}>
           {/* Mensuel */}
-          <TouchableOpacity
-            onPress={() => setSelectedPlan('monthly')}
-            activeOpacity={0.8}
-            style={{ flex: 1 }}
-            accessibilityLabel="Plan mensuel, 2 euros 99 par mois"
-          >
-            {selectedPlan === 'monthly' ? (
-              <LinearGradient
-                colors={['rgba(201,168,76,0.10)', 'rgba(201,168,76,0.03)']}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={s.pricingCardSelected}
-              >
-                <Text style={s.pricingLabel}>Mensuel</Text>
-                <Text style={s.pricingPriceGold}>2,99€</Text>
-                <Text style={s.pricingSub}>/mois</Text>
-              </LinearGradient>
-            ) : (
-              <View style={s.pricingCard}>
-                <Text style={s.pricingLabel}>Mensuel</Text>
-                <Text style={s.pricingPrice}>2,99€</Text>
-                <Text style={s.pricingSub}>/mois</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <View style={s.pricingCard}>
+              <Text style={s.pricingLabel}>Mensuel</Text>
+              <Text style={s.pricingPrice}>2,99€</Text>
+              <Text style={s.pricingSub}>/mois</Text>
+            </View>
+          </View>
 
           {/* Annuel */}
-          <TouchableOpacity
-            onPress={() => setSelectedPlan('annual')}
-            activeOpacity={0.8}
-            style={{ flex: 1 }}
-            accessibilityLabel="Plan annuel recommandé, 14 euros 99 par an, soit 1 euro 25 par mois"
-          >
-            {selectedPlan === 'annual' ? (
-              <LinearGradient
-                colors={['rgba(201,168,76,0.13)', 'rgba(201,168,76,0.04)']}
-                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-                style={s.pricingCardAnnualSelected}
-              >
-                <View style={s.badgeDiscount}><Text style={s.badgeDiscountText}>{'−21€/an'}</Text></View>
-                <Text style={[s.pricingLabel, { color: OrTrackColors.gold }]}>Annuel</Text>
-                <Text style={s.pricingPriceGold}>14,99€</Text>
-                <Text style={s.pricingSub}>/an {'·'} soit 1,25€/mois</Text>
-                <Text style={s.pricingMostChosen}>Le plus choisi</Text>
-              </LinearGradient>
-            ) : (
-              <View style={s.pricingCardAnnual}>
-                <View style={s.badgeDiscount}><Text style={s.badgeDiscountText}>{'−21€/an'}</Text></View>
-                <Text style={s.pricingLabel}>Annuel</Text>
-                <Text style={s.pricingPrice}>14,99€</Text>
-                <Text style={s.pricingSub}>/an {'·'} soit 1,25€/mois</Text>
-                <Text style={s.pricingMostChosen}>Le plus choisi</Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <View style={s.pricingCardAnnual}>
+              <View style={s.badgeDiscount}><Text style={s.badgeDiscountText}>{'−21€/an'}</Text></View>
+              <Text style={s.pricingLabel}>Annuel</Text>
+              <Text style={s.pricingPrice}>14,99€</Text>
+              <Text style={s.pricingSub}>/an {'·'} soit 1,25€/mois</Text>
+              <Text style={s.pricingMostChosen}>Le plus choisi</Text>
+            </View>
+          </View>
         </View>
 
         {/* 11. CTA */}
@@ -286,8 +265,8 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
           />
           <TouchableOpacity
             activeOpacity={0.9}
-            onPress={() => {}}
-            accessibilityLabel="Bientôt disponible"
+            onPress={activateLaunchFree}
+            accessibilityLabel="Activer l'accès complet"
             accessibilityRole="button"
           >
             <LinearGradient
@@ -295,14 +274,14 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={s.ctaGradient}
             >
-              <Text style={s.ctaText}>Bientôt disponible</Text>
+              <Text style={s.ctaText}>Activer l{'\u2019'}accès complet</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
 
         {/* 12. Sous-texte CTA */}
         <Text style={s.ctaSubtext}>
-          Profitez de toutes les fonctionnalités gratuitement pendant le lancement
+          Aucun paiement pendant le lancement
         </Text>
 
       </Animated.View>
@@ -440,29 +419,42 @@ const s = StyleSheet.create({
     fontSize: 11, color: OrTrackColors.subtext,
   },
 
+  // Launch banner
+  launchBanner: {
+    marginHorizontal: 20, marginTop: 12,
+    backgroundColor: 'rgba(201,168,76,0.08)',
+    borderWidth: 1, borderColor: 'rgba(201,168,76,0.25)',
+    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
+    alignItems: 'center',
+  },
+  launchBannerTitle: {
+    fontSize: 13, fontWeight: '700', color: OrTrackColors.gold,
+  },
+  launchBannerSub: {
+    fontSize: 11.5, color: OrTrackColors.subtext, textAlign: 'center', marginTop: 3, lineHeight: 16,
+  },
+
   // Pricing
-  pricingRow: { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 14, gap: 10 },
+  pricingFutureLabel: {
+    textAlign: 'center', marginTop: 14, marginBottom: 2,
+    fontSize: 11, fontWeight: '600', color: OrTrackColors.subtext,
+    textTransform: 'uppercase', letterSpacing: 0.5,
+  },
+  pricingRow: { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 8, gap: 10 },
   pricingCard: {
     borderRadius: 12, borderWidth: 1, borderColor: OrTrackColors.border,
     backgroundColor: OrTrackColors.card,
     paddingTop: 14, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
-  },
-  pricingCardSelected: {
-    borderRadius: 12, borderWidth: 2, borderColor: OrTrackColors.gold,
-    paddingTop: 14, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+    opacity: 0.6,
   },
   pricingCardAnnual: {
     borderRadius: 12, borderWidth: 1, borderColor: OrTrackColors.border,
     backgroundColor: OrTrackColors.card,
     paddingTop: 20, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
-  },
-  pricingCardAnnualSelected: {
-    borderRadius: 12, borderWidth: 2, borderColor: OrTrackColors.gold,
-    paddingTop: 20, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+    opacity: 0.6,
   },
   pricingLabel: { fontSize: 11, fontWeight: '500', color: OrTrackColors.subtext, marginBottom: 3 },
   pricingPrice: { fontSize: 24, fontWeight: '700', color: OrTrackColors.white },
-  pricingPriceGold: { fontSize: 24, fontWeight: '700', color: OrTrackColors.gold },
   pricingSub: { fontSize: 11, color: OrTrackColors.subtext, marginTop: 2 },
   pricingMostChosen: { fontSize: 10, color: OrTrackColors.gold, opacity: 0.7, marginTop: 4 },
   badgeDiscount: {
