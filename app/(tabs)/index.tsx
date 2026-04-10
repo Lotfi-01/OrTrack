@@ -348,7 +348,7 @@ export default function AccueilScreen() {
                           {arrow} {formatPct(Math.abs(portfolio.gainPct), 2)}
                         </Text>
                       </View>
-                      <Text style={st.varAbs}>{g.text} {currencySymbol}</Text>
+                      <Text style={[st.varAbs, { color: badgeColor }]}>{g.text} {currencySymbol}</Text>
                       <Text style={st.varPeriod}>Depuis achat</Text>
                     </>
                     );
