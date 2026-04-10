@@ -97,7 +97,7 @@ export default function PositionCard({
       {/* ── L1 — FISCAL ── */}
       {isOpen && !masked && (
         <View style={st.l1}>
-          <Text style={st.l1Title}>{'NET VENDEUR ESTIMÉ'}</Text>
+          <Text style={st.l1Title}>{'MONTANT RÉCUPÉRABLE ESTIMÉ'}</Text>
           <View style={st.l1Row}>
             <Text style={st.l1Regime}>{'Régime forfaitaire ('}{TAX.labels.forfaitaire}{')'}</Text>
             {posSellerNet !== null ? (
