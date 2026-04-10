@@ -371,7 +371,7 @@ export default function AccueilScreen() {
 
               {hasPositions && portfolio.gain > 0 && (
                 <View style={[st.netBlock, masked && st.netMasked]}>
-                  <Text style={st.netLabel}>Plus-value nette estimée</Text>
+                  <Text style={st.netLabel}>Net estimé après taxe</Text>
                   <Text style={[st.netValue, masked && { color: C.textDim }]}>
                     {m(`${formatEuro(portfolio.netEstime)} ${currencySymbol}`)}
                   </Text>
