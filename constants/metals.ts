@@ -13,8 +13,8 @@ export const METAL_CONFIG: Record<MetalType, {
   spotKey: 'gold' | 'silver' | 'platinum' | 'palladium';
 }> = {
   or:        { symbol: 'XAU', name: 'Or',        chipBg: '#1F1B0A', chipBorder: '#D4B24C', chipText: OrTrackColors.gold, spotKey: 'gold' },
-  argent:    { symbol: 'XAG', name: 'Argent',    chipBg: '#18181F', chipBorder: '#D9D9E6', chipText: '#A8A8B8', spotKey: 'silver' },
-  platine:   { symbol: 'XPT', name: 'Platine',   chipBg: '#1C1C1C', chipBorder: '#F1F1F3', chipText: '#E0E0E0', spotKey: 'platinum' },
+  argent:    { symbol: 'XAG', name: 'Argent',    chipBg: '#18181F', chipBorder: '#C9CFDD', chipText: '#A8A8B8', spotKey: 'silver' },
+  platine:   { symbol: 'XPT', name: 'Platine',   chipBg: '#1C1C1C', chipBorder: '#F2F2F4', chipText: '#E0E0E0', spotKey: 'platinum' },
   palladium: { symbol: 'XPD', name: 'Palladium', chipBg: '#1F1B0A', chipBorder: '#8FA3B8', chipText: '#CBA135', spotKey: 'palladium' },
 };
 
