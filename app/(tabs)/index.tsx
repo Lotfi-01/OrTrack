@@ -369,14 +369,22 @@ export default function AccueilScreen() {
                 </View>
               )}
 
-              {hasPositions && portfolio.gain > 0 && (
-                <View style={[st.netBlock, masked && st.netMasked]}>
-                  <Text style={st.netLabel}>Net estimé après taxe</Text>
-                  <Text style={[st.netValue, masked && { color: C.textDim }]}>
-                    {m(`${formatEuro(portfolio.netEstime)} ${currencySymbol}`)}
-                  </Text>
-                </View>
-              )}
+              {hasPositions && portfolio.gain > 0 && (() => {
+                const netG = formatGain(portfolio.netEstime);
+                const netColor = masked
+                  ? C.textDim
+                  : netG.state === 'zero'
+                    ? C.textDim
+                    : netG.state === 'positive' ? C.green : C.red;
+                return (
+                  <View style={[st.netBlock, masked && st.netMasked]}>
+                    <Text style={st.netLabel}>Net estimé après taxe</Text>
+                    <Text style={[st.netValue, { color: netColor }]}>
+                      {m(`${formatEuro(portfolio.netEstime)} ${currencySymbol}`)}
+                    </Text>
+                  </View>
+                );
+              })()}
             </>
           ) : spotError ? (
             <Text style={{ color: C.textMuted, fontSize: 12, marginTop: 4, textAlign: 'center' }}>Cours indisponibles</Text>
