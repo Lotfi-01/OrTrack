@@ -45,3 +45,5 @@ app-example
 .eas/
 AUDIT*.md
 google-services.json
+.idea/
+.claude/settings.local.json

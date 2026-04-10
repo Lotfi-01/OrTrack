@@ -1,50 +1,66 @@
-# Welcome to your Expo app 👋
+# OrTrack
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+## Description courte
 
-## Get started
+Application mobile Expo / React Native pour OrTrack.
 
-1. Install dependencies
+## Stack
 
-   ```bash
-   npm install
-   ```
+- Expo 54
+- React 19
+- React Native 0.81
+- TypeScript
+- Expo Router
+- Supabase (`@supabase/supabase-js`)
+- Jest / jest-expo
+- ESLint (`eslint-config-expo`)
 
-2. Start the app
+## Prérequis
 
-   ```bash
-   npx expo start
-   ```
+- Node.js
+- npm
+- Un environnement Expo pour lancer l'application sur Android, iOS ou Web
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Installation
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Lancement
 
-## Learn more
+```bash
+npm run start
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+Autres cibles disponibles :
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```bash
+npm run android
+npm run ios
+npm run web
+```
 
-## Join the community
+## Scripts disponibles
 
-Join our community of developers creating universal apps.
+- `npm run start` : démarre le serveur Expo
+- `npm run android` : lance Expo pour Android
+- `npm run ios` : lance Expo pour iOS
+- `npm run web` : lance Expo pour le Web
+- `npm run lint` : exécute le lint
+- `npm run test` : exécute les tests Jest
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Structure rapide du projet
+
+- `app/` : routes et écrans via Expo Router
+- `assets/` : icônes et ressources statiques
+- `components/` : composants UI réutilisables
+- `constants/` : constantes applicatives
+- `contexts/` : contextes React
+- `hooks/` : hooks métier et hooks d'accès aux données
+- `lib/` : intégrations et helpers techniques
+- `services/` : services applicatifs
+- `supabase/` : configuration et fonctions Supabase
+- `types/` : types TypeScript
+- `utils/` : utilitaires métier et de formatage
+- `scripts/` : scripts de maintenance du dépôt
