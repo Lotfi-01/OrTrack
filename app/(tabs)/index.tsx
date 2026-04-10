@@ -204,12 +204,21 @@ export default function AccueilScreen() {
 
   const hasPositions = positions.length > 0;
 
-  // Reverse mapping: product label → PRIME_CONFIG key for Radar dashboard
+  // Reverse mapping: product label → PRIME_CONFIG key for Radar dashboard.
+  // RADAR_PRODUCT_LABELS est strictement gold-only (cf. RADAR_PRODUCT_METALS dans
+  // utils/radar/types.ts) ; on doit donc restreindre le lookup aux positions `or`
+  // pour éviter qu'un label partagé entre métaux (ex: "Maple Leaf 1oz" en platine
+  // ou argent) ne soit résolu à tort comme le produit radar gold correspondant.
   const portfolioProductIds = useMemo(() => {
     const labelToId = Object.fromEntries(
       Object.entries(RADAR_PRODUCT_LABELS).map(([id, label]) => [label, id]),
     );
-    return [...new Set(positions.map(p => labelToId[p.product]).filter((id): id is string => !!id))];
+    return [...new Set(
+      positions
+        .filter(p => p.metal === 'or')
+        .map(p => labelToId[p.product])
+        .filter((id): id is string => !!id),
+    )];
   }, [positions]);
 
   // ── Init chart on dominant metal (anti-flash) ────────────────────────

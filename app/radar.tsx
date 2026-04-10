@@ -70,8 +70,13 @@ export default function RadarScreen() {
         .then(raw => {
           if (!active) return;
           const positions = raw ? JSON.parse(raw) : [];
+          // RADAR_PRODUCT_LABELS est strictement gold-only. On filtre les positions
+          // sur le métal `or` avant le lookup pour éviter qu'un label partagé
+          // (ex: "Maple Leaf 1oz" en platine/argent) ne soit résolu à tort comme
+          // le produit radar gold correspondant.
           const ids = [...new Set(
-            (positions as { product?: string }[])
+            (positions as { product?: string; metal?: string }[])
+              .filter(p => p.metal === 'or')
               .map(p => LABEL_TO_ID[p.product ?? ''])
               .filter((id): id is string => !!id),
           )];
