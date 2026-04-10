@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro } from '@/utils/format';
+import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { REGIME_EQUALITY_THRESHOLD } from '@/utils/fiscal';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -182,7 +182,7 @@ export default function FiscaliteScreen() {
                     onPress={() => setSelectedId(p.id)}
                   >
                     <Text style={[st.posChipText, p.id === selectedId && st.posChipTextSelected]} numberOfLines={1}>
-                      {p.product}
+                      {stripMetalFromName(p.product)}
                     </Text>
                   </TouchableOpacity>
                 ))}
@@ -218,10 +218,10 @@ export default function FiscaliteScreen() {
             </View>
           )}
 
-          {/* ── 3. HERO — Net vendeur estimé ── */}
+          {/* ── 3. HERO — Montant récupérable estimé ── */}
           {canShow && heroNet !== null && (
             <View style={st.heroCard}>
-              <Text style={st.heroLabel}>NET VENDEUR ESTIMÉ</Text>
+              <Text style={st.heroLabel}>MONTANT RÉCUPÉRABLE ESTIMÉ</Text>
               <Text style={st.heroValue}>{m(`${formatEuro(heroNet)} \u20AC`)}</Text>
               {masked ? (
                 <Text style={st.heroSub}>Résultat masqué en mode confidentialité</Text>

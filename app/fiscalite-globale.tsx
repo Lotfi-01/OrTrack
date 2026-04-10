@@ -18,7 +18,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro } from '@/utils/format';
+import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { REGIME_EQUALITY_THRESHOLD } from '@/utils/fiscal';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -249,9 +249,9 @@ export default function FiscaliteGlobaleScreen() {
                 </Text>
               )}
 
-              {/* 3. HERO — Net vendeur estimé */}
+              {/* 3. HERO — Montant récupérable estimé */}
               <View style={st.heroCard}>
-                <Text style={st.heroLabel}>NET VENDEUR ESTIMÉ</Text>
+                <Text style={st.heroLabel}>MONTANT RÉCUPÉRABLE ESTIMÉ</Text>
                 <Text style={st.heroValue}>{m(`${formatEuro(heroNet)} \u20AC`)}</Text>
                 {masked ? (
                   <Text style={st.heroSub}>Résultat masqué en mode confidentialité</Text>
@@ -349,7 +349,7 @@ export default function FiscaliteGlobaleScreen() {
                             <View style={[st.badge, { backgroundColor: cfg.chipBg, borderColor: cfg.chipBorder }]}>
                               <Text style={[st.badgeText, { color: cfg.chipText }]}>{cfg.symbol}</Text>
                             </View>
-                            <Text style={st.posProduct} numberOfLines={1}>{r.pos.product}</Text>
+                            <Text style={st.posProduct} numberOfLines={1}>{stripMetalFromName(r.pos.product)}</Text>
                             <Text style={st.posDuration}>Détention : {r.years} an{r.years > 1 ? 's' : ''}</Text>
                           </View>
                           <View style={{ marginTop: 4 }}>
