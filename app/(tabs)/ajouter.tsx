@@ -83,12 +83,22 @@ const PRODUCTS: Record<MetalType, Product[]> = {
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
   platine: [
-    { label: 'Pièce 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Maple Leaf 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'American Eagle 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Philharmonique 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
+    // Entrée générique conservée pour rétrocompatibilité des positions legacy stockées avec label='Pièce 1oz'
+    { label: 'Pièce 1oz', weightG: 31.10, category: 'piece' },
     { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
   palladium: [
-    { label: 'Pièce 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Maple Leaf 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'American Eagle 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Cook Islands 1oz', weightG: 31.10, category: 'piece' },
+    // Entrée générique conservée pour rétrocompatibilité des positions legacy stockées avec label='Pièce 1oz'
+    { label: 'Pièce 1oz', weightG: 31.10, category: 'piece' },
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
 };
