@@ -38,6 +38,15 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CHIP_WIDTH = (SCREEN_WIDTH - 40 - 8) / 2;
 
+const MAX_CTA_NAME_LENGTH = 20;
+
+/** Tronque au dernier espace avant la limite pour éviter une coupure en plein mot. */
+const truncateName = (s: string, max: number = MAX_CTA_NAME_LENGTH): string => {
+  if (s.length <= max) return s;
+  const cut = s.lastIndexOf(' ', max);
+  return (cut > 0 ? s.slice(0, cut) : s.slice(0, max)) + '\u2026';
+};
+
 type Product = {
   label: string;
   weightG: number | null;
@@ -62,24 +71,24 @@ const PRODUCTS: Record<MetalType, Product[]> = {
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
   argent: [
-    { label: 'Maple Leaf Argent 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'Philharmonique Argent 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Maple Leaf 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Philharmonique 1oz', weightG: 31.10, category: 'piece' },
     { label: 'American Eagle 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'Britannia Argent 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Panda Argent 30g', weightG: 30, category: 'piece' },
-    { label: 'Kangourou Argent 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Krugerrand Argent 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Lingot Argent 100g', weightG: 100, category: 'lingot' },
-    { label: 'Lingot Argent 1kg', weightG: 1000, category: 'lingot' },
+    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Panda 30g', weightG: 30, category: 'piece' },
+    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Krugerrand 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
+    { label: 'Lingot 1kg', weightG: 1000, category: 'lingot' },
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
   platine: [
-    { label: 'Platine 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'Lingot Platine 100g', weightG: 100, category: 'lingot' },
+    { label: 'Pièce 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
   palladium: [
-    { label: 'Palladium 1oz', weightG: 31.10, popular: true, category: 'piece' },
+    { label: 'Pièce 1oz', weightG: 31.10, popular: true, category: 'piece' },
     { label: 'Autre', weightG: null, category: 'autre' },
   ],
 };
@@ -508,7 +517,7 @@ export default function AjouterScreen() {
     }
     if (product && !isStep2Active) {
       return {
-        text: `Continuer avec ${product.label}`,
+        text: `Continuer avec ${truncateName(product.label)}`,
         disabled: false,
         bgColor: '#C9A84C',
         textColor: '#12110F',
@@ -624,11 +633,15 @@ export default function AjouterScreen() {
             </Text>
           </View>
         )}
-        <Text style={[
-          styles.productChipLabel,
-          compact && styles.productChipLabelCompact,
-          active && styles.productChipLabelActive,
-        ]}>
+        <Text
+          numberOfLines={2}
+          ellipsizeMode="tail"
+          style={[
+            styles.productChipLabel,
+            compact && styles.productChipLabelCompact,
+            active && styles.productChipLabelActive,
+            active && { paddingRight: 32 },
+          ]}>
           {p.category === 'autre' ? 'Autre lingot' : p.label}
         </Text>
         {p.weightG !== null && (
@@ -762,10 +775,10 @@ export default function AjouterScreen() {
                     onPress={toggleShowAllPieces}
                     activeOpacity={0.7}
                     style={styles.expandButton}>
-                    <Text style={styles.expandButtonText}>
+                    <Text numberOfLines={1} style={styles.expandButtonText}>
                       {showAllPieces ? 'Réduire la liste' : 'Voir plus de pièces'}
-                      {!showAllPieces && selectedNonPopularPiece
-                        ? ` · ${product?.label} ✓`
+                      {!showAllPieces && selectedNonPopularPiece && product
+                        ? ` · ${truncateName(product.label)} ✓`
                         : ''}
                     </Text>
                     <Ionicons
@@ -795,10 +808,10 @@ export default function AjouterScreen() {
                     onPress={toggleShowAllBars}
                     activeOpacity={0.7}
                     style={styles.expandButton}>
-                    <Text style={styles.expandButtonText}>
+                    <Text numberOfLines={1} style={styles.expandButtonText}>
                       {showAllBars ? 'Réduire la liste' : 'Voir plus de lingots'}
-                      {!showAllBars && selectedInLingots
-                        ? ` · ${product?.label} ✓`
+                      {!showAllBars && selectedInLingots && product
+                        ? ` · ${truncateName(product.label)} ✓`
                         : ''}
                     </Text>
                     <Ionicons
@@ -1088,7 +1101,7 @@ export default function AjouterScreen() {
             accessibilityState={{ disabled: ctaConfig.disabled }}
           >
             <View style={styles.ctaButtonInner}>
-              <Text style={[styles.ctaText, { color: ctaConfig.textColor }]}>
+              <Text numberOfLines={1} style={[styles.ctaText, { color: ctaConfig.textColor }]}>
                 {ctaConfig.text}
               </Text>
               {ctaConfig.showChevron && (
@@ -1237,7 +1250,7 @@ const styles = StyleSheet.create({
     borderColor: OrTrackColors.border,
     alignItems: 'center',
     width: CHIP_WIDTH,
-    minHeight: 64,
+    minHeight: 72,
     overflow: 'hidden',
   },
   productChipActive: {
@@ -1249,6 +1262,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
     color: OrTrackColors.white,
+    textAlign: 'center',
   },
   productChipLabelActive: {
     color: OrTrackColors.gold,
@@ -1309,7 +1323,7 @@ const styles = StyleSheet.create({
   productChipCompact: {
     paddingVertical: 6,
     paddingHorizontal: 10,
-    minHeight: 52,
+    minHeight: 60,
   },
   productChipLabelCompact: {
     fontSize: 10,
