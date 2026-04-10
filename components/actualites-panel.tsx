@@ -1,5 +1,5 @@
 import * as WebBrowser from 'expo-web-browser';
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -154,10 +154,7 @@ export function ActualitesPanel() {
   const [articles, setArticles] = useState<Record<string, Article[]>>({});
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
-  const { isPremium, showPaywall } = usePremium();
-  // BYPASS PREMIUM - A RETIRER : toutes les sources d'actualites deverrouillees en v1
-  // (ne plus destructurer isSourceLocked du hook pour eviter une dep instable ; useCallback stabilise la reference)
-  const isSourceLocked = useCallback((_i: number) => false, []);
+  const { isPremium, showPaywall, isSourceLocked } = usePremium();
 
   useEffect(() => {
     let cancelled = false;
