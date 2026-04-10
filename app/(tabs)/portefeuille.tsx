@@ -309,7 +309,8 @@ export default function PortefeuilleScreen() {
           subtitleText={bestPerformerName
             ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
             : 'Voyez quelles positions tirent vraiment votre performance'}
-          onPress={() => Alert.alert('Premium', 'Débloquez les statistiques avec OrTrack Premium')}
+          // BYPASS PREMIUM - A RETIRER : retrait du Alert.alert("Premium"...), ouverture directe des Statistiques
+          onPress={() => router.push('/statistiques' as never)}
         />
 
         {/* ── 6. TRUST FOOTER ────────────────────────────── */}

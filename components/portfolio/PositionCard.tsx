@@ -3,7 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatQty, formatPctSigned, formatGain, getDisplayPositionName } from '@/utils/format';
+import { formatEuro, formatQty, formatPctSigned, formatGain, stripMetalFromName } from '@/utils/format';
 import { PositionViewModel } from '@/utils/portfolio';
 
 const C = OrTrackColors;
@@ -61,7 +61,7 @@ export default function PositionCard({
           <Text style={[st.badgeText, { color: C.background }]}>{cfg.symbol}</Text>
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={st.cardName} numberOfLines={1}>{getDisplayPositionName(pos)}</Text>
+          <Text style={st.cardName} numberOfLines={1}>{stripMetalFromName(pos.product)}</Text>
           {masked ? null : gainLoss !== null ? (() => {
             const g = formatGain(gainLoss);
             const color = g.state === 'zero' ? C.textDim : g.state === 'positive' ? C.green : C.red;

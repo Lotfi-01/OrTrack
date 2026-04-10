@@ -30,7 +30,7 @@ import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatPct, formatG, formatGain, getDisplayPositionName, JOURS_FR, MOIS_FR } from '@/utils/format';
+import { formatEuro, formatPct, formatG, formatGain, stripMetalFromName, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { usePositions } from '@/hooks/use-positions';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
@@ -403,7 +403,7 @@ export default function AccueilScreen() {
             const metalPositions = positions.filter(p => p.metal === mk);
             const isSinglePosition = metalPositions.length === 1;
             const title = isSinglePosition
-              ? getDisplayPositionName(metalPositions[0]!)
+              ? stripMetalFromName(metalPositions[0]!.product)
               : cfg.name;
             const g = formatGain(net);
             const gainColor = masked

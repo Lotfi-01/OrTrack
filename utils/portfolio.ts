@@ -7,7 +7,7 @@ import {
   computeSellerNetForfaitaire,
   computeRegimeComparison,
 } from '@/utils/fiscal';
-import { getDisplayPositionName } from '@/utils/format';
+import { stripMetalFromName } from '@/utils/format';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,7 @@ export function getBestPerformerName(viewModels: PositionViewModel[]): string | 
     const pct = vm.metrics.gainPct;
     if (pct !== null && pct > bestPct) {
       bestPct = pct;
-      bestName = getDisplayPositionName(vm.position);
+      bestName = stripMetalFromName(vm.position.product);
     }
   }
   return bestName || null;
