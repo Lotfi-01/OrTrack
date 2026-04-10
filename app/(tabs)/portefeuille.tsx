@@ -57,9 +57,7 @@ export default function PortefeuilleScreen() {
 
   const [masked, setMasked] = useState(false);
   const [filterMetal, setFilterMetal] = useState<MetalType | null>(null);
-  const paramMetalRef = useRef<string | undefined>(paramMetal);
-  paramMetalRef.current = paramMetal;
-  const consumedMetalRef = useRef<string | undefined>(undefined);
+  const isConsumingParamRef = useRef(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const [level2Id, setLevel2Id] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -91,30 +89,37 @@ export default function PortefeuilleScreen() {
 
   // ── Filter from route param ──────────────────────────────────────────
   //
-  // Règle explicite :
-  // - Entrée standard (tab bar, retour après édition, re-focus simple) → filtre réinitialisé.
-  // - Entrée contextuelle (URL param `metal` fraîchement posé par un CTA) → filtre appliqué
-  //   UNE SEULE FOIS par valeur, puis le param est consommé et retiré de l'URL.
+  // Règle :
+  // 1. Entrée contextuelle — un CTA pose `metal=XAG` dans l'URL. On applique le filtre,
+  //    on lève un flag `isConsumingParamRef`, puis on SUPPRIME explicitement le param
+  //    de l'URL (`router.setParams({ metal: undefined })`).
+  // 2. Le setParams déclenche une re-run du callback avec `paramMetal=undefined` ; le
+  //    flag `isConsumingParamRef` empêche d'écraser le filtre qu'on vient d'appliquer.
+  //    On reset ensuite le flag pour que la prochaine entrée standard nettoie correctement.
+  // 3. Entrée standard (tab bar, retour après édition, re-focus après blur) — le callback
+  //    voit `paramMetal=undefined` et `isConsumingParamRef=false`, donc nettoie le filtre.
   //
-  // Le `consumedMetalRef` garantit qu'un `metal=XAG` résiduel dans l'URL (après retour
-  // d'un autre écran, p.ex. ajouter) ne re-applique pas silencieusement le filtre : seule
-  // une nouvelle valeur, non déjà consommée, déclenche l'application.
+  // Le useCallback dépend de `[paramMetal]` pour que la fermeture reflète toujours la
+  // valeur courante du param — évite tout problème de closure stale avec useFocusEffect.
+  // Une ré-entrée contextuelle avec le MÊME métal est traitée fraîchement car le CTA
+  // re-pose le param sur une URL qui avait été vidée à la consommation précédente.
 
   useFocusEffect(
     useCallback(() => {
-      const currentMetal = paramMetalRef.current;
-      if (currentMetal && consumedMetalRef.current !== currentMetal) {
-        // Parcours contextuel explicite : nouveau param métal jamais consommé
-        consumedMetalRef.current = currentMetal;
-        setFilterMetal(symbolToMetal(currentMetal));
-        // Consomme le param : l'URL ne doit pas conserver un filtre implicite
-        router.setParams({ metal: '' });
+      if (paramMetal) {
+        // Entrée contextuelle : nouveau param métal posé par un CTA
+        setFilterMetal(symbolToMetal(paramMetal));
+        isConsumingParamRef.current = true;
+        // Suppression explicite du param (pas une chaîne vide fragile)
+        router.setParams({ metal: undefined });
+      } else if (isConsumingParamRef.current) {
+        // Re-run déclenché par le setParams ci-dessus : filtre déjà appliqué, ne rien écraser
+        isConsumingParamRef.current = false;
       } else {
-        // Entrée standard : pas de filtre résiduel par surprise
-        consumedMetalRef.current = undefined;
+        // Entrée standard (tab bar, retour après édition, re-focus) : aucun filtre résiduel
         setFilterMetal(null);
       }
-    }, []),
+    }, [paramMetal]),
   );
 
   const filterMetalName = useMemo(() => {
@@ -124,9 +129,7 @@ export default function PortefeuilleScreen() {
 
   const clearFilter = useCallback(() => {
     setFilterMetal(null);
-    consumedMetalRef.current = undefined;
-    // Le useFocusEffect a déjà consommé et vidé le param métal dans l'URL
-    // dès la première entrée contextuelle, donc rien à nettoyer ici.
+    // L'URL a déjà été vidée à la consommation par useFocusEffect, rien à nettoyer.
   }, []);
 
   // ── Filtered positions ───────────────────────────────────────────────
