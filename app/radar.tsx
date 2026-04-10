@@ -46,7 +46,9 @@ function formatDateFr(dateStr: string): string {
 
 export default function RadarScreen() {
   const { productId: autoOpenProductId } = useLocalSearchParams<{ productId?: string }>();
-  const { isPremium, showPaywall } = usePremium();
+  const { isPremium: realIsPremium, showPaywall } = usePremium();
+  // BYPASS PREMIUM - A RETIRER : debloque l'ensemble du radar en v1. realIsPremium reste utilise pour l'analytics (ligne 151, 181)
+  const isPremium = true;
 
   const [metalFilter, setMetalFilter] = useState<RadarMetal | undefined>(undefined);
   const [selectedProduct, setSelectedProduct] = useState<RadarProduct | null>(null);
@@ -148,7 +150,7 @@ export default function RadarScreen() {
     trackRadarEvent(RADAR_EVENTS.SCREEN_VIEW, {
       metal_filter: metalFilter ?? 'all',
       product_count: products.length,
-      is_premium: isPremium,
+      is_premium: realIsPremium,
     });
   }
 
@@ -178,9 +180,9 @@ export default function RadarScreen() {
   }, []);
 
   const handleLockedTap = useCallback((product: RadarProduct) => {
-    trackRadarEvent(RADAR_EVENTS.LOCKED_PRODUCT_TAP, { product_id: product.productId, is_premium: isPremium });
+    trackRadarEvent(RADAR_EVENTS.LOCKED_PRODUCT_TAP, { product_id: product.productId, is_premium: realIsPremium });
     openPaywall('locked_card');
-  }, [isPremium, openPaywall]);
+  }, [realIsPremium, openPaywall]);
 
   const handleDetailTouch = useCallback(() => {
     if (!detailTouchTrackedRef.current && selectedProduct) {

@@ -222,21 +222,17 @@ export default function PortefeuilleScreen() {
         {/* ── 4. POSITIONS ───────────────────────────────── */}
         <View style={st.posHeader}>
           <Text style={st.posHeaderTitle}>POSITIONS ({filteredPositions.length})</Text>
+          {/* BYPASS PREMIUM - A RETIRER : compteur quota conservé, mentions Premium masquées */}
           {!masked && !isPremium && (
-            <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
-              {positions.length >= limits.maxPositions ? (
-                <Text style={st.quotaFull}>
-                  <Text style={{ color: C.gold }}>{positions.length}/{limits.maxPositions} positions gratuites</Text>
-                  {' \u00B7 '}
-                  <Text style={{ color: C.gold, fontWeight: '600' }}>Passez à Premium</Text>
-                </Text>
-              ) : (
-                <Text style={st.quota}>
-                  {positions.length}/{limits.maxPositions} positions gratuites{' \u00B7 '}
-                  <Text style={{ color: C.gold, opacity: 0.85 }}>Premium illimité</Text>
-                </Text>
-              )}
-            </TouchableOpacity>
+            positions.length >= limits.maxPositions ? (
+              <Text style={st.quotaFull}>
+                {positions.length}/{limits.maxPositions} positions gratuites {'\u00B7'} Limite atteinte
+              </Text>
+            ) : (
+              <Text style={st.quota}>
+                {positions.length}/{limits.maxPositions} positions gratuites
+              </Text>
+            )
           )}
         </View>
 

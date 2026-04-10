@@ -206,8 +206,9 @@ export default function AlertesScreen() {
         {!tokenLoading && pushToken && (
           <>
             {/* CTA pleine largeur — adapté au quota */}
+            {/* BYPASS PREMIUM - A RETIRER : CTA upsell "Debloquer illimitees" masque en v1, quota reste applique dans openNewAlert */}
             {!alertsLoading && (
-              !isPremium && !canAddAlert(alerts.length) ? (
+              false ? (
                 <TouchableOpacity
                   style={[styles.createButton, styles.createButtonPremium]}
                   onPress={showPaywall}
@@ -228,18 +229,12 @@ export default function AlertesScreen() {
               <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
                 MES ALERTES
               </Text>
+              {/* BYPASS PREMIUM - A RETIRER : compteur quota conserve, upsell "Passe a l'illimite" masque */}
               {!isPremium && (
-                canAddAlert(alerts.length) ? (
-                  <TouchableOpacity onPress={showPaywall} activeOpacity={0.7}>
-                    <Text style={styles.alertsLimit}>
-                      {alerts.length}/{limits.maxAlerts} utilisée{alerts.length === 1 ? '' : 's'} {'\u00B7'} <Text style={styles.alertsLimitAccent}>Passe à l{'\u2019'}illimité {'\u203A'}</Text>
-                    </Text>
-                  </TouchableOpacity>
-                ) : (
-                  <Text style={styles.alertsLimit}>
-                    {alerts.length}/{limits.maxAlerts} utilisées {'\u00B7'} Limite atteinte
-                  </Text>
-                )
+                <Text style={styles.alertsLimit}>
+                  {alerts.length}/{limits.maxAlerts} utilisée{alerts.length === 1 ? '' : 's'}
+                  {!canAddAlert(alerts.length) && ` ${'\u00B7'} Limite atteinte`}
+                </Text>
               )}
             </View>
 

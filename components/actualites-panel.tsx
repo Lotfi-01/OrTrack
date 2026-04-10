@@ -1,5 +1,5 @@
 import * as WebBrowser from 'expo-web-browser';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   StyleSheet,
@@ -154,7 +154,10 @@ export function ActualitesPanel() {
   const [articles, setArticles] = useState<Record<string, Article[]>>({});
   const [loading, setLoading] = useState(true);
   const [errors, setErrors] = useState<Record<string, boolean>>({});
-  const { isPremium, showPaywall, isSourceLocked } = usePremium();
+  const { isPremium, showPaywall } = usePremium();
+  // BYPASS PREMIUM - A RETIRER : toutes les sources d'actualites deverrouillees en v1
+  // (ne plus destructurer isSourceLocked du hook pour eviter une dep instable ; useCallback stabilise la reference)
+  const isSourceLocked = useCallback((_i: number) => false, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -267,7 +270,8 @@ export function ActualitesPanel() {
 
         </View>
       ))}
-      {!isPremium && (
+      {/* BYPASS PREMIUM - A RETIRER : nudge upsell masque en v1 */}
+      {false && !isPremium && (
         <TouchableOpacity
           style={styles.premiumNudge}
           onPress={showPaywall}

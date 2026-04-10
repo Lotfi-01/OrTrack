@@ -350,6 +350,8 @@ export default function ReglagesScreen() {
           <Text style={styles.headerTitle}>Réglages</Text>
 
           {/* ── PREMIUM ─────────────────────────────────────────────── */}
+          {/* BYPASS PREMIUM - A RETIRER : carte entry "OrTrack Premium" masquee en v1 */}
+          {false && (
           <TouchableOpacity
             style={styles.premiumCard}
             onPress={showPaywall}
@@ -372,6 +374,7 @@ export default function ReglagesScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color={OrTrackColors.gold} />
           </TouchableOpacity>
+          )}
 
           {/* ── PRÉFÉRENCES ────────────────────────────────────────────── */}
           <SectionTitle title="Préférences" />

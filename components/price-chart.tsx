@@ -81,7 +81,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
   const { isPeriodLocked: _isPeriodLocked, showPaywall } = usePremium();
-  const isPeriodLocked = (_k: string) => false; // BYPASS PREMIUM — À RETIRER
+  const isPeriodLocked = (_k: string) => false; // BYPASS PREMIUM - A RETIRER
   const [period, setPeriod] = useState<Period>('1S');
   const [touchIndex, setTouchIndex] = useState<number | null>(null);
   const [pinnedIndex, setPinnedIndex] = useState<number | null>(null);

@@ -17,9 +17,7 @@ export default function PortfolioStatsTeaser({ subtitleText, onPress }: Portfoli
         <Text style={st.statsTeaserTitle}>Statistiques</Text>
         <Text style={st.statsTeaserSub}>{subtitleText}</Text>
       </View>
-      <View style={st.premiumBadgeLg}>
-        <Text style={st.premiumBadgeLgText}>PREMIUM</Text>
-      </View>
+      {/* BYPASS PREMIUM - A RETIRER : badge PREMIUM masque en v1 */}
     </TouchableOpacity>
   );
 }

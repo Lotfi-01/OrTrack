@@ -473,7 +473,7 @@ export default function AccueilScreen() {
           </View>
 
           <View style={st.pillRow}>
-            {/* BYPASS PREMIUM — À RETIRER : toutes les périodes déverrouillées */}
+            {/* BYPASS PREMIUM - A RETIRER : toutes les périodes déverrouillées */}
             {(['1S', '1M', '3M', '1A', '5A', '10A', '20A'] as HistoryPeriod[]).map(p => (
               <TouchableOpacity key={p} style={[st.pill, selectedPeriod === p && st.pillAct]} onPress={() => setSelectedPeriod(p)}>
                 <Text style={[st.pillTxt, selectedPeriod === p && st.pillTxtAct]}>{p}</Text>

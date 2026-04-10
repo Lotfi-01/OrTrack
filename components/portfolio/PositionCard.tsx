@@ -44,7 +44,8 @@ export default function PositionCard({
   isDeleting,
 }: PositionCardProps) {
   const pos = viewModel.position;
-  const { currentValue, totalCost, gainLoss, gainPct, fiscal, regime: sellerNets, sellerNetForfaitaire: posSellerNet } = viewModel.metrics;
+  // BYPASS PREMIUM - A RETIRER : `regime: sellerNets` etait lu uniquement par le teaser Premium commente ligne 126-154. Restaurer si reactivation.
+  const { currentValue, totalCost, gainLoss, gainPct, fiscal, sellerNetForfaitaire: posSellerNet } = viewModel.metrics;
   const cfg = METAL_CONFIG[pos.metal as MetalType];
 
   return (
@@ -123,29 +124,35 @@ export default function PositionCard({
             <Text style={st.ctaSimulerText}>{'Simuler ma vente →'}</Text>
           </TouchableOpacity>
 
-          {!isPremium && (
-            <TouchableOpacity style={st.premiumTeaser} onPress={onShowPaywall} activeOpacity={0.7}>
-              <Ionicons name="lock-closed-outline" size={12} color={C.textDim} />
-              <View style={{ flex: 1 }}>
-                <Text style={st.premiumTeaserTitle}>
-                  {(() => {
-                    if (!sellerNets) return 'Comparer les 2 régimes fiscaux';
-                    if (sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50)
-                      return `Un autre régime pourrait vous faire économiser ~${formatEuro(sellerNets.delta)}`;
-                    return 'Comparer les 2 régimes fiscaux';
-                  })()}
-                </Text>
-                <Text style={st.premiumTeaserSub}>
-                  {sellerNets && sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50
-                    ? 'Comparez en 1 clic'
-                    : 'Quel régime vous laisse le plus de net ?'}
-                </Text>
-              </View>
-              <View style={st.premiumBadge}>
-                <Text style={st.premiumBadgeText}>PREMIUM</Text>
-              </View>
-            </TouchableOpacity>
-          )}
+          {/*
+            BYPASS PREMIUM - A RETIRER : teaser Premium masque en v1
+            Bloc d'origine conserve en commentaire pour reversibilite.
+            Pour reactiver : retirer ce commentaire et restaurer le JSX ci-dessous.
+
+            {!isPremium && (
+              <TouchableOpacity style={st.premiumTeaser} onPress={onShowPaywall} activeOpacity={0.7}>
+                <Ionicons name="lock-closed-outline" size={12} color={C.textDim} />
+                <View style={{ flex: 1 }}>
+                  <Text style={st.premiumTeaserTitle}>
+                    {(() => {
+                      if (!sellerNets) return 'Comparer les 2 régimes fiscaux';
+                      if (sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50)
+                        return `Un autre régime pourrait vous faire économiser ~${formatEuro(sellerNets.delta)}`;
+                      return 'Comparer les 2 régimes fiscaux';
+                    })()}
+                  </Text>
+                  <Text style={st.premiumTeaserSub}>
+                    {sellerNets && sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50
+                      ? 'Comparez en 1 clic'
+                      : 'Quel régime vous laisse le plus de net ?'}
+                  </Text>
+                </View>
+                <View style={st.premiumBadge}>
+                  <Text style={st.premiumBadgeText}>PREMIUM</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+          */}
 
           {!isLevel2 && (
             <TouchableOpacity style={st.expandBtn} onPress={onExpandL2}>

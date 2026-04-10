@@ -224,7 +224,8 @@ export default function StatistiquesScreen() {
             </View>
 
             {/* ── BLOC 2 — INSIGHT PREMIUM ── */}
-            {isPremium && insight.type !== 'fallback' && (
+            {/* BYPASS PREMIUM - A RETIRER : insight affiche pour tous */}
+            {true && insight.type !== 'fallback' && (
               <>
                 <Text style={st.sectionTitle}>INSIGHT ORTRACK</Text>
                 <View style={st.insightCard}>
@@ -240,7 +241,8 @@ export default function StatistiquesScreen() {
                 </View>
               </>
             )}
-            {isPremium && insight.type === 'fallback' && (
+            {/* BYPASS PREMIUM - A RETIRER : analyse fallback affichee pour tous */}
+            {true && insight.type === 'fallback' && (
               <>
                 <Text style={st.sectionTitle}>ANALYSE</Text>
                 <View style={st.insightCard}>
@@ -270,7 +272,8 @@ export default function StatistiquesScreen() {
             </View>
 
             {/* Position ranking (premium) */}
-            {isPremium && ranking.length > 1 && (
+            {/* BYPASS PREMIUM - A RETIRER : classement des positions deverrouille */}
+            {true && ranking.length > 1 && (
               <>
                 <Text style={st.sectionTitle}>
                   {rankMode === 'eur' ? 'VOS POSITIONS (par gain \u20AC)' : rankMode === 'pct' ? 'VOS POSITIONS (par performance %)' : 'VOS POSITIONS (par net estimé)'}
@@ -345,7 +348,8 @@ export default function StatistiquesScreen() {
             )}
 
             {/* ── BLOC 4 — AIDE À LA DÉCISION (premium) ── */}
-            {isPremium && (
+            {/* BYPASS PREMIUM - A RETIRER : aide a la decision deverrouillee */}
+            {true && (
               <>
                 <Text style={st.sectionTitle}>AIDE À LA DÉCISION</Text>
                 {decisionCards.length >= 3 ? (
@@ -369,7 +373,8 @@ export default function StatistiquesScreen() {
             )}
 
             {/* ── BLOC 5 — DÉTAILS DU PORTEFEUILLE (accordion) ── */}
-            {isPremium && (
+            {/* BYPASS PREMIUM - A RETIRER : details du portefeuille deverrouilles */}
+            {true && (
               <>
                 <TouchableOpacity style={st.detailsToggle} onPress={() => setDetailsOpen(v => !v)} activeOpacity={0.7}>
                   <Text style={st.detailsToggleText}>DÉTAILS DU PORTEFEUILLE</Text>
@@ -416,7 +421,8 @@ export default function StatistiquesScreen() {
             )}
 
             {/* Non-premium CTA */}
-            {!isPremium && (
+            {/* BYPASS PREMIUM - A RETIRER : teaser ANALYSES PREMIUM masque en v1 */}
+            {false && !isPremium && (
               <>
                 <Text style={st.sectionTitle}>ANALYSES PREMIUM</Text>
                 <View style={st.card}>
