@@ -12,7 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -57,7 +57,9 @@ export default function PortefeuilleScreen() {
 
   const [masked, setMasked] = useState(false);
   const [filterMetal, setFilterMetal] = useState<MetalType | null>(null);
-  const prevParamRef = useRef<string | undefined>(undefined);
+  const paramMetalRef = useRef<string | undefined>(paramMetal);
+  paramMetalRef.current = paramMetal;
+  const consumedMetalRef = useRef<string | undefined>(undefined);
   const [openId, setOpenId] = useState<string | null>(null);
   const [level2Id, setLevel2Id] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -88,17 +90,32 @@ export default function PortefeuilleScreen() {
   useFocusEffect(useCallback(() => { reloadPositions(); }, [reloadPositions]));
 
   // ── Filter from route param ──────────────────────────────────────────
+  //
+  // Règle explicite :
+  // - Entrée standard (tab bar, retour après édition, re-focus simple) → filtre réinitialisé.
+  // - Entrée contextuelle (URL param `metal` fraîchement posé par un CTA) → filtre appliqué
+  //   UNE SEULE FOIS par valeur, puis le param est consommé et retiré de l'URL.
+  //
+  // Le `consumedMetalRef` garantit qu'un `metal=XAG` résiduel dans l'URL (après retour
+  // d'un autre écran, p.ex. ajouter) ne re-applique pas silencieusement le filtre : seule
+  // une nouvelle valeur, non déjà consommée, déclenche l'application.
 
-  useEffect(() => {
-    if (paramMetal && paramMetal !== prevParamRef.current) {
-      const mt = symbolToMetal(paramMetal);
-      setFilterMetal(mt);
-      prevParamRef.current = paramMetal;
-    } else if (!paramMetal && prevParamRef.current) {
-      setFilterMetal(null);
-      prevParamRef.current = undefined;
-    }
-  }, [paramMetal]);
+  useFocusEffect(
+    useCallback(() => {
+      const currentMetal = paramMetalRef.current;
+      if (currentMetal && consumedMetalRef.current !== currentMetal) {
+        // Parcours contextuel explicite : nouveau param métal jamais consommé
+        consumedMetalRef.current = currentMetal;
+        setFilterMetal(symbolToMetal(currentMetal));
+        // Consomme le param : l'URL ne doit pas conserver un filtre implicite
+        router.setParams({ metal: '' });
+      } else {
+        // Entrée standard : pas de filtre résiduel par surprise
+        consumedMetalRef.current = undefined;
+        setFilterMetal(null);
+      }
+    }, []),
+  );
 
   const filterMetalName = useMemo(() => {
     if (!filterMetal) return null;
@@ -107,9 +124,9 @@ export default function PortefeuilleScreen() {
 
   const clearFilter = useCallback(() => {
     setFilterMetal(null);
-    prevParamRef.current = undefined;
-    // expo-router ne permet pas de supprimer un param proprement ; on replace sans params
-    router.replace('/(tabs)/portefeuille' as never);
+    consumedMetalRef.current = undefined;
+    // Le useFocusEffect a déjà consommé et vidé le param métal dans l'URL
+    // dès la première entrée contextuelle, donc rien à nettoyer ici.
   }, []);
 
   // ── Filtered positions ───────────────────────────────────────────────
