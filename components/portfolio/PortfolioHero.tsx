@@ -1,6 +1,6 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatPctSigned } from '@/utils/format';
+import { formatEuro, formatPctSigned, formatGain } from '@/utils/format';
 import { PortfolioSummary } from '@/utils/portfolio';
 
 const C = OrTrackColors;
@@ -33,22 +33,26 @@ export default function PortfolioHero({
       {pricesReady ? (
         <>
           <Text style={st.resumeValue}>{m(`${formatEuro(summary.totalValue)} ${currencySymbol}`)}</Text>
-          {hasFilteredPositions && !masked && (
+          {hasFilteredPositions && !masked && (() => {
+            const g = formatGain(summary.gain);
+            const color = g.state === 'zero' ? C.textDim : g.state === 'positive' ? C.green : C.red;
+            return (
             <>
               <View style={st.resumeGainRow}>
-                <Text style={[st.resumeGain, { color: summary.gain >= 0 ? C.green : C.red }]}>
-                  {'Gain brut : '}{summary.gain >= 0 ? '+' : ''}{formatEuro(summary.gain)} {currencySymbol}
+                <Text style={[st.resumeGain, { color }]}>
+                  {'Gain brut : '}{g.text} {currencySymbol}
                 </Text>
                 <Text style={st.resumeGainPct}>({formatPctSigned(summary.gainPct)})</Text>
               </View>
               <View style={st.resumeNetRow}>
                 <Text style={st.resumeNetVendeur}>
-                  {'Net vendeur estimé : ~'}{formatEuro(summary.sellerNet)} {currencySymbol}
+                  {'Montant récupérable estimé : ~'}{formatEuro(summary.sellerNet)} {currencySymbol}
                 </Text>
                 <Text style={st.resumeNetSub}>{'Estimé au régime forfaitaire'}</Text>
               </View>
             </>
-          )}
+            );
+          })()}
           {masked && hasFilteredPositions && (
             <Text style={{ color: C.textDim, fontSize: 13, marginTop: 4 }}>{'\u2022\u2022\u2022\u2022\u2022\u2022'}</Text>
           )}

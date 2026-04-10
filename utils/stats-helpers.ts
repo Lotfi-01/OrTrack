@@ -2,7 +2,7 @@ import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/meta
 import { TAX } from '@/constants/tax';
 import { STATS } from '@/constants/stats-config';
 import { Position } from '@/types/position';
-import { formatEuro } from '@/utils/format';
+import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { parseDate, calcYearsHeld } from '@/utils/tax-helpers';
 import {
   PortfolioFiscalSummary,
@@ -102,7 +102,7 @@ export function selectInsight(
             type: 'fiscal-window',
             title: 'FENÊTRE FISCALE',
             phrase: `Attendre ${monthsToTier} mois sur 1 position pourrait améliorer votre net estimé.`,
-            subtext: `${pf.pos.product} approche d\u2019un palier fiscal.`,
+            subtext: `${stripMetalFromName(pf.pos.product)} approche d\u2019un palier fiscal.`,
             method: `Économie potentielle estimée : ~${fmtCompact(savings)} \u20AC \u00B7 base cours actuel`,
             action: { label: 'Voir la simulation \u2192', route: '/fiscalite', params: { positionId: pf.pos.id } },
           };
@@ -113,7 +113,7 @@ export function selectInsight(
         return {
           type: 'fiscal-watch',
           title: 'POSITION À SURVEILLER',
-          phrase: `${pf.pos.product} \u00B7 prochain palier dans ${monthsToTier} mois.`,
+          phrase: `${stripMetalFromName(pf.pos.product)} \u00B7 prochain palier dans ${monthsToTier} mois.`,
           subtext: 'L\u2019abattement sur plus-value augmente par palier.',
           method: 'Abattement progressif \u00B7 art. 150 VI CGI',
         };
@@ -138,7 +138,7 @@ export function selectInsight(
   // Priority 3: Concentration PV
   if (fiscal && totalGain > 0 && positionCount >= STATS.CONCENTRATION_MIN_POSITIONS) {
     const gains = fiscal.positionFiscals
-      .map(pf => ({ name: pf.pos.product, gain: Math.max(0, pf.gainEur) }))
+      .map(pf => ({ name: stripMetalFromName(pf.pos.product), gain: Math.max(0, pf.gainEur) }))
       .sort((a, b) => b.gain - a.gain);
     const totalPosGain = gains.reduce((s, g) => s + g.gain, 0);
     if (totalPosGain > 0) {
@@ -235,7 +235,7 @@ export function selectDecisionCards(
             id: 'window',
             title: 'FENÊTRE FISCALE',
             value: `Dans ${monthsToTier} mois`,
-            subtext: `${pf.pos.product} \u00B7 économie estimée : ~${fmtCompact(savings)} \u20AC`,
+            subtext: `${stripMetalFromName(pf.pos.product)} \u00B7 économie estimée : ~${fmtCompact(savings)} \u20AC`,
             method: 'Base cours actuel \u00B7 abattement progressif',
           });
           break;
@@ -247,7 +247,7 @@ export function selectDecisionCards(
   // Card 4/5: Motor or Concentration (mutually exclusive)
   if (fiscal && totalGain > 0) {
     const gains = fiscal.positionFiscals
-      .map(pf => ({ name: pf.pos.product, gain: Math.max(0, pf.gainEur) }))
+      .map(pf => ({ name: stripMetalFromName(pf.pos.product), gain: Math.max(0, pf.gainEur) }))
       .sort((a, b) => b.gain - a.gain);
     const totalPosGain = gains.reduce((s, g) => s + g.gain, 0);
 
@@ -364,7 +364,7 @@ export function computePositionRanking(
 
     return {
       id: pf.pos.id,
-      product: pf.pos.product,
+      product: stripMetalFromName(pf.pos.product),
       metal: pf.pos.metal,
       gainEur: pf.gainEur,
       gainPct,

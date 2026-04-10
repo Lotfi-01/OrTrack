@@ -30,7 +30,7 @@ import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatPct, formatG, JOURS_FR, MOIS_FR } from '@/utils/format';
+import { formatEuro, formatPct, formatG, formatGain, getDisplayPositionName, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { usePositions } from '@/hooks/use-positions';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
@@ -195,7 +195,9 @@ export default function AccueilScreen() {
 
     const gain = totalCost > 0 ? totalValue - totalCost : 0;
     const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
-    const netEstime = gain > 0 ? totalValue - (totalValue * TAX.forfaitaireRate) - totalCost : gain;
+    // Affiché uniquement sous le guard `portfolio.gain > 0` — le calcul
+    // forfaitaire reste donc toujours pertinent à cet endroit.
+    const netEstime = totalValue - (totalValue * TAX.forfaitaireRate) - totalCost;
 
     return { totalValue, totalCost, gain, gainPct, netEstime, byMetal };
   }, [positions, prices]);
@@ -328,17 +330,29 @@ export default function AccueilScreen() {
 
               {hasPositions && (
                 <View style={st.variationRow}>
-                  {!masked ? (
+                  {!masked ? (() => {
+                    const g = formatGain(portfolio.gain);
+                    const badgeBg =
+                      g.state === 'zero' ? 'rgba(245,240,232,0.06)' :
+                      g.state === 'positive' ? C.greenDim : 'rgba(224,107,107,0.10)';
+                    const badgeColor =
+                      g.state === 'zero' ? C.textDim :
+                      g.state === 'positive' ? C.green : C.red;
+                    const arrow =
+                      g.state === 'zero' ? '\u00B7' :
+                      g.state === 'positive' ? '▲' : '▼';
+                    return (
                     <>
-                      <View style={[st.varBadge, { backgroundColor: portfolio.gain >= 0 ? C.greenDim : 'rgba(224,107,107,0.10)' }]}>
-                        <Text style={[st.varBadgeText, { color: portfolio.gain >= 0 ? C.green : C.red }]}>
-                          {portfolio.gain >= 0 ? '▲' : '▼'} {formatPct(Math.abs(portfolio.gainPct), 2)}
+                      <View style={[st.varBadge, { backgroundColor: badgeBg }]}>
+                        <Text style={[st.varBadgeText, { color: badgeColor }]}>
+                          {arrow} {formatPct(Math.abs(portfolio.gainPct), 2)}
                         </Text>
                       </View>
-                      <Text style={st.varAbs}>{portfolio.gain >= 0 ? '+' : '-'}{formatEuro(Math.abs(portfolio.gain))} {currencySymbol}</Text>
+                      <Text style={st.varAbs}>{g.text} {currencySymbol}</Text>
                       <Text style={st.varPeriod}>Depuis achat</Text>
                     </>
-                  ) : (
+                    );
+                  })() : (
                     <View style={[st.varBadge, { backgroundColor: 'rgba(245,240,232,0.06)' }]}>
                       <Text style={[st.varBadgeText, { color: C.textDim }]}>••••••</Text>
                     </View>
@@ -386,18 +400,31 @@ export default function AccueilScreen() {
             const cfg = METAL_CONFIG[mk as MetalType];
             if (!cfg) return null;
             const net = data.value - data.cost;
+            const metalPositions = positions.filter(p => p.metal === mk);
+            const isSinglePosition = metalPositions.length === 1;
+            const title = isSinglePosition
+              ? getDisplayPositionName(metalPositions[0]!)
+              : cfg.name;
+            const g = formatGain(net);
+            const gainColor = masked
+              ? C.textDim
+              : g.state === 'zero'
+                ? C.textDim
+                : g.state === 'positive' ? C.green : C.red;
             return (
               <View key={mk}>
                 {i > 0 && <View style={st.divider} />}
                 <TouchableOpacity style={st.detRow} onPress={() => router.replace({ pathname: '/(tabs)/portefeuille' as any, params: { metal: cfg.symbol } })} activeOpacity={0.7}>
-                  <View style={st.detBadge}><Text style={st.detBadgeText}>{cfg.symbol}</Text></View>
+                  <View style={[st.detBadge, { backgroundColor: cfg.chipBorder, borderColor: cfg.chipBorder }]}>
+                    <Text style={[st.detBadgeText, { color: C.background }]}>{cfg.symbol}</Text>
+                  </View>
                   <View style={st.detCenter}>
-                    <Text style={st.detName}>{cfg.name}</Text>
+                    <Text style={st.detName} numberOfLines={1}>{title}</Text>
                     <Text style={st.detSub}>{m(`${formatG(data.totalG)} · ${data.count} pièce${data.count > 1 ? 's' : ''}`)}</Text>
                   </View>
                   <View style={st.detRight}>
                     <Text style={st.detVal}>{m(`${formatEuro(data.value)} ${currencySymbol}`)}</Text>
-                    <Text style={[st.detNet, { color: masked ? C.textDim : (net >= 0 ? C.green : C.red) }]}>{m(`Gain : ${net >= 0 ? '+' : ''}${formatEuro(net)} ${currencySymbol}`)}</Text>
+                    <Text style={[st.detNet, { color: gainColor }]}>{m(`Gain : ${g.text} ${currencySymbol}`)}</Text>
                   </View>
                   <Text style={st.chev}>›</Text>
                 </TouchableOpacity>

@@ -3,7 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatQty, formatPctSigned } from '@/utils/format';
+import { formatEuro, formatQty, formatPctSigned, formatGain, getDisplayPositionName } from '@/utils/format';
 import { PositionViewModel } from '@/utils/portfolio';
 
 const C = OrTrackColors;
@@ -56,16 +56,20 @@ export default function PositionCard({
         activeOpacity={0.7}
         disabled={masked}
       >
-        <View style={st.badgeCircle}>
-          <Text style={st.badgeText}>{cfg.symbol}</Text>
+        <View style={[st.badgeCircle, { backgroundColor: cfg.chipBorder, borderColor: cfg.chipBorder }]}>
+          <Text style={[st.badgeText, { color: C.background }]}>{cfg.symbol}</Text>
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={st.cardName} numberOfLines={1}>{pos.product}</Text>
-          {masked ? null : gainLoss !== null ? (
-            <Text style={[st.cardGain, { color: gainLoss >= 0 ? C.green : C.red }]}>
-              {'Gain : '}{gainLoss >= 0 ? '+' : ''}{formatEuro(gainLoss)} {currencySymbol} ({formatPctSigned(gainPct ?? 0)})
-            </Text>
-          ) : (
+          <Text style={st.cardName} numberOfLines={1}>{getDisplayPositionName(pos)}</Text>
+          {masked ? null : gainLoss !== null ? (() => {
+            const g = formatGain(gainLoss);
+            const color = g.state === 'zero' ? C.textDim : g.state === 'positive' ? C.green : C.red;
+            return (
+              <Text style={[st.cardGain, { color }]}>
+                {'Gain : '}{g.text} {currencySymbol} ({formatPctSigned(gainPct ?? 0)})
+              </Text>
+            );
+          })() : (
             <Text style={st.cardGainPlaceholder}>{'\u2014'}</Text>
           )}
           {!masked && (() => {
