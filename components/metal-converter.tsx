@@ -283,11 +283,11 @@ const styles = StyleSheet.create({
   metalWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
     marginBottom: 14,
   },
   metalBtn: {
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     paddingVertical: 7,
     borderRadius: 8,
   },
