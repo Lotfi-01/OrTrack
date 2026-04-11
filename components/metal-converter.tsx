@@ -21,7 +21,7 @@ const METALS: { key: MetalKey; label: string; symbol: string; color: string }[] 
   { key: 'gold', label: 'Or', symbol: 'XAU', color: '#C9A84C' },
   { key: 'silver', label: 'Argent', symbol: 'XAG', color: '#A8A8B8' },
   { key: 'platinum', label: 'Platine', symbol: 'XPT', color: '#E0E0E0' },
-  { key: 'palladium', label: 'Palladium', symbol: 'XPD', color: '#CBA135' },
+  { key: 'palladium', label: 'Palladium', symbol: 'XPD', color: '#8FA3B8' },
 ];
 
 const PRESETS: { label: string; value: string; unit: Unit }[] = [
