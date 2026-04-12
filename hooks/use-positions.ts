@@ -52,14 +52,22 @@ function parsePositions(raw: string | null): Position[] {
   return valid;
 }
 
-// ── Cache et queue ────────────────────────────────────────────────────────────
+// ── Cache, queue et compteurs ─────────────────────────────────────────────────
 
 let memoryCache: Position[] | null = null;
 let writePromise: Promise<void> = Promise.resolve();
 
+// Invalide les opérations lancées avant un reset.
+let generation = 0;
+// Représente la dernière version cohérente de l'état positions en mémoire.
+// Incrémenté par chaque mutation réussie et par resetPositionsCache.
+let stateVersion = 0;
+
 // Exposé pour wipeAllUserData() dans reglages.tsx.
 // Remet le cache à null — le prochain usePositions rechargera les positions.
 export function resetPositionsCache() {
+  generation++;
+  stateVersion++;
   memoryCache = null;
   writePromise = Promise.resolve();
 }
@@ -71,42 +79,65 @@ export function usePositions() {
   const [loading, setLoading] = useState(memoryCache === null);
 
   const reloadPositions = useCallback(async () => {
+    const capturedVersion = stateVersion;
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
       const safe = parsePositions(raw);
-      memoryCache = safe;
-      setPositions(safe);
+      // Si une mutation ou un reset a produit un état plus récent pendant la
+      // lecture, ce snapshot est stale — on l'ignore pour ne pas écraser.
+      if (capturedVersion === stateVersion) {
+        memoryCache = safe;
+        setPositions(safe);
+      }
     } catch {
-      memoryCache = [];
-      setPositions([]);
+      if (capturedVersion === stateVersion) {
+        memoryCache = [];
+        setPositions([]);
+      }
     } finally {
+      // Toujours libérer le loading, même si le snapshot est stale
+      // (les données sont disponibles depuis la mutation qui a incrémenté stateVersion).
       setLoading(false);
     }
   }, []);
 
-  // Mutation transactionnelle : le read-modify-write se produit entièrement
-  // à l'intérieur de la queue de sérialisation. La lecture se fait depuis
-  // AsyncStorage (source de vérité persistée) pour éviter les race conditions
-  // si deux mutations sont lancées sans await entre elles.
+  // Mutation transactionnelle avec guards anti-stale.
+  // - generation : invalide les mutations planifiées avant un reset.
+  // - stateVersion : incrémenté à chaque mutation réussie pour invalider les lectures stale.
+  // Le read-modify-write se produit entièrement à l'intérieur de la queue sérialisée.
   const persistTransform = useCallback(async (transform: (current: Position[]) => Position[]) => {
+    const capturedGen = generation;
+    let mutationError: unknown = null;
+
     writePromise = writePromise.then(async () => {
-      const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
-      const current = parsePositions(raw);
-      const next = transform(current);
-
-      memoryCache = next;
-      setPositions(next);
-
       try {
+        // Guard 1 : abandon si un reset a eu lieu depuis la planification
+        if (capturedGen !== generation) return;
+
+        const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
+        const current = parsePositions(raw);
+        const next = transform(current);
+
+        // Guard 2 : abandon avant écriture storage si un reset est survenu pendant la lecture
+        if (capturedGen !== generation) return;
+
         await AsyncStorage.setItem(STORAGE_KEYS.positions, JSON.stringify(next));
+
+        // Guard 3 : abandon avant mise à jour mémoire si un reset est survenu pendant l'écriture
+        if (capturedGen !== generation) return;
+
+        memoryCache = next;
+        setPositions(next);
+        stateVersion++;
       } catch (error) {
-        memoryCache = current;
-        setPositions(current);
-        throw error;
+        mutationError = error;
+        // Ne pas throw ici — la queue reste vivante pour les opérations suivantes
       }
     });
 
-    return writePromise;
+    await writePromise;
+
+    if (mutationError) throw mutationError;
   }, []);
 
   useEffect(() => {
