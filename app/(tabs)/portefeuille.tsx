@@ -26,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { truncName } from '@/utils/format';
 import { computePositionViewModels, computePortfolioSummary, getBestPerformerName } from '@/utils/portfolio';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import PortfolioHero from '@/components/portfolio/PortfolioHero';
 import PositionCard from '@/components/portfolio/PositionCard';
@@ -67,7 +68,7 @@ export default function PortefeuilleScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem('@ortrack_privacy_mode')
+      AsyncStorage.getItem(STORAGE_KEYS.privacyMode)
         .then(v => setMasked(v === 'true'))
         .catch(() => {});
     }, []),
@@ -79,7 +80,7 @@ export default function PortefeuilleScreen() {
     setOpenId(null);
     setLevel2Id(null);
     try {
-      await AsyncStorage.setItem('@ortrack_privacy_mode', String(next));
+      await AsyncStorage.setItem(STORAGE_KEYS.privacyMode, String(next));
     } catch {}
   }, [masked]);
 

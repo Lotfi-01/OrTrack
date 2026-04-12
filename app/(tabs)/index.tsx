@@ -29,6 +29,7 @@ import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
 import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, formatPct, formatG, formatGain, stripMetalFromName, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { usePositions } from '@/hooks/use-positions';
@@ -130,14 +131,14 @@ export default function AccueilScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      AsyncStorage.getItem('@ortrack_privacy_mode').then(v => setMasked(v === 'true')).catch(() => {});
+      AsyncStorage.getItem(STORAGE_KEYS.privacyMode).then(v => setMasked(v === 'true')).catch(() => {});
     }, [])
   );
 
   const toggleMask = useCallback(async () => {
     const next = !masked;
     setMasked(next);
-    try { await AsyncStorage.setItem('@ortrack_privacy_mode', String(next)); } catch {}
+    try { await AsyncStorage.setItem(STORAGE_KEYS.privacyMode, String(next)); } catch {}
   }, [masked]);
 
   // ── Reload positions on focus ────────────────────────────────────────

@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
@@ -67,7 +68,7 @@ export default function FiscaliteGlobaleScreen() {
   useFocusEffect(
     useCallback(() => {
       reloadPositions();
-      AsyncStorage.getItem('@ortrack_privacy_mode')
+      AsyncStorage.getItem(STORAGE_KEYS.privacyMode)
         .then(v => setMasked(v === 'true'))
         .catch(() => {});
     }, [reloadPositions]),

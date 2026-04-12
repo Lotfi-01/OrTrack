@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { STATS } from '@/constants/stats-config';
 import { formatEuro, formatG, formatPct } from '@/utils/format';
@@ -50,7 +51,7 @@ export default function StatistiquesScreen() {
   useFocusEffect(
     useCallback(() => {
       reloadPositions();
-      AsyncStorage.getItem('@ortrack_privacy_mode')
+      AsyncStorage.getItem(STORAGE_KEYS.privacyMode)
         .then(v => setMasked(v === 'true'))
         .catch(() => {});
     }, [reloadPositions]),
