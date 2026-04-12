@@ -47,7 +47,7 @@ const useStaggerAnim = (delay: number) => {
 // ─── Source de vérité produit ────────────────────────────────────────────────
 
 type PremiumReleaseMode = 'launch_free' | 'waitlist';
-const PREMIUM_RELEASE_MODE: PremiumReleaseMode = 'launch_free';
+const PREMIUM_RELEASE_MODE: PremiumReleaseMode = 'waitlist';
 
 // ─── Composant ──────────────────────────────────────────────────────────────
 
@@ -146,9 +146,9 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
 
       {/* 4b. Statut produit */}
       <Animated.View style={[s.launchBanner, { opacity: animB.fade, transform: [{ translateY: animB.slide }] }]}>
-        <Text style={s.launchBannerTitle}>Gratuit pendant le lancement</Text>
+        <Text style={s.launchBannerTitle}>Premium bientôt disponible</Text>
         <Text style={s.launchBannerSub}>
-          Activez toutes les fonctionnalités Premium sans frais pendant la phase de lancement.
+          Laissez votre intérêt pour être prévenu au lancement.
         </Text>
       </Animated.View>
 
@@ -266,7 +266,7 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
           <TouchableOpacity
             activeOpacity={0.9}
             onPress={activateLaunchFree}
-            accessibilityLabel="Activer l'accès complet"
+            accessibilityLabel="Me prévenir au lancement"
             accessibilityRole="button"
           >
             <LinearGradient
@@ -274,14 +274,14 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
               style={s.ctaGradient}
             >
-              <Text style={s.ctaText}>Activer l{'\u2019'}accès complet</Text>
+              <Text style={s.ctaText}>Me prévenir au lancement</Text>
             </LinearGradient>
           </TouchableOpacity>
         </View>
 
         {/* 12. Sous-texte CTA */}
         <Text style={s.ctaSubtext}>
-          Aucun paiement pendant le lancement
+          Aucun paiement aujourd{'\u2019'}hui
         </Text>
 
       </Animated.View>

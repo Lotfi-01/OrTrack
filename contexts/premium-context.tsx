@@ -80,18 +80,16 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
           RC_INIT_TIMEOUT_MS
         );
 
-        // Launch-free activation persisted locally
-        const launchFlag = await AsyncStorage.getItem(STORAGE_KEYS.launchPremium).catch(() => null);
-        const resolvedPremium = premiumStatus || launchFlag === 'true';
+        // launchPremium désactivé pour v1.0 : ne doit pas activer premium en production.
+        // À réactiver uniquement pour tests internes ou stratégie v1.1 explicite.
 
         if (mounted) {
-          setIsPremium(resolvedPremium);
+          setIsPremium(premiumStatus);
           setOfferings(offeringsResult);
           setIsLoading(false);
 
-          // Migration du flag "Me pr\u00e9venir au lancement"
-          // TODO: supprimer ce bloc apr\u00e8s 2-3 mois en production
-          if (resolvedPremium) {
+          // Migration du flag "Me prévenir au lancement"
+          if (premiumStatus) {
             AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(() => {});
           } else {
             const notifyFlag = await AsyncStorage.getItem(STORAGE_KEYS.premiumNotify);
@@ -131,9 +129,10 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const activateLaunchFree = useCallback(async () => {
-    setIsPremium(true);
+    // v1.0 : ne déverrouille pas le premium. Écrit uniquement le flag "Me prévenir"
+    // pour canal d'acquisition. Le paywall se ferme normalement.
+    await AsyncStorage.setItem(STORAGE_KEYS.premiumNotify, 'true').catch(() => {});
     setShowPaywallModal(false);
-    await AsyncStorage.setItem(STORAGE_KEYS.launchPremium, 'true').catch(() => {});
   }, []);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
