@@ -11,11 +11,13 @@ import {
   Platform,
   ActivityIndicator,
   Alert as RNAlert,
+  Linking,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams } from 'expo-router'
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import * as Notifications from 'expo-notifications'
 import {
   getAlerts,
   createAlert,
@@ -34,6 +36,7 @@ import { usePremium } from '../../contexts/premium-context'
 import { useSpotPrices } from '../../hooks/use-spot-prices'
 import { formatEuro } from '@/utils/format'
 import { STORAGE_KEYS } from '@/constants/storage-keys'
+import { registerForPushNotifications } from '@/services/notifications'
 
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium']
 
@@ -116,7 +119,44 @@ export default function AlertesScreen() {
   }, [])
 
   async function handleCreate() {
-    if (!pushToken || !targetPrice || isNaN(parseFloat(targetPrice))) return
+    if (!targetPrice || isNaN(parseFloat(targetPrice))) return
+
+    // Obtenir un token push si absent (demande de permission à ce moment)
+    let token = pushToken
+    if (!token) {
+      token = await registerForPushNotifications()
+      if (token) {
+        setPushToken(token)
+      } else {
+        // Permission refusée — vérifier si refus définitif
+        try {
+          const { canAskAgain } = await Notifications.getPermissionsAsync()
+          if (!canAskAgain) {
+            RNAlert.alert(
+              'Notifications bloquées',
+              'Les notifications sont désactivées pour OrTrack. Activez-les dans les réglages de votre appareil pour recevoir vos alertes de prix.',
+              [
+                { text: 'Ouvrir les réglages', onPress: () => Linking.openSettings() },
+                { text: 'Annuler', style: 'cancel' },
+              ]
+            )
+          } else {
+            RNAlert.alert(
+              'Notifications requises',
+              'Les alertes de prix nécessitent l\u2019autorisation des notifications pour vous prévenir.',
+              [{ text: 'Compris' }]
+            )
+          }
+        } catch {
+          RNAlert.alert(
+            'Notifications requises',
+            'Impossible d\u2019activer les notifications. Réessayez.',
+            [{ text: 'OK' }]
+          )
+        }
+        return
+      }
+    }
 
     // Si création (pas édition), vérifier la limite premium
     if (!editingAlertId && !canAddAlert(alerts.length)) {
@@ -129,7 +169,7 @@ export default function AlertesScreen() {
 
     let success: boolean
     if (editingAlertId) {
-      const result = await updateAlert(pushToken, editingAlertId, {
+      const result = await updateAlert(token, editingAlertId, {
         metal: selectedMetal,
         condition: selectedCondition,
         target_price: parseFloat(targetPrice),
@@ -137,7 +177,7 @@ export default function AlertesScreen() {
       success = result.success
     } else {
       success = await createAlert(
-        pushToken,
+        token,
         selectedMetal,
         selectedCondition,
         parseFloat(targetPrice)
@@ -147,7 +187,7 @@ export default function AlertesScreen() {
     if (success) {
       closeModal()
       setTargetPrice('')
-      loadAlerts(pushToken)
+      loadAlerts(token)
     }
   }
 
@@ -187,25 +227,9 @@ export default function AlertesScreen() {
           />
         )}
 
-        {/* CAS 2 : pas de token */}
-        {!tokenLoading && !pushToken && (
-          <View style={styles.emptyState}>
-            <Ionicons
-              name="notifications-off-outline"
-              size={48}
-              color={OrTrackColors.subtext}
-            />
-            <Text style={styles.emptyTitle}>
-              Notifications non disponibles
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              Testez sur un appareil physique
-            </Text>
-          </View>
-        )}
-
-        {/* CAS 3 : token disponible */}
-        {!tokenLoading && pushToken && (
+        {/* CAS 2+3 : afficher l'interface alertes que le token soit présent ou non.
+             La permission push sera demandée à la création d'une alerte si nécessaire. */}
+        {!tokenLoading && (
           <>
             {/* CTA pleine largeur — adapté au quota */}
             {/* BYPASS PREMIUM - A RETIRER : CTA upsell "Debloquer illimitees" masque en v1, quota reste applique dans openNewAlert */}

@@ -13,7 +13,6 @@ import { OrTrackColors } from '@/constants/theme';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { PremiumProvider } from '@/contexts/premium-context';
 import { trackInstall } from '@/lib/trackInstall';
-import { registerForPushNotifications } from '../services/notifications';
 
 // Afficher les notifications quand l'app est au premier plan
 try {
@@ -94,12 +93,6 @@ export default function RootLayout() {
         vibrationPattern: [0, 250, 250, 250],
       }).catch(() => {});
     }
-  }, [ready]);
-
-  // Enregistrer le push token (après onboarding)
-  useEffect(() => {
-    if (!ready || needsOnboarding.current) return;
-    registerForPushNotifications().catch(() => {});
   }, [ready]);
 
   // Tracker l'installation (après onboarding)
