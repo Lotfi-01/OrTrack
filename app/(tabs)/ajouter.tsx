@@ -176,6 +176,7 @@ export default function AjouterScreen() {
   const [showAllPieces, setShowAllPieces] = useState(false);
   const [showAllBars, setShowAllBars] = useState(false);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [confirmed, setConfirmed] = useState(false);
   const [isStep2Active, setIsStep2Active] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
@@ -565,11 +566,12 @@ export default function AjouterScreen() {
   // ── Sauvegarde ────────────────────────────────────────────────────────
 
   const handleSave = async () => {
-    if (!canSave || saving) return;
+    if (!canSave || saving || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     try {
       const newPosition: Position = {
-        id: effectiveEditMode ? editId! : Date.now().toString(),
+        id: effectiveEditMode ? editId! : Date.now().toString(36) + Math.random().toString(36).slice(2),
         metal,
         product: product!.label,
         weightG: effectiveWeightG,
@@ -586,6 +588,8 @@ export default function AjouterScreen() {
         await updatePosition({ ...newPosition, id: editId!, createdAt: existing?.createdAt ?? newPosition.createdAt });
       } else {
         if (!canAddPosition(positions.length)) {
+          savingRef.current = false;
+          setSaving(false);
           showPaywall();
           return;
         }
@@ -601,6 +605,8 @@ export default function AjouterScreen() {
       setShowAllPieces(false);
 
       setConfirmed(true);
+      // Succès : ne PAS remettre savingRef à false — le composant reste verrouillé
+      // jusqu'au démontage (navigation après 1400ms). Évite un 3e tap pendant l'animation.
       setTimeout(() => {
         setConfirmed(false);
         if (effectiveEditMode) {
@@ -610,9 +616,9 @@ export default function AjouterScreen() {
         }
       }, 1400);
     } catch {
-      Alert.alert('Erreur', 'Impossible de sauvegarder la position.');
-    } finally {
+      savingRef.current = false;
       setSaving(false);
+      Alert.alert('Erreur', 'Impossible de sauvegarder la position.');
     }
   };
 
