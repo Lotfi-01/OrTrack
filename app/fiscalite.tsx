@@ -163,7 +163,7 @@ export default function FiscaliteScreen() {
       <SafeAreaView style={st.container} edges={['bottom']}>
         <Stack.Screen options={{ title: 'Simulation fiscale' }} />
         <View style={st.lockedCard}>
-          <Text style={st.lockedTitle}>Fiscalité Premium</Text>
+          <Text style={st.lockedTitle}>Fiscalité {'\u00B7'} Bientôt disponible</Text>
           <Text style={st.lockedText}>Les simulations fiscales avancées sont réservées aux comptes Premium.</Text>
           <TouchableOpacity style={st.lockedButton} onPress={showPaywall} activeOpacity={0.8}>
             <Text style={st.lockedButtonText}>Débloquer la fiscalité</Text>

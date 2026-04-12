@@ -167,7 +167,7 @@ export default function StatistiquesScreen() {
             <Text style={st.headerTitle}>Statistiques</Text>
           </View>
 
-          <Text style={st.sectionTitle}>ANALYSES PREMIUM</Text>
+          <Text style={st.sectionTitle}>Analyses {'\u00B7'} Bientôt disponible</Text>
           <View style={st.card}>
             {PREMIUM_FEATURES.map((item, i) => (
               <View key={item.title} style={[st.premiumRow, i < PREMIUM_FEATURES.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border }]}>

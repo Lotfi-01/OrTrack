@@ -217,7 +217,7 @@ export default function RadarScreen() {
           <Text style={st.headerTitle}>Prime marché</Text>
         </View>
         <View style={st.lockedWrap}>
-          <Text style={st.lockedTitle}>Radar Premium</Text>
+          <Text style={st.lockedTitle}>Radar {'\u00B7'} Bientôt disponible</Text>
           <Text style={st.lockedText}>Le radar de primes est réservé aux comptes Premium.</Text>
           <TouchableOpacity style={st.lockedButton} onPress={() => openPaywall('locked_card')} activeOpacity={0.8}>
             <Text style={st.lockedButtonText}>Débloquer le radar</Text>
