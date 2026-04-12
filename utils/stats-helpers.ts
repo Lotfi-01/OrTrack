@@ -128,7 +128,7 @@ export function selectInsight(
     return {
       type: 'regime',
       title: 'RÉGIME LE PLUS FAVORABLE',
-      phrase: `Le ${regimeName} est le plus favorable aujourd\u2019hui.`,
+      phrase: `Le régime ${fiscal.bestRegime === 'plusvalues' ? 'des plus-values' : 'forfaitaire'} vous laisse plus de net aujourd\u2019hui.`,
       subtext: `Écart estimé : +${fmtCompact(fiscal.delta)} \u20AC vs ${otherName}.`,
       method: 'Comparaison des régimes sur le portefeuille',
       action: { label: 'Comparer mes régimes \u2192', route: '/fiscalite-globale' },
