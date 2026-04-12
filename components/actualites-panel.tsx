@@ -267,8 +267,7 @@ export function ActualitesPanel() {
 
         </View>
       ))}
-      {/* BYPASS PREMIUM - A RETIRER : nudge upsell masque en v1 */}
-      {false && !isPremium && (
+      {!isPremium && (
         <TouchableOpacity
           style={styles.premiumNudge}
           onPress={showPaywall}

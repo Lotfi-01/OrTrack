@@ -24,6 +24,7 @@ import { REGIME_EQUALITY_THRESHOLD } from '@/utils/fiscal';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
+import { usePremium } from '@/contexts/premium-context';
 
 const C = OrTrackColors;
 
@@ -57,6 +58,7 @@ function spotValue(pos: Position, spot: number | null): number | null {
 export default function FiscaliteGlobaleScreen() {
   const { prices } = useSpotPrices();
   const { positions, reloadPositions } = usePositions();
+  const { isPremium, showPaywall } = usePremium();
   const [saleDate, setSaleDate] = useState(todayStr());
   const [disclaimerExpanded, setDisclaimerExpanded] = useState(false);
   const [detailExpanded, setDetailExpanded] = useState(false);
@@ -163,6 +165,21 @@ export default function FiscaliteGlobaleScreen() {
   }, [computed]);
 
   // ── Rendu ───────────────────────────────────────────────────────────────
+
+  if (!isPremium) {
+    return (
+      <SafeAreaView style={st.container} edges={['bottom']}>
+        <Stack.Screen options={{ title: 'Simulation globale' }} />
+        <View style={st.lockedCard}>
+          <Text style={st.lockedTitle}>Fiscalité Premium</Text>
+          <Text style={st.lockedText}>Les simulations fiscales globales sont réservées aux comptes Premium.</Text>
+          <TouchableOpacity style={st.lockedButton} onPress={showPaywall} activeOpacity={0.8}>
+            <Text style={st.lockedButtonText}>Débloquer la fiscalité</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={st.container} edges={['bottom']}>
@@ -504,6 +521,11 @@ const st = StyleSheet.create({
   warningText: { fontSize: 13, color: C.subtext },
   excludedBanner: { backgroundColor: '#2A1800', borderRadius: 8, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#8A4A00' },
   excludedText: { fontSize: 12, color: '#E0A060' },
+  lockedCard: { margin: 20, backgroundColor: C.card, borderRadius: 12, padding: 20, borderWidth: 1, borderColor: C.border, gap: 12 },
+  lockedTitle: { fontSize: 18, fontWeight: '700', color: C.white, textAlign: 'center' },
+  lockedText: { fontSize: 13, color: C.subtext, textAlign: 'center', lineHeight: 20 },
+  lockedButton: { backgroundColor: C.gold, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
+  lockedButtonText: { color: C.background, fontSize: 14, fontWeight: '700' },
 
   // Footer
   reassurance: { fontSize: 11, color: C.subtext, textAlign: 'center', marginTop: 16, marginBottom: 8 },

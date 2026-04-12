@@ -34,6 +34,7 @@ import { formatEuro, formatPct, formatG, formatGain, stripMetalFromName, JOURS_F
 import { usePositions } from '@/hooks/use-positions';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
+import { usePremium } from '@/contexts/premium-context';
 
 import type { MetalType } from '@/constants/metals';
 import { RADAR_PRODUCT_LABELS } from '@/utils/radar/types';
@@ -110,6 +111,7 @@ function formatChartDate(dateStr: string, period?: string, shortRange?: boolean)
 export default function AccueilScreen() {
   const { positions, loading: positionsLoading, reloadPositions } = usePositions();
   const { prices, loading: spotLoading, refreshing, lastUpdated, refresh, currencySymbol, error: spotError } = useSpotPrices();
+  const { isPremium, isPeriodLocked, showPaywall } = usePremium();
 
   const [masked, setMasked] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<HistoryPeriod>('1A');
@@ -401,7 +403,14 @@ export default function AccueilScreen() {
 
           <TouchableOpacity
             style={[st.ctaFiscal, (!hasPositions || !pricesReady) && { opacity: 0.5 }]}
-            onPress={() => hasPositions && pricesReady && router.push('/fiscalite-globale')}
+            onPress={() => {
+              if (!hasPositions || !pricesReady) return;
+              if (!isPremium) {
+                showPaywall();
+                return;
+              }
+              router.push('/fiscalite-globale');
+            }}
             activeOpacity={0.7}
             disabled={!hasPositions || !pricesReady}
           >
@@ -490,10 +499,18 @@ export default function AccueilScreen() {
           </View>
 
           <View style={st.pillRow}>
-            {/* BYPASS PREMIUM - A RETIRER : toutes les périodes déverrouillées */}
             {(['1S', '1M', '3M', '1A', '5A', '10A', '20A'] as HistoryPeriod[]).map(p => (
-              <TouchableOpacity key={p} style={[st.pill, selectedPeriod === p && st.pillAct]} onPress={() => setSelectedPeriod(p)}>
-                <Text style={[st.pillTxt, selectedPeriod === p && st.pillTxtAct]}>{p}</Text>
+              <TouchableOpacity
+                key={p}
+                style={[st.pill, selectedPeriod === p && st.pillAct, isPeriodLocked(p) && st.periodLocked]}
+                onPress={() => {
+                  if (isPeriodLocked(p)) {
+                    showPaywall();
+                    return;
+                  }
+                  setSelectedPeriod(p);
+                }}>
+                <Text style={[st.pillTxt, selectedPeriod === p && st.pillTxtAct, isPeriodLocked(p) && st.periodLockedText]}>{p}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -712,6 +729,8 @@ const st = StyleSheet.create({
   pillAct: { backgroundColor: C.goldDim, borderColor: 'rgba(201,168,76,0.3)' },
   pillTxt: { fontSize: 11, fontWeight: '600', color: C.textDim },
   pillTxtAct: { color: C.gold },
+  periodLocked: { opacity: 0.55 },
+  periodLockedText: { color: C.tabIconDefault },
   lockPill: { flexDirection: 'row', alignItems: 'center', gap: 3, marginLeft: 'auto', opacity: 0.6 },
   lockTxt: { color: C.textDim, fontSize: 10 },
   chartDates: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },

@@ -155,6 +155,38 @@ export default function StatistiquesScreen() {
 
   // ─── Rendu ──────────────────────────────────────────────────────────────
 
+  if (!isPremium) {
+    return (
+      <SafeAreaView style={st.container}>
+        <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
+          <View style={st.headerRow}>
+            <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
+              <Text style={st.backText}>{'\u2190'} Retour</Text>
+            </TouchableOpacity>
+            <Text style={st.headerTitle}>Statistiques</Text>
+          </View>
+
+          <Text style={st.sectionTitle}>ANALYSES PREMIUM</Text>
+          <View style={st.card}>
+            {PREMIUM_FEATURES.map((item, i) => (
+              <View key={item.title} style={[st.premiumRow, i < PREMIUM_FEATURES.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border }]}>
+                <View style={st.premiumIcon}><Text style={{ fontSize: 20 }}>{item.icon}</Text></View>
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={st.premiumTitle}>{item.title}</Text>
+                  <Text style={st.premiumSub}>{item.sub}</Text>
+                </View>
+                <Ionicons name="lock-closed" size={16} color={C.gold} />
+              </View>
+            ))}
+          </View>
+          <TouchableOpacity style={st.premiumCta} onPress={showPaywall} activeOpacity={0.7}>
+            <Text style={st.premiumCtaText}>Débloquer les analyses</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={st.container}>
       <ScrollView contentContainerStyle={st.scroll} showsVerticalScrollIndicator={false}>
@@ -224,8 +256,7 @@ export default function StatistiquesScreen() {
             </View>
 
             {/* ── BLOC 2 — INSIGHT PREMIUM ── */}
-            {/* BYPASS PREMIUM - A RETIRER : insight affiche pour tous */}
-            {true && insight.type !== 'fallback' && (
+            {insight.type !== 'fallback' && (
               <>
                 <Text style={st.sectionTitle}>INSIGHT ORTRACK</Text>
                 <View style={st.insightCard}>
@@ -241,8 +272,7 @@ export default function StatistiquesScreen() {
                 </View>
               </>
             )}
-            {/* BYPASS PREMIUM - A RETIRER : analyse fallback affichee pour tous */}
-            {true && insight.type === 'fallback' && (
+            {insight.type === 'fallback' && (
               <>
                 <Text style={st.sectionTitle}>ANALYSE</Text>
                 <View style={st.insightCard}>
@@ -272,8 +302,7 @@ export default function StatistiquesScreen() {
             </View>
 
             {/* Position ranking (premium) */}
-            {/* BYPASS PREMIUM - A RETIRER : classement des positions deverrouille */}
-            {true && ranking.length > 1 && (
+            {ranking.length > 1 && (
               <>
                 <Text style={st.sectionTitle}>
                   {rankMode === 'eur' ? 'VOS POSITIONS (par gain \u20AC)' : rankMode === 'pct' ? 'VOS POSITIONS (par performance %)' : 'VOS POSITIONS (par net estimé)'}
@@ -348,8 +377,7 @@ export default function StatistiquesScreen() {
             )}
 
             {/* ── BLOC 4 — AIDE À LA DÉCISION (premium) ── */}
-            {/* BYPASS PREMIUM - A RETIRER : aide a la decision deverrouillee */}
-            {true && (
+            {isPremium && (
               <>
                 <Text style={st.sectionTitle}>AIDE À LA DÉCISION</Text>
                 {decisionCards.length >= 3 ? (
@@ -373,8 +401,7 @@ export default function StatistiquesScreen() {
             )}
 
             {/* ── BLOC 5 — DÉTAILS DU PORTEFEUILLE (accordion) ── */}
-            {/* BYPASS PREMIUM - A RETIRER : details du portefeuille deverrouilles */}
-            {true && (
+            {isPremium && (
               <>
                 <TouchableOpacity style={st.detailsToggle} onPress={() => setDetailsOpen(v => !v)} activeOpacity={0.7}>
                   <Text style={st.detailsToggleText}>DÉTAILS DU PORTEFEUILLE</Text>
@@ -417,29 +444,6 @@ export default function StatistiquesScreen() {
                     ))}
                   </View>
                 )}
-              </>
-            )}
-
-            {/* Non-premium CTA */}
-            {/* BYPASS PREMIUM - A RETIRER : teaser ANALYSES PREMIUM masque en v1 */}
-            {false && !isPremium && (
-              <>
-                <Text style={st.sectionTitle}>ANALYSES PREMIUM</Text>
-                <View style={st.card}>
-                  {PREMIUM_FEATURES.map((item, i) => (
-                    <View key={item.title} style={[st.premiumRow, i < PREMIUM_FEATURES.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border }]}>
-                      <View style={st.premiumIcon}><Text style={{ fontSize: 20 }}>{item.icon}</Text></View>
-                      <View style={{ flex: 1, marginLeft: 10 }}>
-                        <Text style={st.premiumTitle}>{item.title}</Text>
-                        <Text style={st.premiumSub}>{item.sub}</Text>
-                      </View>
-                      <Ionicons name="lock-closed" size={16} color={C.gold} />
-                    </View>
-                  ))}
-                </View>
-                <TouchableOpacity style={st.premiumCta} onPress={showPaywall} activeOpacity={0.7}>
-                  <Text style={st.premiumCtaText}>Débloquer les analyses</Text>
-                </TouchableOpacity>
               </>
             )}
 

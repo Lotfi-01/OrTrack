@@ -235,14 +235,19 @@ export default function PortefeuilleScreen() {
           pricesReady={pricesReady}
           spotError={spotError}
           hasFilteredPositions={hasFilteredPositions}
-          onPressFiscal={() => router.push('/fiscalite-globale')}
+          onPressFiscal={() => {
+            if (!isPremium) {
+              showPaywall();
+              return;
+            }
+            router.push('/fiscalite-globale');
+          }}
           ctaDisabled={!hasFilteredPositions || !pricesReady || masked}
         />
 
         {/* ── 4. POSITIONS ───────────────────────────────── */}
         <View style={st.posHeader}>
           <Text style={st.posHeaderTitle}>POSITIONS ({filteredPositions.length})</Text>
-          {/* BYPASS PREMIUM - A RETIRER : compteur quota conservé, mentions Premium masquées */}
           {!masked && !isPremium && (
             positions.length >= limits.maxPositions ? (
               <Text style={st.quotaFull}>
@@ -304,7 +309,13 @@ export default function PortefeuilleScreen() {
                   { text: 'Annuler', style: 'cancel' },
                 ]);
               }}
-              onSimulateSale={() => router.push({ pathname: '/fiscalite', params: { positionId: vm.position.id } } as never)}
+              onSimulateSale={() => {
+                if (!isPremium) {
+                  showPaywall();
+                  return;
+                }
+                router.push({ pathname: '/fiscalite', params: { positionId: vm.position.id } } as never);
+              }}
               onShowPaywall={showPaywall}
               isDeleting={deletingId !== null}
             />
@@ -329,8 +340,13 @@ export default function PortefeuilleScreen() {
           subtitleText={bestPerformerName
             ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
             : 'Voyez quelles positions tirent vraiment votre performance'}
-          // BYPASS PREMIUM - A RETIRER : retrait du Alert.alert("Premium"...), ouverture directe des Statistiques
-          onPress={() => router.push('/statistiques' as never)}
+          onPress={() => {
+            if (!isPremium) {
+              showPaywall();
+              return;
+            }
+            router.push('/statistiques' as never);
+          }}
         />
 
         {/* ── 6. TRUST FOOTER ────────────────────────────── */}

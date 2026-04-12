@@ -93,13 +93,12 @@ export default function RadarScreen() {
   useEffect(() => {
     if (autoOpenProductId && products.length > 0) {
       const target = products.find(p => p.productId === autoOpenProductId);
-      // BYPASS PREMIUM - A RETIRER
-      if (target && true) {
+      if (target && isPremium) {
         setSelectedProduct(target);
         setSheetVisible(true);
       }
     }
-  }, [autoOpenProductId, products]);
+  }, [autoOpenProductId, isPremium, products]);
 
   // ── Retry ──────────────────────────────────────────────────────────
 
@@ -109,26 +108,23 @@ export default function RadarScreen() {
   }, [refetch]);
 
   const isRetrying = hasRetryStarted && isLoading;
-  // BYPASS PREMIUM - A RETIRER
-  const isScreenLoading = isLoading || (!true && !isPortfolioReady);
+  const isScreenLoading = isLoading || !isPortfolioReady;
 
-  // Reset retry flag
-  if (hasRetryStarted && !isLoading) setHasRetryStarted(false);
+  useEffect(() => {
+    if (hasRetryStarted && !isLoading) setHasRetryStarted(false);
+  }, [hasRetryStarted, isLoading]);
 
   // ── Gating ─────────────────────────────────────────────────────────
 
   const freeProductIds = useMemo(() => {
-    // BYPASS PREMIUM - A RETIRER
-    if (true) return null;
     if (!isPortfolioReady) return null;
     const selected = selectDashboardProducts(products, portfolioProductIds);
     return new Set(selected.map(p => p.productId));
   }, [isPortfolioReady, products, portfolioProductIds]);
 
   const isUnlocked = useCallback(
-    // BYPASS PREMIUM - A RETIRER
-    (productId: string) => true || freeProductIds?.has(productId) === true,
-    [freeProductIds],
+    (productId: string) => isPremium || freeProductIds?.has(productId) === true,
+    [freeProductIds, isPremium],
   );
 
   // ── Sorted products ────────────────────────────────────────────────
@@ -212,6 +208,25 @@ export default function RadarScreen() {
 
   // ── Render ─────────────────────────────────────────────────────────
 
+  if (!isPremium) {
+    return (
+      <SafeAreaView style={st.container}>
+        <Stack.Screen options={{ headerShown: false }} />
+        <View style={st.header}>
+          <TouchableOpacity onPress={handleBack}><Text style={st.backText}>{'\u2190'}</Text></TouchableOpacity>
+          <Text style={st.headerTitle}>Prime marché</Text>
+        </View>
+        <View style={st.lockedWrap}>
+          <Text style={st.lockedTitle}>Radar Premium</Text>
+          <Text style={st.lockedText}>Le radar de primes est réservé aux comptes Premium.</Text>
+          <TouchableOpacity style={st.lockedButton} onPress={() => openPaywall('locked_card')} activeOpacity={0.8}>
+            <Text style={st.lockedButtonText}>Débloquer le radar</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   if (isScreenLoading) {
     return (
       <SafeAreaView style={st.container}>
@@ -280,10 +295,8 @@ export default function RadarScreen() {
           <>
             <Text style={st.sectionTitle}>PIÈCES</Text>
             {sortedProducts.pieces.map(p =>
-              // BYPASS PREMIUM - A RETIRER
-              (true || isUnlocked(p.productId)) ? (
-                // BYPASS PREMIUM - A RETIRER
-                <RadarProductCard key={p.productId} product={p} onDetailPress={handleProductOpen} isPremium={true} />
+              isUnlocked(p.productId) ? (
+                <RadarProductCard key={p.productId} product={p} onDetailPress={handleProductOpen} isPremium={isPremium} />
               ) : (
                 <RadarLockedCard key={p.productId} product={p} onUnlockPress={() => handleLockedTap(p)} />
               ),
@@ -296,10 +309,8 @@ export default function RadarScreen() {
           <>
             <Text style={st.sectionTitle}>LINGOTS</Text>
             {sortedProducts.lingots.map(p =>
-              // BYPASS PREMIUM - A RETIRER
-              (true || isUnlocked(p.productId)) ? (
-                // BYPASS PREMIUM - A RETIRER
-                <RadarProductCard key={p.productId} product={p} onDetailPress={handleProductOpen} isPremium={true} />
+              isUnlocked(p.productId) ? (
+                <RadarProductCard key={p.productId} product={p} onDetailPress={handleProductOpen} isPremium={isPremium} />
               ) : (
                 <RadarLockedCard key={p.productId} product={p} onUnlockPress={() => handleLockedTap(p)} />
               ),
@@ -316,8 +327,7 @@ export default function RadarScreen() {
         <RadarComparisonBlock
           products={products}
           metal={metalFilter}
-          // BYPASS PREMIUM - A RETIRER
-          isPremium={true}
+          isPremium={isPremium}
           onUnlockPress={() => openPaywall('comparison')}
           onVisible={handleComparisonVisible}
         />
@@ -357,4 +367,9 @@ const st = StyleSheet.create({
   skeletonWrap: { padding: 20, gap: 12 },
   skeleton: { height: 60, backgroundColor: C.border, borderRadius: 10, opacity: 0.5 },
   errorWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: 24 },
+  lockedWrap: { flex: 1, justifyContent: 'center', paddingHorizontal: 24, gap: 12 },
+  lockedTitle: { fontSize: 20, fontWeight: '700', color: C.white, textAlign: 'center' },
+  lockedText: { fontSize: 14, color: C.subtext, textAlign: 'center', lineHeight: 20 },
+  lockedButton: { backgroundColor: C.gold, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
+  lockedButtonText: { color: C.background, fontSize: 15, fontWeight: '700' },
 });
