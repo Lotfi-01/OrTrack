@@ -110,14 +110,24 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&nbsp;/g, ' ');
 }
 
+const RSS_TIMEOUT_MS = 10_000;
+
 async function fetchArticles(source: Source): Promise<Article[]> {
-  const res = await fetch(source.rssUrl, {
-    headers: {
-      'Accept': 'application/rss+xml, application/xml, text/xml',
-      'User-Agent': 'OrTrack/1.0',
-    },
-  });
-  const xml = await res.text();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RSS_TIMEOUT_MS);
+  let xml: string;
+  try {
+    const res = await fetch(source.rssUrl, {
+      headers: {
+        'Accept': 'application/rss+xml, application/xml, text/xml',
+        'User-Agent': 'OrTrack/1.0',
+      },
+      signal: controller.signal,
+    });
+    xml = await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
 
   // Extrait les <item> du XML
   const itemRegex = /<item[\s\S]*?<\/item>/gi;
@@ -195,6 +205,12 @@ export function ActualitesPanel() {
   }, [isSourceLocked]);
 
   const openArticle = async (url: string) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:') return;
+    } catch {
+      return; // URL invalide — rejet silencieux
+    }
     await WebBrowser.openBrowserAsync(url, {
       toolbarColor: OrTrackColors.background,
       controlsColor: OrTrackColors.gold,
