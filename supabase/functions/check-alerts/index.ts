@@ -111,9 +111,8 @@ Deno.serve(async (req) => {
       )
     }
 
-    // 3. Vérifie chaque alerte
-    const triggeredIds: string[] = []
-    const notifications: object[] = []
+    // 3. Vérifie chaque alerte et construit le mapping alerte → message Expo
+    const triggered: { alertId: string; message: object }[] = []
 
     for (const alert of alerts) {
       const currentPrice = prices[alert.metal]
@@ -130,7 +129,10 @@ Deno.serve(async (req) => {
 
       if (!isTriggered) continue
 
-      triggeredIds.push(alert.id)
+      if (!alert.push_token || typeof alert.push_token !== 'string' || alert.push_token.trim() === '') {
+        console.log(`Alerte ${alert.id} déclenchée mais token push absent — laissée active`)
+        continue
+      }
 
       const label = METAL_LABELS[alert.metal] ?? alert.metal
       const conditionLabel =
@@ -138,33 +140,35 @@ Deno.serve(async (req) => {
       const fmt = (n: number) =>
         n.toLocaleString('fr-FR', { maximumFractionDigits: 2 })
 
-      notifications.push({
-        to: alert.push_token,
-        title: `🔔 Alerte ${label}`,
-        body: `${label} ${conditionLabel} ${fmt(targetPrice)}€ — actuellement ${fmt(currentPrice)}€`,
-        sound: 'default',
-        data: { metal: alert.metal, price: currentPrice },
+      triggered.push({
+        alertId: alert.id,
+        message: {
+          to: alert.push_token,
+          title: `🔔 Alerte ${label}`,
+          body: `${label} ${conditionLabel} ${fmt(targetPrice)}€ — actuellement ${fmt(currentPrice)}€`,
+          sound: 'default',
+          data: { metal: alert.metal, price: currentPrice },
+        },
       })
     }
 
-    // 4. Désactive les alertes déclenchées (une seule fois)
-    if (triggeredIds.length > 0) {
-      const { error: updateError } = await supabase
-        .from('alerts')
-        .update({
-          is_active: false,
-          triggered_at: new Date().toISOString(),
-        })
-        .in('id', triggeredIds)
-
-      if (updateError) {
-        console.error('Erreur désactivation alertes:', updateError)
-      }
+    if (triggered.length === 0) {
+      return new Response(
+        JSON.stringify({
+          message: 'Vérification terminée — aucune alerte déclenchée',
+          prices,
+          alertsChecked: alerts.length,
+          alertsTriggered: 0,
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
     }
 
-    // 5. Envoie les notifications via Expo Push API
-    let pushResult = null
-    if (notifications.length > 0) {
+    // 4. Envoie les notifications via Expo Push API AVANT toute désactivation
+    const messages = triggered.map(t => t.message)
+    let tickets: { status?: string; id?: string; details?: unknown; message?: string }[] = []
+
+    try {
       const pushRes = await fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST',
         headers: {
@@ -172,10 +176,79 @@ Deno.serve(async (req) => {
           Accept: 'application/json',
           'Accept-Encoding': 'gzip, deflate',
         },
-        body: JSON.stringify(notifications),
+        body: JSON.stringify(messages),
       })
-      pushResult = await pushRes.json()
-      console.log('Push result:', JSON.stringify(pushResult))
+
+      if (!pushRes.ok) {
+        console.error(`Expo Push HTTP error: ${pushRes.status}`)
+        // Aucune alerte désactivée — aucune preuve d'acceptation
+        return new Response(
+          JSON.stringify({
+            error: 'Expo Push HTTP error',
+            status: pushRes.status,
+            alertsTriggered: triggered.length,
+            alertsDisabled: 0,
+          }),
+          { status: 502, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+
+      const body = await pushRes.json()
+      // Expo retourne { data: [...tickets] } avec un ticket par message, même index
+      if (body && Array.isArray(body.data)) {
+        tickets = body.data
+      } else {
+        console.error('Expo Push: structure de réponse inattendue')
+        return new Response(
+          JSON.stringify({
+            error: 'Expo Push unexpected response',
+            alertsTriggered: triggered.length,
+            alertsDisabled: 0,
+          }),
+          { status: 502, headers: { 'Content-Type': 'application/json' } }
+        )
+      }
+    } catch (pushErr) {
+      console.error('Expo Push fetch error:', String(pushErr))
+      // Aucune alerte désactivée — aucune preuve d'acceptation
+      return new Response(
+        JSON.stringify({
+          error: 'Expo Push fetch failed',
+          alertsTriggered: triggered.length,
+          alertsDisabled: 0,
+        }),
+        { status: 502, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
+    // 5. Inspecte les tickets et ne désactive que les alertes dont le push est accepté
+    const acceptedIds: string[] = []
+    const failedCount = { total: 0 }
+
+    for (let i = 0; i < triggered.length; i++) {
+      const ticket = tickets[i]
+      if (ticket && ticket.status === 'ok' && ticket.id) {
+        acceptedIds.push(triggered[i].alertId)
+      } else {
+        failedCount.total++
+      }
+    }
+
+    console.log(`Push: ${acceptedIds.length} accepté(s), ${failedCount.total} échoué(s) sur ${triggered.length}`)
+
+    // 6. Désactive uniquement les alertes dont le push a été accepté par Expo
+    if (acceptedIds.length > 0) {
+      const { error: updateError } = await supabase
+        .from('alerts')
+        .update({
+          is_active: false,
+          triggered_at: new Date().toISOString(),
+        })
+        .in('id', acceptedIds)
+
+      if (updateError) {
+        console.error('Erreur désactivation alertes:', updateError)
+      }
     }
 
     return new Response(
@@ -183,9 +256,9 @@ Deno.serve(async (req) => {
         message: 'Vérification terminée',
         prices,
         alertsChecked: alerts.length,
-        alertsTriggered: triggeredIds.length,
-        notificationsSent: notifications.length,
-        pushResult,
+        alertsTriggered: triggered.length,
+        alertsDisabled: acceptedIds.length,
+        alertsFailed: failedCount.total,
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
