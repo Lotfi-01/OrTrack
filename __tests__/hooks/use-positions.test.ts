@@ -88,6 +88,26 @@ describe('isValidPosition', () => {
     expect(isValidPosition(makePosition({ purchaseDate: '2024' }))).toBe(false);
   });
 
+  it('rejette date invalide "XX/YY/ZZZZ"', () => {
+    expect(isValidPosition(makePosition({ purchaseDate: 'XX/YY/ZZZZ' }))).toBe(false);
+  });
+
+  it('rejette date future "01/01/2030"', () => {
+    expect(isValidPosition(makePosition({ purchaseDate: '01/01/2030' }))).toBe(false);
+  });
+
+  it('accepte la date du jour', () => {
+    const now = new Date();
+    const dd = String(now.getDate()).padStart(2, '0');
+    const mm = String(now.getMonth() + 1).padStart(2, '0');
+    const today = `${dd}/${mm}/${now.getFullYear()}`;
+    expect(isValidPosition(makePosition({ purchaseDate: today }))).toBe(true);
+  });
+
+  it('rejette date mal formée mais longueur 10', () => {
+    expect(isValidPosition(makePosition({ purchaseDate: '32/13/2024' }))).toBe(false);
+  });
+
   it('filtre null dans un tableau de positions', () => {
     expect(isValidPosition(null)).toBe(false);
   });

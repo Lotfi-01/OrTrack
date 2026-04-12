@@ -3,10 +3,21 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { Position } from '@/types/position';
 import type { MetalType } from '@/constants/metals';
+import { parseDate } from '@/utils/tax-helpers';
 
 const SUPPORTED_METALS: Set<string> = new Set<MetalType>(['or', 'argent', 'platine', 'palladium']);
 
 // ── Validation ────────────────────────────────────────────────────────────────
+
+/** Vérifie que la date est parsable en DD/MM/YYYY et pas strictement future (comparaison au jour). */
+function isValidPurchaseDate(dateStr: string): boolean {
+  const d = parseDate(dateStr);
+  if (!d) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return target.getTime() <= today.getTime();
+}
 
 /**
  * Type guard strict pour les positions lues depuis AsyncStorage.
@@ -24,7 +35,7 @@ export function isValidPosition(p: unknown): p is Position {
     typeof o.weightG === 'number' && o.weightG > 0 && isFinite(o.weightG) &&
     typeof o.quantity === 'number' && o.quantity > 0 && Number.isInteger(o.quantity) &&
     typeof o.purchasePrice === 'number' && o.purchasePrice >= 0 && isFinite(o.purchasePrice) &&
-    typeof o.purchaseDate === 'string' && o.purchaseDate.length === 10 &&
+    typeof o.purchaseDate === 'string' && isValidPurchaseDate(o.purchaseDate) &&
     typeof o.createdAt === 'string'
   );
 }

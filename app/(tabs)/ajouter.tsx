@@ -27,6 +27,7 @@ import { usePremium } from '@/contexts/premium-context';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
+import { parseDate } from '@/utils/tax-helpers';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
 
@@ -463,13 +464,21 @@ export default function AjouterScreen() {
 
   // ── Validation ────────────────────────────────────────────────────────
 
+  const isDateValid = useMemo(() => {
+    const d = parseDate(purchaseDate);
+    if (!d) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() <= today.getTime();
+  }, [purchaseDate]);
+
   const canSave = useMemo(() =>
     product !== null &&
     qty > 0 &&
     price > 0 &&
-    purchaseDate.length === 10 &&
+    isDateValid &&
     effectiveWeightG > 0,
-    [product, qty, price, purchaseDate, effectiveWeightG]
+    [product, qty, price, isDateValid, effectiveWeightG]
   );
 
   // ── Help text contextuel ──────────────────────────────────────────────
@@ -479,9 +488,9 @@ export default function AjouterScreen() {
     if (!(effectiveWeightG > 0)) return 'Renseignez le poids du produit';
     if (!(qty > 0)) return 'Renseignez la quantité';
     if (!(price > 0)) return 'Renseignez le prix d\u2019achat';
-    if (purchaseDate.length !== 10) return 'Renseignez la date d\u2019achat';
+    if (!isDateValid) return 'Renseignez une date d\u2019achat valide';
     return 'Complétez les champs requis';
-  }, [product, effectiveWeightG, qty, price, purchaseDate]);
+  }, [product, effectiveWeightG, qty, price, isDateValid]);
 
   // ── Highlighted field ─────────────────────────────────────────────────
 
@@ -491,9 +500,9 @@ export default function AjouterScreen() {
     if (!(effectiveWeightG > 0)) return 'weight';
     if (!(qty > 0)) return 'quantity';
     if (!(price > 0)) return 'price';
-    if (purchaseDate.length !== 10) return 'date';
+    if (!isDateValid) return 'date';
     return null;
-  }, [isStep2Active, canSave, product, effectiveWeightG, qty, price, purchaseDate]);
+  }, [isStep2Active, canSave, product, effectiveWeightG, qty, price, isDateValid]);
 
   // ── CTA config centralisé ─────────────────────────────────────────────
 
