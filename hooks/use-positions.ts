@@ -6,6 +6,54 @@ import type { MetalType } from '@/constants/metals';
 
 const SUPPORTED_METALS: Set<string> = new Set<MetalType>(['or', 'argent', 'platine', 'palladium']);
 
+// ── Validation ────────────────────────────────────────────────────────────────
+
+/**
+ * Type guard strict pour les positions lues depuis AsyncStorage.
+ * Filtre les entrées corrompues, incomplètes ou de métaux non supportés.
+ * Les champs optionnels (note, spotAtPurchase, primeAtPurchase, spotSource, productId)
+ * ne sont PAS validés — leur absence ne provoque pas de NaN.
+ */
+export function isValidPosition(p: unknown): p is Position {
+  if (typeof p !== 'object' || p === null) return false;
+  const o = p as Record<string, unknown>;
+  return (
+    typeof o.id === 'string' && o.id.length > 0 &&
+    typeof o.metal === 'string' && SUPPORTED_METALS.has(o.metal) &&
+    typeof o.product === 'string' &&
+    typeof o.weightG === 'number' && o.weightG > 0 && isFinite(o.weightG) &&
+    typeof o.quantity === 'number' && o.quantity > 0 && Number.isInteger(o.quantity) &&
+    typeof o.purchasePrice === 'number' && o.purchasePrice >= 0 && isFinite(o.purchasePrice) &&
+    typeof o.purchaseDate === 'string' && o.purchaseDate.length === 10 &&
+    typeof o.createdAt === 'string'
+  );
+}
+
+/** Parse et valide les positions depuis une chaîne AsyncStorage brute. */
+function parsePositions(raw: string | null): Position[] {
+  if (!raw) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    console.warn('[use-positions] JSON invalide dans AsyncStorage — reset à vide');
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const valid = parsed.filter(isValidPosition);
+  const filtered = parsed.length - valid.length;
+  if (filtered > 0) {
+    const ids = parsed
+      .filter((p): p is Record<string, unknown> => typeof p === 'object' && p !== null && typeof (p as any).id === 'string')
+      .filter(p => !isValidPosition(p))
+      .map(p => (p as any).id as string);
+    console.warn(`[use-positions] ${filtered} position(s) filtrée(s)${ids.length > 0 ? ` (ids: ${ids.join(', ')})` : ''}`);
+  }
+  return valid;
+}
+
+// ── Cache et queue ────────────────────────────────────────────────────────────
+
 let memoryCache: Position[] | null = null;
 let writePromise: Promise<void> = Promise.resolve();
 
@@ -13,7 +61,10 @@ let writePromise: Promise<void> = Promise.resolve();
 // Remet le cache à null — le prochain usePositions rechargera les positions.
 export function resetPositionsCache() {
   memoryCache = null;
+  writePromise = Promise.resolve();
 }
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function usePositions() {
   const [positions, setPositions] = useState<Position[]>(memoryCache ?? []);
@@ -22,26 +73,10 @@ export function usePositions() {
   const reloadPositions = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
-      const parsed = raw ? JSON.parse(raw) : [];
-      // Garde-fou : élimine les entrées corrompues, mal formées ou de métaux retirés
-      const safe: Position[] = Array.isArray(parsed)
-        ? parsed.filter(
-            (p: any): p is Position =>
-              p != null &&
-              typeof p.id === 'string' &&
-              typeof p.metal === 'string' &&
-              SUPPORTED_METALS.has(p.metal) &&
-              typeof p.product === 'string' &&
-              typeof p.quantity === 'number' &&
-              typeof p.purchasePrice === 'number' &&
-              typeof p.purchaseDate === 'string' &&
-              typeof p.createdAt === 'string'
-          )
-        : [];
+      const safe = parsePositions(raw);
       memoryCache = safe;
       setPositions(safe);
     } catch {
-      // JSON corrompu ou AsyncStorage inaccessible → reset propre
       memoryCache = [];
       setPositions([]);
     } finally {
@@ -49,18 +84,24 @@ export function usePositions() {
     }
   }, []);
 
-  // Sérialise les writes — chaque mutation attend que la précédente soit finie
-  const persist = useCallback(async (next: Position[]) => {
+  // Mutation transactionnelle : le read-modify-write se produit entièrement
+  // à l'intérieur de la queue de sérialisation. La lecture se fait depuis
+  // AsyncStorage (source de vérité persistée) pour éviter les race conditions
+  // si deux mutations sont lancées sans await entre elles.
+  const persistTransform = useCallback(async (transform: (current: Position[]) => Position[]) => {
     writePromise = writePromise.then(async () => {
-      const previous = memoryCache ?? [];
+      const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
+      const current = parsePositions(raw);
+      const next = transform(current);
+
       memoryCache = next;
       setPositions(next);
 
       try {
         await AsyncStorage.setItem(STORAGE_KEYS.positions, JSON.stringify(next));
       } catch (error) {
-        memoryCache = previous;
-        setPositions(previous);
+        memoryCache = current;
+        setPositions(current);
         throw error;
       }
     });
@@ -74,26 +115,21 @@ export function usePositions() {
     }
   }, [reloadPositions]);
 
-  // IMPORTANT : les mutations lisent depuis memoryCache (synchrone)
-  // et non depuis le state React (asynchrone).
-  // Évite les race conditions si deux opérations sont appelées rapidement.
-
   return {
     positions,
     loading,
     reloadPositions,
     addPosition: async (position: Position) => {
-      const current = memoryCache ?? [];
-      return persist([position, ...current]);
+      return persistTransform((current) => [position, ...current]);
     },
     updatePosition: async (position: Position) => {
-      const current = memoryCache ?? [];
-      return persist(current.map(p => (p.id === position.id ? position : p)));
+      return persistTransform((current) => current.map(p => (p.id === position.id ? position : p)));
     },
     deletePosition: async (id: string) => {
-      const current = memoryCache ?? [];
-      return persist(current.filter(p => p.id !== id));
+      return persistTransform((current) => current.filter(p => p.id !== id));
     },
-    replaceAllPositions: persist,
+    replaceAllPositions: async (next: Position[]) => {
+      return persistTransform(() => next);
+    },
   };
 }
