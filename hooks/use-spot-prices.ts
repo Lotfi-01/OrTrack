@@ -18,6 +18,7 @@ export type SpotPrices = {
 
 export type UseSpotPricesResult = {
   prices: SpotPrices;
+  pricesEur: SpotPrices;
   pricesUsd: SpotPrices;
   loading: boolean;       // true UNIQUEMENT au premier chargement (aucun prix dispo)
   refreshing: boolean;    // true lors des refreshs silencieux en arrière-plan
@@ -38,6 +39,7 @@ type SpotRow = {
 
 type CacheEntry = {
   prices: SpotPrices;
+  pricesEur: SpotPrices;
   pricesUsd: SpotPrices;
   currency: string;
   timestamp: number;
@@ -57,7 +59,7 @@ function getPriceForCurrency(row: SpotRow, currency: string): number {
 
 async function fetchSpotFromSupabase(
   currency: string
-): Promise<{ prices: SpotPrices; pricesUsd: SpotPrices }> {
+): Promise<{ prices: SpotPrices; pricesEur: SpotPrices; pricesUsd: SpotPrices }> {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('Supabase not configured');
   }
@@ -80,10 +82,12 @@ async function fetchSpotFromSupabase(
     if (!rows || rows.length === 0) throw new Error('Aucun prix disponible');
 
     const map: Record<string, number> = {};
+    const mapEur: Record<string, number> = {};
     const mapUsd: Record<string, number> = {};
 
     for (const row of rows) {
       map[row.metal] = getPriceForCurrency(row, currency);
+      mapEur[row.metal] = row.price_eur;
       mapUsd[row.metal] = row.price_usd;
     }
 
@@ -97,6 +101,12 @@ async function fetchSpotFromSupabase(
         silver: map.silver ?? null,
         platinum: map.platinum ?? null,
         palladium: map.palladium ?? null,
+      },
+      pricesEur: {
+        gold: mapEur.gold ?? null,
+        silver: mapEur.silver ?? null,
+        platinum: mapEur.platinum ?? null,
+        palladium: mapEur.palladium ?? null,
       },
       pricesUsd: {
         gold: mapUsd.gold ?? null,
@@ -112,6 +122,9 @@ async function fetchSpotFromSupabase(
 
 export function useSpotPrices(): UseSpotPricesResult {
   const [prices, setPrices] = useState<SpotPrices>({
+    gold: null, silver: null, platinum: null, palladium: null,
+  });
+  const [pricesEurState, setPricesEurState] = useState<SpotPrices>({
     gold: null, silver: null, platinum: null, palladium: null,
   });
   const [pricesUsdState, setPricesUsdState] = useState<SpotPrices>({
@@ -142,8 +155,9 @@ export function useSpotPrices(): UseSpotPricesResult {
         if (cached) {
           const entry: CacheEntry = JSON.parse(cached);
           const age = Date.now() - entry.timestamp;
-          if (age < CACHE_TTL_MS && entry.currency === savedCurrency) {
+          if (age < CACHE_TTL_MS && entry.currency === savedCurrency && entry.pricesEur) {
             setPrices(entry.prices);
+            setPricesEurState(entry.pricesEur);
             setPricesUsdState(entry.pricesUsd);
             setLastUpdated(new Date(entry.timestamp));
             setHistoryReady(true);
@@ -164,8 +178,9 @@ export function useSpotPrices(): UseSpotPricesResult {
         setLoading(true);
       }
 
-      const { prices: fetched, pricesUsd } = await fetchSpotFromSupabase(savedCurrency);
+      const { prices: fetched, pricesEur, pricesUsd } = await fetchSpotFromSupabase(savedCurrency);
       setPrices(fetched);
+      setPricesEurState(pricesEur);
       setPricesUsdState(pricesUsd);
       hasDataRef.current = true;
 
@@ -174,6 +189,7 @@ export function useSpotPrices(): UseSpotPricesResult {
 
       await AsyncStorage.setItem(STORAGE_KEYS.spotCache, JSON.stringify({
         prices: fetched,
+        pricesEur,
         pricesUsd,
         currency: savedCurrency,
         timestamp: now,
@@ -189,6 +205,9 @@ export function useSpotPrices(): UseSpotPricesResult {
         if (cached) {
           const entry: CacheEntry = JSON.parse(cached);
           setPrices(entry.prices);
+          setPricesEurState(entry.pricesEur ?? (entry.currency === 'EUR' ? entry.prices : {
+            gold: null, silver: null, platinum: null, palladium: null,
+          }));
           setPricesUsdState(entry.pricesUsd);
           setLastUpdated(new Date(entry.timestamp));
           setHistoryReady(true);
@@ -216,7 +235,7 @@ export function useSpotPrices(): UseSpotPricesResult {
   }, [fetchPrices]);
 
   return {
-    prices, pricesUsd: pricesUsdState, loading, refreshing, error, lastUpdated, historyReady,
+    prices, pricesEur: pricesEurState, pricesUsd: pricesUsdState, loading, refreshing, error, lastUpdated, historyReady,
     refresh: () => fetchPrices(true),
     currency, currencySymbol,
   };

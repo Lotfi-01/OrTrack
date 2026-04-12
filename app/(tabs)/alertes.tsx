@@ -52,7 +52,7 @@ export default function AlertesScreen() {
   const [targetPrice, setTargetPrice] = useState('')
   const [creating, setCreating] = useState(false)
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null)
-  const { prices } = useSpotPrices()
+  const { pricesEur: alertPricesEur } = useSpotPrices()
   const { canAddAlert, showPaywall, isPremium, limits } = usePremium()
   const didAutoOpen = useRef(false)
 
@@ -288,8 +288,8 @@ export default function AlertesScreen() {
             )}
 
             {[...alerts].sort((a, b) => {
-              const pa = getSpot(a.metal, prices)
-              const pb = getSpot(b.metal, prices)
+              const pa = getSpot(a.metal, alertPricesEur)
+              const pb = getSpot(b.metal, alertPricesEur)
               if (pa == null && pb == null) return 0
               if (pa == null) return 1
               if (pb == null) return -1
@@ -297,7 +297,7 @@ export default function AlertesScreen() {
               const gapB = b.target_price > 0 ? Math.abs(pb - b.target_price) / b.target_price : Infinity
               return gapA - gapB // smallest relative gap first (closest to trigger)
             }).map((alert) => {
-              const currentPrice = getSpot(alert.metal, prices)
+              const currentPrice = getSpot(alert.metal, alertPricesEur)
               const isAbove = alert.condition === 'above'
               const isTriggered = currentPrice != null && (
                 isAbove
@@ -541,7 +541,7 @@ export default function AlertesScreen() {
                 PRIX CIBLE
               </Text>
               {(() => {
-                const spot = getSpot(selectedMetal, prices)
+                const spot = getSpot(selectedMetal, alertPricesEur)
                 if (!spot) return null
                 return (
                   <View style={styles.spotHintRow}>
@@ -573,7 +573,7 @@ export default function AlertesScreen() {
 
               {/* Validation + Boutons */}
               {(() => {
-                const spot = getSpot(selectedMetal, prices)
+                const spot = getSpot(selectedMetal, alertPricesEur)
                 const parsed = parseFloat(targetPrice)
                 const hasValue = targetPrice.trim() !== '' && !isNaN(parsed) && parsed > 0
                 const isValid = hasValue && spot != null && (
