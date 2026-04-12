@@ -113,16 +113,9 @@ export default function RootLayout() {
 
         const stored = await AsyncStorage.getItem(STORAGE_KEYS.biometricEnabled);
 
-        if (stored === null) {
-          const compatible = await LocalAuthentication.hasHardwareAsync();
-          const enrolled = await LocalAuthentication.isEnrolledAsync();
-          const available = compatible && enrolled;
-          await AsyncStorage.setItem(STORAGE_KEYS.biometricEnabled, available ? 'true' : 'false');
-          if (!available) {
-            setBiometricChecked(true);
-            return;
-          }
-        } else if (stored === 'false') {
+        // Opt-in : la biométrie n'est active que si l'utilisateur l'a explicitement
+        // activée dans Réglages (stored === 'true'). Clé absente = désactivé.
+        if (stored !== 'true') {
           setBiometricChecked(true);
           return;
         }
