@@ -22,7 +22,6 @@ const FEATURES = [
   { icon: '\uD83D\uDD14', name: 'Alertes', free: '2 max', premium: 'Illimitées', hl: false },
   { icon: '\uD83D\uDCF0', name: 'Actualités', free: '2 sources', premium: 'Toutes', hl: false },
   { icon: '\uD83D\uDCCA', name: 'Statistiques', free: '—', premium: '✓', hl: false },
-  { icon: '\uD83D\uDCCB', name: 'Export CSV', free: '—', premium: '✓', hl: false },
 ];
 
 // ─── Animation helper ────────────────────────────────────────────────────────
