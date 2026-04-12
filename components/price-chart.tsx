@@ -5,7 +5,7 @@ import Svg, { Circle, Defs, LinearGradient, Stop, Path, Line as SvgLine, G, Text
 import { Ionicons } from '@expo/vector-icons';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
-import { loadPriceHistory, type PricePoint, type HistoryPeriod, LONG_TERM_PERIODS } from '@/hooks/use-metal-history';
+import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
 import { formatEuro, formatShortDateFR, formatMonthShortFR } from '@/utils/format';
 
 type Metal = 'gold' | 'silver' | 'platinum' | 'palladium';
@@ -80,6 +80,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   const gradId = gradIdRef.current;
   const [history, setHistory] = useState<PricePoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [dataCurrency, setDataCurrency] = useState(currency);
   const { isPeriodLocked, showPaywall } = usePremium();
   const [period, setPeriod] = useState<Period>('1S');
   const [touchIndex, setTouchIndex] = useState<number | null>(null);
@@ -118,9 +119,10 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
     setChartLoading(true);
     setPinnedIndex(null);
     touchIndexRef.current = null;
-    loadPriceHistory(period, currency, metal).then(data => {
+    loadPriceHistory(period, currency, metal).then(result => {
       if (!cancelled) {
-        setHistory(data);
+        setHistory(result.data);
+        setDataCurrency(result.actualCurrency);
         setChartLoading(false);
       }
     });
@@ -145,8 +147,8 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
   }, [chartData]);
 
   const color = LINE_COLORS[metal];
-  const isLongTerm = LONG_TERM_PERIODS.includes(period);
-  const currencySymbol = isLongTerm ? '$' : currency === 'USD' ? '$' : currency === 'CHF' ? 'CHF' : '€';
+  const isUsd = dataCurrency === 'USD';
+  const currencySymbol = isUsd ? '$' : dataCurrency === 'CHF' ? 'CHF' : '€';
   const title = TITLES[metal];
 
   // ── SVG layout computation ─────────────────────────────────────────────
@@ -260,7 +262,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
         </View>
       </View>
 
-      {isLongTerm && (
+      {isUsd && currency !== 'USD' && (
         <Text style={{ color: '#888', fontSize: 10, marginBottom: 4, textAlign: 'right', opacity: 0.7 }}>
           Cours en USD (source historique)
         </Text>

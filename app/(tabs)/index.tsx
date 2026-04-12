@@ -120,6 +120,7 @@ export default function AccueilScreen() {
   const [selectedMetal, setSelectedMetal] = useState<{ key: MetalType; spotKey: string; symbol: string }>({ key: 'or', spotKey: 'gold', symbol: 'XAU' });
   const [chartHistory, setChartHistory] = useState<PricePoint[]>([]);
   const [chartLoading, setChartLoading] = useState(false);
+  const [chartActualCurrency, setChartActualCurrency] = useState('EUR');
   const [chartReady, setChartReady] = useState(false);
   const [activeMarketIdx, setActiveMarketIdx] = useState(0);
   const [change24h, setChange24h] = useState<Partial<Record<string, number>>>({});
@@ -150,15 +151,16 @@ export default function AccueilScreen() {
   useEffect(() => {
     setChartLoading(true);
     loadPriceHistory(selectedPeriod, 'EUR', selectedMetal.spotKey)
-      .then(pts => { setChartHistory(pts); setChartLoading(false); })
-      .catch(() => { setChartHistory([]); setChartLoading(false); });
+      .then(result => { setChartHistory(result.data); setChartActualCurrency(result.actualCurrency); setChartLoading(false); })
+      .catch(() => { setChartHistory([]); setChartActualCurrency('EUR'); setChartLoading(false); });
   }, [selectedPeriod, selectedMetal.spotKey]);
 
 
   // ── 24h change ───────────────────────────────────────────────────────
 
   useEffect(() => {
-    loadPriceHistory('1S', 'EUR').then(history => {
+    loadPriceHistory('1S', 'EUR').then(result => {
+      const history = result.data;
       if (history.length < 2) return;
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
@@ -298,7 +300,7 @@ export default function AccueilScreen() {
 
   const chartW = SCREEN_WIDTH - 68;
   // 10A/20A use USD source (price_eur unavailable before 2021)
-  const chartCurrencySymbol = selectedPeriod === '10A' || selectedPeriod === '20A' ? '$' : currencySymbol;
+  const chartCurrencySymbol = chartActualCurrency === 'USD' ? '$' : currencySymbol;
 
   // ─────────────────────────────────────────────────────────────────────
 
@@ -516,12 +518,12 @@ export default function AccueilScreen() {
             ))}
           </View>
 
-          {(selectedPeriod === '10A' || selectedPeriod === '20A') && (
+          {chartActualCurrency === 'USD' && (
             <Text style={{ color: C.textMuted, fontSize: 11, textAlign: 'right', marginBottom: 4, opacity: 0.7 }}>Cours en USD (source historique)</Text>
           )}
 
           {chartData && (
-            <TouchableOpacity activeOpacity={0.8} onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: 'EUR' } })}>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: chartActualCurrency } })}>
               <Svg width={chartW} height={110} style={{ marginTop: 8 }}>
                 <Defs>
                   <LinearGradient id="chG" x1="0" y1="0" x2="0" y2="1">
@@ -564,7 +566,7 @@ export default function AccueilScreen() {
             </View>
           )}
 
-          <TouchableOpacity onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: 'EUR' } })} activeOpacity={0.7}>
+          <TouchableOpacity onPress={() => router.push({ pathname: '/graphique' as any, params: { metal: selectedMetal.spotKey, currency: chartActualCurrency } })} activeOpacity={0.7}>
             <Text style={{ color: C.gold, fontSize: 12, fontWeight: '600', textAlign: 'right', marginTop: 6 }}>Voir le cours complet →</Text>
           </TouchableOpacity>
         </View>
