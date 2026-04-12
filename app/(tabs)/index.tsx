@@ -380,7 +380,7 @@ export default function AccueilScreen() {
                   <View style={[st.netBlock, masked && st.netMasked]}>
                     <Text style={st.netLabel}>Net estimé après taxe</Text>
                     <Text style={[st.netValue, { color: netColor }]}>
-                      {m(`${formatEuro(portfolio.netEstime)} ${currencySymbol}`)}
+                      {m(`${netG.text} ${currencySymbol}`)}
                     </Text>
                   </View>
                 );
