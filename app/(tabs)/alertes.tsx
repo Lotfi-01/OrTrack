@@ -129,11 +129,12 @@ export default function AlertesScreen() {
 
     let success: boolean
     if (editingAlertId) {
-      success = await updateAlert(editingAlertId, {
+      const result = await updateAlert(pushToken, editingAlertId, {
         metal: selectedMetal,
         condition: selectedCondition,
         target_price: parseFloat(targetPrice),
       })
+      success = result.success
     } else {
       success = await createAlert(
         pushToken,
@@ -160,8 +161,9 @@ export default function AlertesScreen() {
           text: 'Supprimer',
           style: 'destructive',
           onPress: async () => {
-            await deleteAlert(alertId)
-            if (pushToken) loadAlerts(pushToken)
+            if (!pushToken) return
+            const result = await deleteAlert(pushToken, alertId)
+            if (result.success) loadAlerts(pushToken)
           },
         },
       ]

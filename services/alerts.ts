@@ -14,6 +14,16 @@ export interface Alert {
   created_at: string
 }
 
+export type AlertMutationResult = { success: boolean; error?: string }
+
+function mutationResult(data: Pick<Alert, 'id'>[] | null, error: { message?: string } | null): AlertMutationResult {
+  if (error) return { success: false, error: error.message ?? 'supabase_error' }
+  const affectedRows = data?.length ?? 0
+  if (affectedRows === 0) return { success: false, error: 'not_found_or_not_owner' }
+  if (affectedRows > 1) return { success: false, error: 'integrity_anomaly_multiple_rows' }
+  return { success: true }
+}
+
 export async function getAlerts(pushToken: string): Promise<Alert[]> {
   if (!supabase) return []
   const { data, error } = await supabase
@@ -44,25 +54,28 @@ export async function createAlert(
   return !error
 }
 
-export async function deleteAlert(alertId: string): Promise<boolean> {
-  if (!supabase) return false
-  const { error } = await supabase
+export async function deleteAlert(pushToken: string, alertId: string): Promise<AlertMutationResult> {
+  if (!supabase) return { success: false, error: 'supabase_unavailable' }
+  const { data, error } = await supabase
     .from('alerts')
     .update({ is_active: false })
     .eq('id', alertId)
-  return !error
+    .eq('push_token', pushToken)
+    .select('id')
+  return mutationResult(data, error)
 }
 
 export async function updateAlert(
+  pushToken: string,
   alertId: string,
   updates: {
     metal: MetalType;
     condition: Condition;
     target_price: number;
   },
-): Promise<boolean> {
-  if (!supabase) return false
-  const { error } = await supabase
+): Promise<AlertMutationResult> {
+  if (!supabase) return { success: false, error: 'supabase_unavailable' }
+  const { data, error } = await supabase
     .from('alerts')
     .update({
       metal: updates.metal,
@@ -70,5 +83,7 @@ export async function updateAlert(
       target_price: updates.target_price,
     })
     .eq('id', alertId)
-  return !error
+    .eq('push_token', pushToken)
+    .select('id')
+  return mutationResult(data, error)
 }
