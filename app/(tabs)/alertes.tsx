@@ -442,7 +442,7 @@ export default function AlertesScreen() {
       >
         <View style={styles.modalOverlay}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           >
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>

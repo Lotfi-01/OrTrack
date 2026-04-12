@@ -5,7 +5,6 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // Ne JAMAIS les définir comme secrets manuellement.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-const METALS_API_KEY = Deno.env.get('METALS_API_KEY')!
 
 // metals.dev retourne les clés en anglais :
 // gold, silver, platinum, palladium
@@ -42,12 +41,20 @@ Deno.serve(async (req) => {
   }
   // ────────────────────────────────────────────────────────────────────
 
+  const metalsApiKey = Deno.env.get('METALS_API_KEY')
+  if (!metalsApiKey) {
+    return new Response(
+      JSON.stringify({ error: 'METALS_API_KEY not configured' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
     // 1. Récupère les prix depuis metals.dev en EUR/toz
     const pricesRes = await fetch(
-      `https://api.metals.dev/v1/latest?api_key=${METALS_API_KEY}&currency=EUR&unit=toz`
+      `https://api.metals.dev/v1/latest?api_key=${metalsApiKey}&currency=EUR&unit=toz`
     )
 
     if (!pricesRes.ok) {

@@ -171,7 +171,12 @@ export default function ReglagesScreen() {
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEYS.settings).then((raw) => {
       if (!raw) return;
-      setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
+      try {
+        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
+      } catch (e: any) {
+        console.warn('[Settings] Parse error:', e?.message);
+        AsyncStorage.removeItem(STORAGE_KEYS.settings).catch(() => {});
+      }
     });
   }, []);
 

@@ -163,7 +163,9 @@ export function useSpotPrices(): UseSpotPricesResult {
             setHistoryReady(true);
             setLoading(false);
             hasDataRef.current = true;
-            await savePricePoint(entry.pricesUsd);
+            if (entry.pricesUsd.gold != null && entry.pricesUsd.silver != null) {
+              await savePricePoint(entry.pricesUsd);
+            }
             return;
           }
         }
@@ -195,7 +197,9 @@ export function useSpotPrices(): UseSpotPricesResult {
         timestamp: now,
       } as CacheEntry));
 
-      await savePricePoint(pricesUsd);
+      if (pricesUsd.gold != null && pricesUsd.silver != null) {
+        await savePricePoint(pricesUsd);
+      }
       setHistoryReady(true);
 
     } catch (err) {
