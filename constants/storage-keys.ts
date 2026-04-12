@@ -13,4 +13,23 @@ export const STORAGE_KEYS = {
   legacyPriceAlerts: '@ortrack:price_alerts',
   profil: '@ortrack:profil',
   launchPremium: '@ortrack:launch_premium',
+  privacyMode: '@ortrack_privacy_mode',
 } as const;
+
+export const WIPE_STORAGE_KEYS = [
+  STORAGE_KEYS.positions,
+  STORAGE_KEYS.hidePortfolioValue,
+  STORAGE_KEYS.privacyMode,
+  STORAGE_KEYS.onboardingComplete,
+  STORAGE_KEYS.biometricEnabled,
+  STORAGE_KEYS.settings,
+  STORAGE_KEYS.spotCache,
+  STORAGE_KEYS.priceHistory,
+  STORAGE_KEYS.historyCachePrefix,
+  STORAGE_KEYS.pushToken,
+  STORAGE_KEYS.installTracked,
+  STORAGE_KEYS.premiumNotify,
+  STORAGE_KEYS.legacyPriceAlerts,
+  STORAGE_KEYS.profil,
+  STORAGE_KEYS.launchPremium,
+] as const;

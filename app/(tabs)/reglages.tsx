@@ -21,10 +21,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { usePremium } from '@/contexts/premium-context';
 
 import { OrTrackColors } from '@/constants/theme';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { STORAGE_KEYS, WIPE_STORAGE_KEYS } from '@/constants/storage-keys';
 import { resetPositionsCache } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
-import { supabase } from '@/lib/supabase';
 
 // ─── Clés AsyncStorage ────────────────────────────────────────────────────────
 
@@ -256,40 +255,17 @@ export default function ReglagesScreen() {
 
   // ── Suppression totale ────────────────────────────────────────────────────
 
+  // NOTE: Ce wipe supprime uniquement les données locales (AsyncStorage).
+  // Les données côté serveur (alertes, push token, install) ne sont pas supprimées.
+  // Suppression distante à implémenter en v1.1.
   const wipeAllUserData = async () => {
-    // 1. Nettoyage serveur (best-effort)
-    try {
-      const token = await AsyncStorage.getItem(STORAGE_KEYS.pushToken);
-      if (token && supabase) {
-        await supabase.from('alerts').delete().eq('push_token', token);
-        await supabase.from('push_tokens').delete().eq('token', token);
-      }
-    } catch {}
-
-    // 2. Nettoyage local — clés fixes
-    const fixedKeys = [
-      STORAGE_KEYS.positions,
-      STORAGE_KEYS.hidePortfolioValue,
-      STORAGE_KEYS.onboardingComplete,
-      STORAGE_KEYS.biometricEnabled,
-      STORAGE_KEYS.settings,
-      STORAGE_KEYS.spotCache,
-      STORAGE_KEYS.priceHistory,
-      STORAGE_KEYS.pushToken,
-      STORAGE_KEYS.installTracked,
-      STORAGE_KEYS.premiumNotify,
-      STORAGE_KEYS.legacyPriceAlerts,
-      STORAGE_KEYS.profil,
-      STORAGE_KEYS.settings,
-    ];
-
-    // 3. Nettoyage local — clés dynamiques (caches historiques)
+    // 1. Nettoyage local - clés fixes et caches historiques.
     const allKeys = await AsyncStorage.getAllKeys();
     const dynamicKeys = allKeys.filter(key => key.startsWith(STORAGE_KEYS.historyCachePrefix));
 
-    await AsyncStorage.multiRemove([...fixedKeys, ...dynamicKeys]);
+    await AsyncStorage.multiRemove([...WIPE_STORAGE_KEYS, ...dynamicKeys]);
 
-    // 4. Invalider le cache mémoire et rediriger
+    // 2. Invalider le cache mémoire et rediriger.
     resetPositionsCache();
     router.replace('/onboarding');
   };
@@ -297,7 +273,7 @@ export default function ReglagesScreen() {
   const confirmWipe = () => {
     Alert.alert(
       'Supprimer toutes mes données',
-      'Cette action efface ton portefeuille, tes réglages et tes caches locaux. Pense à partager tes données avant.',
+      'Cette action efface votre portefeuille, vos réglages et vos caches locaux. Les données serveur liées aux alertes et aux notifications ne sont pas supprimées dans cette version. Pensez à partager vos données avant.',
       [
         { text: 'Annuler', style: 'cancel' },
         { text: 'Partager', onPress: sharePositionsAsJson },
@@ -502,7 +478,7 @@ export default function ReglagesScreen() {
               onPress={() =>
                 Alert.alert(
                   'Mentions légales',
-                  'OrTrack est une application de suivi de métaux précieux à usage personnel. Les cours affichés sont fournis à titre indicatif et ne constituent pas un conseil en investissement. L\'application ne collecte aucune donnée personnelle sur des serveurs externes.'
+                  'OrTrack est une application de suivi de métaux précieux à usage personnel. Les cours affichés sont fournis à titre indicatif et ne constituent pas un conseil en investissement. L\'application ne collecte pas votre nom, votre email ni de compte utilisateur.'
                 )
               }>
               <Text style={styles.rowLabel}>Mentions légales</Text>
@@ -517,7 +493,7 @@ export default function ReglagesScreen() {
               onPress={() =>
                 Alert.alert(
                   'Politique de confidentialité',
-                  'OrTrack stocke vos données uniquement sur votre appareil via AsyncStorage. Aucune donnée n\'est transmise à des tiers. Les cours financiers sont récupérés depuis des APIs publiques sans identification. Vous pouvez supprimer toutes vos données depuis la section Données.'
+                  'Votre portefeuille et vos préférences sont stockés localement sur votre appareil. Les alertes de prix et les notifications push nécessitent un échange avec nos serveurs : push token et paramètres d\'alerte. OrTrack ne collecte pas votre nom, votre email ni de compte utilisateur. Un identifiant technique anonyme est utilisé pour le suivi des installations.'
                 )
               }>
               <Text style={styles.rowLabel}>Politique de confidentialité</Text>
