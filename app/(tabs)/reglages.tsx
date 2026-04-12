@@ -263,6 +263,9 @@ export default function ReglagesScreen() {
     const allKeys = await AsyncStorage.getAllKeys();
     const dynamicKeys = allKeys.filter(key => key.startsWith(STORAGE_KEYS.historyCachePrefix));
 
+    // NOTE: Ce wipe supprime uniquement les données locales (AsyncStorage).
+    // Les données côté serveur (alertes, push token, install) ne sont pas supprimées.
+    // Suppression distante à implémenter en v1.1.
     await AsyncStorage.multiRemove([...WIPE_STORAGE_KEYS, ...dynamicKeys]);
 
     // 2. Invalider le cache mémoire et rediriger.
