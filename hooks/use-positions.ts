@@ -63,6 +63,18 @@ let generation = 0;
 // Incrémenté par chaque mutation réussie et par resetPositionsCache.
 let stateVersion = 0;
 
+/**
+ * Attend la fin de toutes les mutations positions déjà planifiées dans la queue.
+ * À appeler AVANT un wipe AsyncStorage pour empêcher un setItem stale de réécrire
+ * des positions anciennes après le multiRemove.
+ * Ne déclenche aucune mutation, ne modifie ni memoryCache ni les compteurs.
+ * Best-effort : si la dernière mutation a échoué, l'erreur est avalée silencieusement
+ * pour ne pas bloquer le flow wipe.
+ */
+export async function awaitPendingPositionWrites(): Promise<void> {
+  try { await writePromise; } catch { /* drain best-effort */ }
+}
+
 // Exposé pour wipeAllUserData() dans reglages.tsx.
 // Remet le cache à null — le prochain usePositions rechargera les positions.
 export function resetPositionsCache() {

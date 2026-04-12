@@ -22,7 +22,7 @@ import { usePremium } from '@/contexts/premium-context';
 
 import { OrTrackColors } from '@/constants/theme';
 import { STORAGE_KEYS, WIPE_STORAGE_KEYS } from '@/constants/storage-keys';
-import { resetPositionsCache } from '@/hooks/use-positions';
+import { resetPositionsCache, awaitPendingPositionWrites } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
 
 // ─── Clés AsyncStorage ────────────────────────────────────────────────────────
@@ -259,7 +259,11 @@ export default function ReglagesScreen() {
   // Les données côté serveur (alertes, push token, install) ne sont pas supprimées.
   // Suppression distante à implémenter en v1.1.
   const wipeAllUserData = async () => {
-    // 1. Nettoyage local - clés fixes et caches historiques.
+    // 1. Drainer la queue des mutations positions en cours pour empêcher un
+    //    setItem stale de réécrire après le multiRemove.
+    await awaitPendingPositionWrites();
+
+    // 2. Nettoyage local — clés fixes et caches historiques.
     const allKeys = await AsyncStorage.getAllKeys();
     const dynamicKeys = allKeys.filter(key => key.startsWith(STORAGE_KEYS.historyCachePrefix));
 
@@ -268,7 +272,7 @@ export default function ReglagesScreen() {
     // Suppression distante à implémenter en v1.1.
     await AsyncStorage.multiRemove([...WIPE_STORAGE_KEYS, ...dynamicKeys]);
 
-    // 2. Invalider le cache mémoire et rediriger.
+    // 3. Invalider le cache mémoire et rediriger.
     resetPositionsCache();
     router.replace('/onboarding');
   };
