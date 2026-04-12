@@ -25,7 +25,23 @@ const METAL_LABELS: Record<string, string> = {
   palladium: 'Palladium',
 }
 
-Deno.serve(async (_req) => {
+Deno.serve(async (req) => {
+  // ── Auth : vérifier CRON_SECRET avant toute logique métier ──────────
+  const cronSecret = Deno.env.get('CRON_SECRET')
+  if (!cronSecret) {
+    return new Response(
+      JSON.stringify({ error: 'Internal configuration error' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+  if (req.headers.get('Authorization') !== `Bearer ${cronSecret}`) {
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } }
+    )
+  }
+  // ────────────────────────────────────────────────────────────────────
+
   try {
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
