@@ -38,10 +38,6 @@ import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/u
 import { usePremium } from '@/contexts/premium-context';
 
 import type { MetalType } from '@/constants/metals';
-import { RADAR_PRODUCT_LABELS } from '@/utils/radar/types';
-import RadarDashboardCard from '@/components/radar/RadarDashboardCard';
-
-const SHOW_PRIME_MARKET = false;
 
 const C = OrTrackColors;
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -124,6 +120,7 @@ export default function AccueilScreen() {
   const [chartReady, setChartReady] = useState(false);
   const [activeMarketIdx, setActiveMarketIdx] = useState(0);
   const [change24h, setChange24h] = useState<Partial<Record<string, number>>>({});
+  const [radarTeaserMessageVisible, setRadarTeaserMessageVisible] = useState(false);
 
   const marketScrollRef = useRef<ScrollView>(null);
   const isProgrammaticScroll = useRef(false);
@@ -214,18 +211,6 @@ export default function AccueilScreen() {
   // utils/radar/types.ts) ; on doit donc restreindre le lookup aux positions `or`
   // pour éviter qu'un label partagé entre métaux (ex: "Maple Leaf 1oz" en platine
   // ou argent) ne soit résolu à tort comme le produit radar gold correspondant.
-  const portfolioProductIds = useMemo(() => {
-    const labelToId = Object.fromEntries(
-      Object.entries(RADAR_PRODUCT_LABELS).map(([id, label]) => [label, id]),
-    );
-    return [...new Set(
-      positions
-        .filter(p => p.metal === 'or')
-        .map(p => labelToId[p.product])
-        .filter((id): id is string => !!id),
-    )];
-  }, [positions]);
-
   // ── Init chart on dominant metal (anti-flash) ────────────────────────
 
   const dominantMetal = useMemo(() => {
@@ -591,9 +576,39 @@ export default function AccueilScreen() {
         )}
 
         {/* ── 4b. RADAR PRIME ─────────────────────────────── */}
-        {SHOW_PRIME_MARKET && (
-          <RadarDashboardCard portfolioProductIds={portfolioProductIds} />
-        )}
+        <TouchableOpacity
+          style={st.radarTeaserCard}
+          activeOpacity={0.85}
+          onPress={() => setRadarTeaserMessageVisible(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Radar Prime bientot disponible"
+        >
+          <View style={st.radarTeaserHeader}>
+            <View style={st.radarTeaserTitleRow}>
+              <Ionicons name="radio-outline" size={18} color={C.gold} />
+              <Text style={st.radarTeaserTitle}>Radar Prime</Text>
+            </View>
+            <View style={st.radarTeaserBadge}>
+              <Text style={st.radarTeaserBadgeText}>Bientôt disponible</Text>
+            </View>
+          </View>
+          <Text style={st.radarTeaserText}>
+            Suivez les primes marché en temps réel.
+          </Text>
+          <View style={st.radarTeaserPreview} pointerEvents="none">
+            <View style={st.radarTeaserLine}>
+              <View style={st.radarTeaserSkeletonLong} />
+              <View style={st.radarTeaserSkeletonBadge} />
+            </View>
+            <View style={st.radarTeaserLine}>
+              <View style={st.radarTeaserSkeletonShort} />
+              <View style={st.radarTeaserSkeletonBadgeMuted} />
+            </View>
+          </View>
+          {radarTeaserMessageVisible && (
+            <Text style={st.radarTeaserInline}>Disponible prochainement.</Text>
+          )}
+        </TouchableOpacity>
 
         {/* ── 5. ALERTES ─────────────────────────────────── */}
         <TouchableOpacity style={st.alertCard} onPress={() => router.replace({ pathname: '/(tabs)/alertes' as any, params: { metal: selectedMetal.symbol } })} activeOpacity={0.7}>
@@ -740,6 +755,21 @@ const st = StyleSheet.create({
   chartDate: { color: C.textDim, fontSize: 10 },
   mmRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, paddingVertical: 8, paddingHorizontal: 10, backgroundColor: 'rgba(201,168,76,0.03)', borderRadius: 8 },
   mmText: { color: C.textDim, fontSize: 10, fontWeight: '600' },
+
+  radarTeaserCard: { backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 16, opacity: 0.92 },
+  radarTeaserHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 8 },
+  radarTeaserTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 },
+  radarTeaserTitle: { color: C.white, fontSize: 14, fontWeight: '700' },
+  radarTeaserBadge: { borderRadius: 8, borderWidth: 1, borderColor: 'rgba(201,168,76,0.35)', backgroundColor: 'rgba(201,168,76,0.10)', paddingHorizontal: 8, paddingVertical: 4 },
+  radarTeaserBadgeText: { color: C.gold, fontSize: 10, fontWeight: '700' },
+  radarTeaserText: { color: C.textDim, fontSize: 12, lineHeight: 18, marginBottom: 12 },
+  radarTeaserPreview: { borderRadius: 10, borderWidth: 1, borderColor: C.divider, padding: 10, gap: 8, backgroundColor: 'rgba(245,240,232,0.02)' },
+  radarTeaserLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
+  radarTeaserSkeletonLong: { height: 10, borderRadius: 5, backgroundColor: C.border, opacity: 0.75, flex: 1 },
+  radarTeaserSkeletonShort: { height: 10, borderRadius: 5, backgroundColor: C.border, opacity: 0.45, flex: 0.72 },
+  radarTeaserSkeletonBadge: { width: 74, height: 18, borderRadius: 6, backgroundColor: 'rgba(201,168,76,0.18)' },
+  radarTeaserSkeletonBadgeMuted: { width: 58, height: 18, borderRadius: 6, backgroundColor: C.border, opacity: 0.45 },
+  radarTeaserInline: { color: C.textMuted, fontSize: 11, textAlign: 'center', marginTop: 10 },
 
   alertCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 16 },
   alertText: { color: C.white, fontSize: 13, fontWeight: '600', flex: 1, marginLeft: 10 },
