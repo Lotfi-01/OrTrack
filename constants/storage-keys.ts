@@ -10,12 +10,13 @@ export const STORAGE_KEYS = {
   notificationToken: '@ortrack:push_token',
   installTracked: '@ortrack:install_tracked',
   premiumNotify: '@ortrack:premium_notify',
-  legacyPriceAlerts: '@ortrack:price_alerts',
-  profil: '@ortrack:profil',
-  launchPremium: '@ortrack:launch_premium',
   privacyMode: '@ortrack_privacy_mode',
 } as const;
 
+// Keys wiped on the local "Supprimer mes données locales" action.
+// `historyCachePrefix` is a prefix, not a key: dynamic matches are resolved
+// in reglages.tsx::wipeAllUserData via getAllKeys().filter(startsWith(prefix)),
+// so it is intentionally NOT listed here.
 export const WIPE_STORAGE_KEYS = [
   STORAGE_KEYS.positions,
   STORAGE_KEYS.hidePortfolioValue,
@@ -25,11 +26,7 @@ export const WIPE_STORAGE_KEYS = [
   STORAGE_KEYS.settings,
   STORAGE_KEYS.spotCache,
   STORAGE_KEYS.priceHistory,
-  STORAGE_KEYS.historyCachePrefix,
   STORAGE_KEYS.notificationToken,
   STORAGE_KEYS.installTracked,
   STORAGE_KEYS.premiumNotify,
-  STORAGE_KEYS.legacyPriceAlerts,
-  STORAGE_KEYS.profil,
-  STORAGE_KEYS.launchPremium,
 ] as const;

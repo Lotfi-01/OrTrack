@@ -16,13 +16,20 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
+import * as DocumentPicker from 'expo-document-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OrTrackColors } from '@/constants/theme';
 import { STORAGE_KEYS, WIPE_STORAGE_KEYS } from '@/constants/storage-keys';
-import { resetPositionsCache, awaitPendingPositionWrites } from '@/hooks/use-positions';
+import { resetPositionsCache, awaitPendingPositionWrites, usePositions } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
 import { reportError } from '@/utils/error-reporting';
+import {
+  exportPayload,
+  parseImportPayload,
+  serializeExportPayload,
+  type ExportableSettings,
+} from '@/utils/positions-io';
 
 // ─── Clés AsyncStorage ────────────────────────────────────────────────────────
 
@@ -163,6 +170,7 @@ export default function ReglagesScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const { replaceAllPositions } = usePositions();
 
   // ── Chargement initial ────────────────────────────────────────────────────
 
@@ -263,7 +271,25 @@ export default function ReglagesScreen() {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
       if (!raw) return;
-      await Share.share({ message: raw, title: 'OrTrack — Données JSON' });
+      // Le wrapper est construit depuis les positions validées, pas depuis le
+      // raw AsyncStorage. Cela garantit qu'un fichier corrompu n'est jamais
+      // partagé tel quel et que l'export est toujours ré-importable.
+      let parsed: unknown = [];
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        parsed = [];
+      }
+      const positions: Position[] = Array.isArray(parsed) ? (parsed as Position[]) : [];
+      const payload = exportPayload(positions, settings);
+      if (payload.positions.length === 0) {
+        Alert.alert('Aucune donnée', 'Votre portefeuille est vide.');
+        return;
+      }
+      await Share.share({
+        message: serializeExportPayload(payload),
+        title: 'OrTrack — Données JSON',
+      });
     } catch (error) {
       reportError(error, { scope: 'data-export', action: 'share_positions_json' });
       Alert.alert('Export impossible', 'Impossible de partager vos données JSON. Réessayez.');
@@ -288,6 +314,114 @@ export default function ReglagesScreen() {
     } catch (error) {
       reportError(error, { scope: 'data-export', action: 'share_positions_csv' });
       Alert.alert('Export impossible', 'Impossible de partager vos données CSV. Réessayez.');
+    }
+  };
+
+  // ── Import JSON (DocumentPicker) ─────────────────────────────────────────
+
+  const applyImport = async (
+    positions: Position[],
+    importedSettings: ExportableSettings | undefined,
+    includeSettings: boolean,
+  ) => {
+    try {
+      await replaceAllPositions(positions);
+      if (includeSettings && importedSettings) {
+        await AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(importedSettings));
+        setSettings(importedSettings);
+      }
+      Alert.alert(
+        'Import terminé',
+        `${positions.length} position${positions.length > 1 ? 's' : ''} importée${positions.length > 1 ? 's' : ''}.${includeSettings && importedSettings ? ' Réglages restaurés.' : ''}`,
+      );
+    } catch (error) {
+      reportError(error, { scope: 'data-import', action: 'apply_import' });
+      Alert.alert(
+        'Import interrompu',
+        'L’import a échoué pendant l’écriture locale. Vos données actuelles n’ont pas été modifiées si aucune étape n’a abouti ; vérifiez votre portefeuille.',
+      );
+    }
+  };
+
+  const handleImportData = async () => {
+    let picked: DocumentPicker.DocumentPickerResult;
+    try {
+      picked = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'text/plain', '*/*'],
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+    } catch (error) {
+      reportError(error, { scope: 'data-import', action: 'pick_document' });
+      Alert.alert('Import impossible', 'Impossible d’ouvrir le sélecteur de fichier. Réessayez.');
+      return;
+    }
+
+    if (picked.canceled || !picked.assets || picked.assets.length === 0) return;
+    const asset = picked.assets[0];
+
+    let raw: string;
+    try {
+      const response = await fetch(asset.uri);
+      raw = await response.text();
+    } catch (error) {
+      reportError(error, { scope: 'data-import', action: 'read_file' });
+      Alert.alert(
+        'Fichier illisible',
+        'Impossible de lire le contenu du fichier sélectionné. Vérifiez qu’il s’agit bien d’un export OrTrack au format JSON.',
+      );
+      return;
+    }
+
+    const parsed = parseImportPayload(raw);
+    if (!parsed.ok) {
+      const msg =
+        parsed.error.kind === 'invalid_json'
+          ? 'Le fichier n’est pas un JSON valide.'
+          : parsed.error.kind === 'unrecognized_shape'
+            ? 'Le fichier ne correspond pas au format d’export OrTrack (objet versionné ou tableau de positions attendu).'
+            : 'Aucune position valide n’a été trouvée dans ce fichier. Import refusé.';
+      Alert.alert('Import refusé', msg);
+      return;
+    }
+
+    const { positions, rejected, total, settings: importedSettings } = parsed.result;
+    const base = `${positions.length} position${positions.length > 1 ? 's' : ''} valide${positions.length > 1 ? 's' : ''} sur ${total}${rejected > 0 ? ` · ${rejected} rejetée${rejected > 1 ? 's' : ''}` : ''}.`;
+    const warning = '\n\nCette action REMPLACE l’ensemble de votre portefeuille actuel. Pensez à partager vos données avant si vous n’avez pas déjà une copie.';
+
+    const buttons: { text: string; style?: 'cancel' | 'destructive' | 'default'; onPress?: () => void }[] = [
+      { text: 'Annuler', style: 'cancel' },
+    ];
+
+    if (importedSettings) {
+      buttons.push(
+        {
+          text: 'Positions seulement',
+          style: 'destructive',
+          onPress: () => { applyImport(positions, importedSettings, false); },
+        },
+        {
+          text: 'Positions + réglages',
+          style: 'destructive',
+          onPress: () => { applyImport(positions, importedSettings, true); },
+        },
+      );
+      Alert.alert(
+        'Prévisualisation de l’import',
+        `${base}\n\nDes réglages sont aussi présents dans ce fichier. Voulez-vous les restaurer ?${warning}`,
+        buttons,
+      );
+    } else {
+      buttons.push({
+        text: 'Remplacer mes positions',
+        style: 'destructive',
+        onPress: () => { applyImport(positions, undefined, false); },
+      });
+      Alert.alert(
+        'Prévisualisation de l’import',
+        `${base}${warning}`,
+        buttons,
+      );
     }
   };
 
@@ -452,6 +586,14 @@ export default function ReglagesScreen() {
               label="Partager mes données (CSV)"
               iconName="document-text-outline"
               onPress={sharePositionsAsCsv}
+            />
+
+            <ItemSeparator />
+
+            <ActionRow
+              label="Importer des données (JSON)"
+              iconName="download-outline"
+              onPress={handleImportData}
             />
 
             <ItemSeparator />

@@ -52,14 +52,6 @@ describe('local wipe storage keys', () => {
     ).resolves.toBeNull()
   })
 
-  it('removes launchPremium', async () => {
-    await AsyncStorage.setItem(STORAGE_KEYS.launchPremium, 'true')
-
-    await runLocalWipe()
-
-    await expect(AsyncStorage.getItem(STORAGE_KEYS.launchPremium)).resolves.toBeNull()
-  })
-
   it('removes privacyMode', async () => {
     await AsyncStorage.setItem(STORAGE_KEYS.privacyMode, 'true')
 
