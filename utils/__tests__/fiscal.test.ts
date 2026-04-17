@@ -1,10 +1,12 @@
 import { TAX } from '@/constants/tax';
+import type { Position } from '@/types/position';
 import {
   computeAbatement,
   computeSellerNetForfaitaire,
   computeSellerNetPlusValues,
   computeFiscalCountdown,
   computeRegimeComparison,
+  computePortfolioFiscalSummary,
 } from '../fiscal';
 
 // ── computeAbatement ──────────────────────────────────────────────────────
@@ -127,5 +129,102 @@ describe('computeRegimeComparison', () => {
     const result = computeRegimeComparison(10000, 10000, 1);
     // gain = 0, PV net = 10000 (pas de taxe), Forf net = 8850
     expect(result.bestRegime).toBe('plusvalues');
+  });
+});
+
+// ── computePortfolioFiscalSummary : comptage des exclusions ────────────────
+
+function makePos(overrides: Partial<Position> = {}): Position {
+  return {
+    id: overrides.id ?? 'p1',
+    metal: overrides.metal ?? 'or',
+    product: overrides.product ?? 'Napoléon 20F',
+    weightG: overrides.weightG ?? 31.1,
+    quantity: overrides.quantity ?? 1,
+    purchasePrice: overrides.purchasePrice ?? 1000,
+    purchaseDate: overrides.purchaseDate ?? '01/01/2020',
+    createdAt: overrides.createdAt ?? '2020-01-01T00:00:00.000Z',
+    note: overrides.note,
+    spotAtPurchase: overrides.spotAtPurchase,
+  };
+}
+
+const PRICES_ALL_OK = { gold: 2500, silver: 1000, platinum: 800, palladium: 700 };
+
+describe('computePortfolioFiscalSummary exclusion counting', () => {
+  test('une position valide : excludedFromFiscalCount = 0, hasPartialEstimate = false', () => {
+    const summary = computePortfolioFiscalSummary([makePos()], PRICES_ALL_OK);
+    expect(summary).not.toBeNull();
+    expect(summary!.positionFiscals).toHaveLength(1);
+    expect(summary!.excludedFromFiscalCount).toBe(0);
+    expect(summary!.hasPartialEstimate).toBe(false);
+  });
+
+  test('purchasePrice = 0 : exclusion comptée', () => {
+    const summary = computePortfolioFiscalSummary(
+      [makePos({ id: 'ok' }), makePos({ id: 'zero', purchasePrice: 0 })],
+      PRICES_ALL_OK,
+    );
+    expect(summary).not.toBeNull();
+    expect(summary!.positionFiscals).toHaveLength(1);
+    expect(summary!.excludedFromFiscalCount).toBe(1);
+    expect(summary!.hasPartialEstimate).toBe(true);
+  });
+
+  test('spot manquant : exclusion désormais comptée', () => {
+    const summary = computePortfolioFiscalSummary(
+      [makePos({ id: 'ok' }), makePos({ id: 'nospot', metal: 'argent' })],
+      { gold: 2500, silver: null, platinum: 800, palladium: 700 },
+    );
+    expect(summary).not.toBeNull();
+    expect(summary!.positionFiscals).toHaveLength(1);
+    expect(summary!.excludedFromFiscalCount).toBe(1);
+    expect(summary!.hasPartialEstimate).toBe(true);
+  });
+
+  test('date invalide : exclusion désormais comptée', () => {
+    const summary = computePortfolioFiscalSummary(
+      [makePos({ id: 'ok' }), makePos({ id: 'baddate', purchaseDate: 'abc' })],
+      PRICES_ALL_OK,
+    );
+    expect(summary).not.toBeNull();
+    expect(summary!.positionFiscals).toHaveLength(1);
+    expect(summary!.excludedFromFiscalCount).toBe(1);
+    expect(summary!.hasPartialEstimate).toBe(true);
+  });
+
+  test('years < 0 (date future) : exclusion désormais comptée', () => {
+    const summary = computePortfolioFiscalSummary(
+      [makePos({ id: 'ok' }), makePos({ id: 'future', purchaseDate: '01/01/9999' })],
+      PRICES_ALL_OK,
+    );
+    expect(summary).not.toBeNull();
+    expect(summary!.positionFiscals).toHaveLength(1);
+    expect(summary!.excludedFromFiscalCount).toBe(1);
+    expect(summary!.hasPartialEstimate).toBe(true);
+  });
+
+  test('mix de plusieurs motifs : comptage cumulé', () => {
+    const summary = computePortfolioFiscalSummary(
+      [
+        makePos({ id: 'ok' }),
+        makePos({ id: 'zero', purchasePrice: 0 }),
+        makePos({ id: 'nospot', metal: 'platine' }),
+        makePos({ id: 'baddate', purchaseDate: '99/99/9999' }),
+      ],
+      { gold: 2500, silver: 1000, platinum: null, palladium: 700 },
+    );
+    expect(summary).not.toBeNull();
+    expect(summary!.positionFiscals).toHaveLength(1);
+    expect(summary!.excludedFromFiscalCount).toBe(3);
+    expect(summary!.hasPartialEstimate).toBe(true);
+  });
+
+  test('aucune position calculable : retourne null (sémantique inchangée)', () => {
+    const summary = computePortfolioFiscalSummary(
+      [makePos({ id: 'zero', purchasePrice: 0 })],
+      PRICES_ALL_OK,
+    );
+    expect(summary).toBeNull();
   });
 });

@@ -42,7 +42,7 @@ const PREMIUM_FEATURES = [
 
 export default function StatistiquesScreen() {
   const { positions, reloadPositions } = usePositions();
-  const { prices, currencySymbol, lastUpdated } = useSpotPrices();
+  const { prices, loading: spotLoading, currencySymbol, lastUpdated, error: spotError } = useSpotPrices();
   const { isPremium, showPaywall } = usePremium();
   const [masked, setMasked] = useState(false);
   const [rankMode, setRankMode] = useState<'eur' | 'pct' | 'sale'>('eur');
@@ -83,6 +83,24 @@ export default function StatistiquesScreen() {
     const gainPct = cost > 0 ? (gain / cost) * 100 : null;
     return { totalCost: cost, totalValue: value, totalGain: gain, totalGainPct: gainPct, excludedFromGainCount: excluded };
   }, [positions, prices]);
+
+  // ── pricesReady basé sur les métaux réellement détenus ────────────
+  // Pattern identique à app/(tabs)/index.tsx pour bloquer l'affichage du
+  // Hero tant qu'un métal détenu n'a pas son spot. Corrige la sous-évaluation
+  // silencieuse de totalValue/totalGain/bestNet quand un spot est null.
+  const heldMetals = useMemo(() => {
+    if (!positions || positions.length === 0) return [];
+    return [...new Set(positions.map(p => p.metal))];
+  }, [positions]);
+
+  const pricesReady = useMemo(() => {
+    if (spotLoading) return false;
+    if (heldMetals.length === 0) return true;
+    return heldMetals.every(metal => {
+      const spot = prices[METAL_CONFIG[metal].spotKey];
+      return spot !== null && spot !== undefined;
+    });
+  }, [spotLoading, heldMetals, prices]);
 
   const fiscal = useMemo(
     () => computePortfolioFiscalSummary(positions, prices),
@@ -219,52 +237,67 @@ export default function StatistiquesScreen() {
             {/* ── BLOC 1 — HERO PERFORMANCE ── */}
             <View style={st.heroCard}>
               <Text style={st.sectionLabel}>PERFORMANCE GLOBALE</Text>
-              <Text style={[st.heroValue, totalGain >= 0 ? st.positive : st.negative]}>
-                {m(`${totalGain >= 0 ? '+' : ''}${formatEuro(totalGain)} ${currencySymbol}`)}
-              </Text>
-              {totalGainPct !== null && (
-                <Text style={[st.heroPercent, totalGain >= 0 ? st.positive : st.negative]}>
-                  {totalGain >= 0 ? '+' : ''}{formatPct(totalGainPct, 2)}
-                </Text>
-              )}
-              {hasPartialEstimate && (
-                <Text style={st.partialNotice}>{PARTIAL_ESTIMATE_NOTICE}</Text>
-              )}
-              {oldestDate && <Text style={st.heroRef}>Depuis votre 1ère position ({oldestDate})</Text>}
-
-              <View style={st.heroRow}>
-                <View style={st.heroCol}>
-                  <Text style={st.heroLabel}>Investi</Text>
-                  <Text style={st.heroAmount}>{m(`${formatEuro(totalCost)} ${currencySymbol}`)}</Text>
-                </View>
-                <View style={st.heroSep} />
-                <View style={[st.heroCol, { alignItems: 'flex-end' }]}>
-                  <Text style={st.heroLabel}>Valeur actuelle</Text>
-                  <Text style={st.heroAmount}>{m(`${formatEuro(totalValue)} ${currencySymbol}`)}</Text>
-                </View>
-              </View>
-
-              {fiscal ? (
-                <View style={st.heroNetBlock}>
-                  <View style={st.heroNetRow}>
-                    <Text style={st.heroNetLabel}>Net estimé si vente aujourd{'\u2019'}hui</Text>
-                    <TouchableOpacity onPress={() => Alert.alert('Net estimé', 'Estimé selon le régime le plus favorable aujourd\u2019hui. Hors frais de revente.')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                      <Ionicons name="information-circle-outline" size={14} color={C.textDim} />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={st.heroNetValue}>{m(`${formatEuro(fiscal.bestNet)} ${currencySymbol}`)}</Text>
-                  <Text style={st.heroNetFiscal}>
-                    Fiscalité estimée : {m(`${formatEuro(fiscal.bestRegime === 'plusvalues' ? fiscal.totalPVTax : fiscal.totalForfaitaireTax)} ${currencySymbol}`)}
+              {pricesReady ? (
+                <>
+                  <Text style={[st.heroValue, totalGain >= 0 ? st.positive : st.negative]}>
+                    {m(`${totalGain >= 0 ? '+' : ''}${formatEuro(totalGain)} ${currencySymbol}`)}
                   </Text>
-                  <Text style={st.heroMethod}>(Régime le plus favorable {'\u00B7'} hors frais)</Text>
-                </View>
-              ) : (
-                <Text style={st.heroNetUnavailable}>Net estimé indisponible {'\u00B7'} Simulation requise</Text>
-              )}
+                  {totalGainPct !== null && (
+                    <Text style={[st.heroPercent, totalGain >= 0 ? st.positive : st.negative]}>
+                      {totalGain >= 0 ? '+' : ''}{formatPct(totalGainPct, 2)}
+                    </Text>
+                  )}
+                  {hasPartialEstimate && (
+                    <Text style={st.partialNotice}>{PARTIAL_ESTIMATE_NOTICE}</Text>
+                  )}
+                  {oldestDate && <Text style={st.heroRef}>Depuis votre 1ère position ({oldestDate})</Text>}
 
-              <TouchableOpacity onPress={() => router.push('/fiscalite-globale' as never)} style={st.heroBridge} activeOpacity={0.7}>
-                <Text style={st.heroBridgeText}>{'Estimer mon net après impôt \u2192'}</Text>
-              </TouchableOpacity>
+                  <View style={st.heroRow}>
+                    <View style={st.heroCol}>
+                      <Text style={st.heroLabel}>Investi</Text>
+                      <Text style={st.heroAmount}>{m(`${formatEuro(totalCost)} ${currencySymbol}`)}</Text>
+                    </View>
+                    <View style={st.heroSep} />
+                    <View style={[st.heroCol, { alignItems: 'flex-end' }]}>
+                      <Text style={st.heroLabel}>Valeur actuelle</Text>
+                      <Text style={st.heroAmount}>{m(`${formatEuro(totalValue)} ${currencySymbol}`)}</Text>
+                    </View>
+                  </View>
+
+                  {fiscal ? (
+                    <View style={st.heroNetBlock}>
+                      <View style={st.heroNetRow}>
+                        <Text style={st.heroNetLabel}>Net estimé si vente aujourd{'\u2019'}hui</Text>
+                        <TouchableOpacity onPress={() => Alert.alert('Net estimé', 'Estimé selon le régime le plus favorable aujourd\u2019hui. Hors frais de revente.')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                          <Ionicons name="information-circle-outline" size={14} color={C.textDim} />
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={st.heroNetValue}>{m(`${formatEuro(fiscal.bestNet)} ${currencySymbol}`)}</Text>
+                      <Text style={st.heroNetFiscal}>
+                        Fiscalité estimée : {m(`${formatEuro(fiscal.bestRegime === 'plusvalues' ? fiscal.totalPVTax : fiscal.totalForfaitaireTax)} ${currencySymbol}`)}
+                      </Text>
+                      <Text style={st.heroMethod}>(Régime le plus favorable {'\u00B7'} hors frais)</Text>
+                    </View>
+                  ) : (
+                    <Text style={st.heroNetUnavailable}>Net estimé indisponible {'\u00B7'} Simulation requise</Text>
+                  )}
+
+                  <TouchableOpacity onPress={() => router.push('/fiscalite-globale' as never)} style={st.heroBridge} activeOpacity={0.7}>
+                    <Text style={st.heroBridgeText}>{'Estimer mon net après impôt \u2192'}</Text>
+                  </TouchableOpacity>
+                </>
+              ) : spotError ? (
+                <Text style={{ color: C.textDim, fontSize: 12, marginTop: 4, textAlign: 'center' }}>Cours indisponibles</Text>
+              ) : (
+                <View>
+                  <View style={{ width: 180, height: 28, borderRadius: 6, backgroundColor: C.border, marginBottom: 12, marginTop: 4 }} />
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 10 }}>
+                    <View style={{ width: 80, height: 22, borderRadius: 5, backgroundColor: C.border }} />
+                    <View style={{ width: 90, height: 22, borderRadius: 5, backgroundColor: C.border }} />
+                  </View>
+                  <View style={{ width: '100%', height: 38, borderRadius: 9, backgroundColor: C.border, marginBottom: 12 }} />
+                </View>
+              )}
             </View>
 
             {/* ── BLOC 2 — INSIGHT PREMIUM ── */}

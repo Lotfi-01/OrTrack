@@ -181,13 +181,13 @@ export function computePortfolioFiscalSummary(
     }
     const spot = getSpot(pos.metal as MetalType, prices as any);
     const salePrice = computePositionValue(pos, spot);
-    if (salePrice === null) continue;
+    if (salePrice === null) { excludedFromFiscalCount++; continue; }
     const costPrice = computePositionCost(pos);
 
     const purchaseDate = parseDate(pos.purchaseDate);
-    if (!purchaseDate) continue;
+    if (!purchaseDate) { excludedFromFiscalCount++; continue; }
     const years = calcYearsHeld(purchaseDate, now);
-    if (years < 0) continue;
+    if (years < 0) { excludedFromFiscalCount++; continue; }
 
     const tax = computeTax(salePrice, costPrice, years);
     positionFiscals.push({
