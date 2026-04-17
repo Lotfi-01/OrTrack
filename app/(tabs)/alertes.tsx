@@ -39,7 +39,6 @@ import { useSpotPrices } from '../../hooks/use-spot-prices'
 import { formatEuro } from '@/utils/format'
 import { STORAGE_KEYS } from '@/constants/storage-keys'
 import { registerForPushNotifications } from '@/services/notifications'
-import { getCurrentSessionUserId } from '@/services/auth-session'
 import { reportError } from '@/utils/error-reporting'
 
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium']
@@ -214,9 +213,6 @@ export default function AlertesScreen() {
     try {
       let success: boolean
       if (editingAlertId) {
-        // Update remains strictly legacy in Sprint 3A. No owner-based write
-        // path on update until the migration story for pre-owner rows is
-        // decided in a later sprint.
         const result = await updateAlert(legacyScope, editingAlertId, {
           metal: selectedMetal,
           condition: selectedCondition,
@@ -224,17 +220,11 @@ export default function AlertesScreen() {
         })
         success = result.success
       } else {
-        // Fresh session read at write time. If Supabase returns a usable
-        // session, ownerId is attached alongside the legacy push_token
-        // for transitional backend alignment. Absent session ⇒ legacy-only
-        // write, identical to pre-Sprint-3A behaviour.
-        const ownerId = await getCurrentSessionUserId()
         success = await createAlert(
           legacyScope,
           selectedMetal,
           selectedCondition,
           parsedTargetPrice,
-          ownerId,
         )
       }
 

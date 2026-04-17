@@ -80,19 +80,11 @@ export async function getAlerts(scope: LegacyNotificationTokenAlertScope): Promi
   }
 }
 
-// Sprint 3A transitional write.
-// push_token is still required by the alerts_owner_or_legacy_push_token check
-// constraint and is still used by the current push-routing cron. When a real
-// Supabase session exists at write time, owner_id is populated alongside for
-// structural alignment with the owner-based migration. Co-writing both columns
-// is explicitly allowed by the backend transition design and is NOT effective
-// security until target RLS is activated in a later sprint.
 export async function createAlert(
   scope: LegacyNotificationTokenAlertScope,
   metal: MetalType,
   condition: Condition,
   targetPrice: number,
-  ownerId?: string | null,
 ): Promise<boolean> {
   if (!hasValidNotificationToken(scope.notificationToken) || !hasValidTargetPrice(targetPrice)) {
     reportAlertError('create_alert_invalid_payload', new Error('invalid_alert_payload'), {
@@ -106,26 +98,16 @@ export async function createAlert(
   }
   if (!supabase) return false
   try {
-    const payload: Record<string, unknown> = {
+    const { error } = await supabase.from('alerts').insert({
       push_token: scope.notificationToken,
       metal,
       condition,
       target_price: targetPrice,
       currency: 'EUR',
       is_active: true,
-    }
-    if (typeof ownerId === 'string' && ownerId.trim().length > 0) {
-      payload.owner_id = ownerId
-    }
-
-    const { error } = await supabase.from('alerts').insert(payload)
+    })
     if (error) {
-      reportAlertError('create_alert', error, {
-        metal,
-        condition,
-        targetPrice,
-        hasOwnerId: typeof ownerId === 'string' && ownerId.trim().length > 0,
-      })
+      reportAlertError('create_alert', error, { metal, condition, targetPrice })
       return false
     }
     return true
