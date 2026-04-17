@@ -4,7 +4,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  Dimensions,
   InteractionManager,
   KeyboardAvoidingView,
   LayoutAnimation,
@@ -21,6 +20,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { PRODUCTS, type Product } from '@/constants/products';
 import { formatEuro, formatG } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
@@ -28,6 +28,14 @@ import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
 import { parseDate } from '@/utils/tax-helpers';
+import {
+  autoFormatDate,
+  formatDateDMY,
+  formatPriceDisplay,
+  toNum,
+  truncateName,
+} from '@/utils/ajouter-form';
+import { ProductChip } from '@/components/ajouter/ProductChip';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
 
@@ -35,104 +43,7 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-// ─── Constantes ───────────────────────────────────────────────────────────────
-const SCREEN_WIDTH = Dimensions.get('window').width;
-const CHIP_WIDTH = (SCREEN_WIDTH - 40 - 8) / 2;
-
-const MAX_CTA_NAME_LENGTH = 20;
-
-/** Tronque au dernier espace avant la limite pour éviter une coupure en plein mot. */
-const truncateName = (s: string, max: number = MAX_CTA_NAME_LENGTH): string => {
-  if (s.length <= max) return s;
-  const cut = s.lastIndexOf(' ', max);
-  return (cut > 0 ? s.slice(0, cut) : s.slice(0, max)) + '\u2026';
-};
-
-type Product = {
-  label: string;
-  weightG: number | null;
-  popular?: boolean;
-  category: 'piece' | 'lingot' | 'autre';
-};
-
-const PRODUCTS: Record<MetalType, Product[]> = {
-  or: [
-    { label: 'Napoléon 20F', weightG: 5.81, popular: true, category: 'piece' },
-    { label: 'Souverain', weightG: 7.32, category: 'piece' },
-    { label: 'Krugerrand 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'Maple Leaf 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Philharmonique 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Buffalo Américain 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Panda de Chine 30g', weightG: 30, category: 'piece' },
-    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Lingot 10g', weightG: 10, category: 'lingot' },
-    { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
-    { label: 'Lingot 1kg', weightG: 1000, category: 'lingot' },
-    { label: 'Autre', weightG: null, category: 'autre' },
-  ],
-  argent: [
-    { label: 'Maple Leaf 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'Philharmonique 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'American Eagle 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Panda 30g', weightG: 30, category: 'piece' },
-    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Krugerrand 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
-    { label: 'Lingot 1kg', weightG: 1000, category: 'lingot' },
-    { label: 'Autre', weightG: null, category: 'autre' },
-  ],
-  platine: [
-    { label: 'Maple Leaf 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'American Eagle 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Philharmonique 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
-    // Entrée générique conservée pour rétrocompatibilité des positions legacy stockées avec label='Pièce 1oz'
-    { label: 'Pièce 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
-    { label: 'Autre', weightG: null, category: 'autre' },
-  ],
-  palladium: [
-    { label: 'Maple Leaf 1oz', weightG: 31.10, popular: true, category: 'piece' },
-    { label: 'American Eagle 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Cook Islands 1oz', weightG: 31.10, category: 'piece' },
-    // Entrée générique conservée pour rétrocompatibilité des positions legacy stockées avec label='Pièce 1oz'
-    { label: 'Pièce 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Autre', weightG: null, category: 'autre' },
-  ],
-};
-
 const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CONFIG[MetalType]][];
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function toNum(s: string): number {
-  return parseFloat(s.replace(',', '.')) || 0;
-}
-
-function formatPriceDisplay(val: string): string {
-  const num = parseFloat(val.replace(',', '.'));
-  return !isNaN(num) && num > 0 ? formatEuro(num) : val.replace(/\./g, ',');
-}
-
-function autoFormatDate(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length > 4) {
-    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-  }
-  if (digits.length > 2) {
-    return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  }
-  return digits;
-}
-
-function formatDateDMY(d: Date): string {
-  const dd = String(d.getDate()).padStart(2, '0');
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  return `${dd}/${mm}/${d.getFullYear()}`;
-}
 
 // ─── Composant ────────────────────────────────────────────────────────────────
 
@@ -641,59 +552,6 @@ export default function AjouterScreen() {
     }
   }, [ctaConfig.action, handleContinue, handleSave]);
 
-  // ── Render chip helper ────────────────────────────────────────────────
-
-  const renderChip = (p: Product, compact = false) => {
-    const active = product?.label === p.label;
-    return (
-      <TouchableOpacity
-        key={p.label}
-        onPress={() => handleProductSelect(p)}
-        activeOpacity={0.75}
-        style={[
-          styles.productChip,
-          compact && styles.productChipCompact,
-          active && styles.productChipActive,
-        ]}>
-        {active && (
-          <View style={styles.checkBadge}>
-            <Ionicons name="checkmark" size={14} color={OrTrackColors.white} />
-          </View>
-        )}
-        {p.popular && (
-          <View style={[styles.popularBadge, compact && styles.popularBadgeCompact]}>
-            <Text style={[styles.popularBadgeText, compact && { fontSize: 8 }]}>
-              Populaire
-            </Text>
-          </View>
-        )}
-        <Text
-          numberOfLines={2}
-          ellipsizeMode="tail"
-          style={[
-            styles.productChipLabel,
-            compact && styles.productChipLabelCompact,
-            active && styles.productChipLabelActive,
-            active && { paddingRight: 32 },
-          ]}>
-          {p.category === 'autre' ? 'Autre lingot' : p.label}
-        </Text>
-        {p.weightG !== null && (
-          <Text style={[
-            styles.productChipWeight,
-            active && styles.productChipWeightActive,
-          ]}>
-            {p.weightG >= 1000
-              ? `${p.weightG / 1000} kg`
-              : p.weightG % 1 === 0
-              ? `${p.weightG} g`
-              : `${p.weightG.toFixed(2).replace('.', ',')} g`}
-          </Text>
-        )}
-      </TouchableOpacity>
-    );
-  };
-
   // ── Indicateurs pour boutons expand ────────────────────────────────────
 
   const selectedNonPopularPiece = PRODUCTS[metal].some(
@@ -802,7 +660,15 @@ export default function AjouterScreen() {
                 )}
 
                 <View style={styles.productGrid}>
-                  {visiblePieces.map(p => renderChip(p, showAllPieces))}
+                  {visiblePieces.map(p => (
+                    <ProductChip
+                      key={p.label}
+                      product={p}
+                      active={product?.label === p.label}
+                      compact={showAllPieces}
+                      onPress={handleProductSelect}
+                    />
+                  ))}
                 </View>
                 {showExpandPiecesButton && (
                   <TouchableOpacity
@@ -835,7 +701,14 @@ export default function AjouterScreen() {
                   </>
                 )}
                 <View style={styles.productGrid}>
-                  {visibleLingots.map(p => renderChip(p))}
+                  {visibleLingots.map(p => (
+                    <ProductChip
+                      key={p.label}
+                      product={p}
+                      active={product?.label === p.label}
+                      onPress={handleProductSelect}
+                    />
+                  ))}
                 </View>
                 {totalLingots > 4 && (
                   <TouchableOpacity
@@ -1240,19 +1113,6 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
 
-  // Check badge
-  checkBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: OrTrackColors.gold,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-
   // Expand buttons
   expandButton: {
     flexDirection: 'row',
@@ -1268,67 +1128,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Product chips (grid)
+  // Product chips (grid container)
   productGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     marginTop: 8,
-  },
-  productChip: {
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: OrTrackColors.card,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-    alignItems: 'center',
-    width: CHIP_WIDTH,
-    minHeight: 72,
-    overflow: 'hidden',
-  },
-  productChipActive: {
-    borderWidth: 1,
-    borderColor: OrTrackColors.gold,
-    backgroundColor: '#C9A84C14',
-  },
-  productChipLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: OrTrackColors.white,
-    textAlign: 'center',
-  },
-  productChipLabelActive: {
-    color: OrTrackColors.gold,
-    fontWeight: '700',
-  },
-  productChipWeight: {
-    fontSize: 10,
-    color: OrTrackColors.label,
-    marginTop: 2,
-  },
-  productChipWeightActive: {
-    color: 'rgba(201,168,76,0.5)',
-  },
-  categoryLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: OrTrackColors.subtext,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
-  },
-  popularBadge: {
-    backgroundColor: 'rgba(201, 168, 76, 0.15)',
-    borderRadius: 4,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginBottom: 4,
-  },
-  popularBadgeText: {
-    fontSize: 9,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
   },
 
   // Mini-récap produit (correction 3)
@@ -1351,21 +1156,6 @@ const styles = StyleSheet.create({
     borderTopColor: OrTrackColors.border,
     marginTop: 12,
     marginBottom: 12,
-  },
-
-  // Compact cards (correction 5)
-  productChipCompact: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    minHeight: 60,
-  },
-  productChipLabelCompact: {
-    fontSize: 10,
-  },
-  popularBadgeCompact: {
-    paddingVertical: 1,
-    paddingHorizontal: 5,
-    marginBottom: 2,
   },
 
   // Selection feedback (correction 8)
