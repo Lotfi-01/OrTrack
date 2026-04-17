@@ -15,13 +15,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { METAL_CONFIG, getSpot } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { PARTIAL_ESTIMATE_NOTICE, REGIME_EQUALITY_THRESHOLD, isGainFiscalEligiblePosition } from '@/utils/fiscal';
+import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
@@ -47,11 +48,6 @@ function autoFormatDate(raw: string): string {
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
-function spotValue(pos: Position, spot: number | null): number | null {
-  if (spot === null) return null;
-  return pos.quantity * (pos.weightG / OZ_TO_G) * spot;
 }
 
 // ─── Écran ──────────────────────────────────────────────────────────────────
@@ -101,7 +97,7 @@ export default function FiscaliteGlobaleScreen() {
       }
 
       const spot = getSpot(pos.metal, prices);
-      const sv = spotValue(pos, spot);
+      const sv = computePositionValue(pos, spot);
       if (sv === null) { excl.push(pos); spotMissing++; continue; }
 
       const purchaseDateParsed = parseDate(pos.purchaseDate);
@@ -114,7 +110,7 @@ export default function FiscaliteGlobaleScreen() {
       }
 
       const salePrice = sv;
-      const costPrice = pos.quantity * pos.purchasePrice;
+      const costPrice = computePositionCost(pos);
       const years = calcYearsHeld(purchaseDateParsed, saleDateParsed!);
       const tax = computeTax(salePrice, costPrice, years);
       const taxDelta = Math.abs(tax.plusValuesTax - tax.forfaitaire);

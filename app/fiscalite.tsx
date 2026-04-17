@@ -17,16 +17,16 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { METAL_CONFIG, getSpot } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { PARTIAL_ESTIMATE_NOTICE, REGIME_EQUALITY_THRESHOLD, isGainFiscalEligiblePosition } from '@/utils/fiscal';
+import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
-import { Position } from '@/types/position';
 import { usePremium } from '@/contexts/premium-context';
 
 const C = OrTrackColors;
@@ -38,11 +38,6 @@ function autoFormatDate(raw: string): string {
   if (digits.length <= 2) return digits;
   if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
-}
-
-function spotValue(pos: Position, spot: number | null): number | null {
-  if (spot === null) return null;
-  return pos.quantity * (pos.weightG / OZ_TO_G) * spot;
 }
 
 // ─── Écran ──────────────────────────────────────────────────────────────────
@@ -92,7 +87,7 @@ export default function FiscaliteScreen() {
 
   useEffect(() => {
     if (!selectedPos) return;
-    const mv = spotValue(selectedPos, getSpot(selectedPos.metal, prices));
+    const mv = computePositionValue(selectedPos, getSpot(selectedPos.metal, prices));
     if (mv !== null) setSalePriceStr(mv.toFixed(2).replace('.', ','));
   }, [selectedPos, prices]);
 
@@ -101,7 +96,7 @@ export default function FiscaliteScreen() {
     return isNaN(num) || num <= 0 ? null : num;
   }, [salePriceStr]);
 
-  const costPrice = selectedPos ? selectedPos.quantity * selectedPos.purchasePrice : null;
+  const costPrice = selectedPos ? computePositionCost(selectedPos) : null;
   const purchaseDateParsed = selectedPos ? parseDate(selectedPos.purchaseDate) : null;
   const saleDateParsed = parseDate(saleDate);
   const saleDateValid = saleDateParsed !== null;
@@ -308,7 +303,7 @@ export default function FiscaliteScreen() {
                       <Text style={st.inputHint}>
                         Valeur marché estimée :{' '}
                         {(() => {
-                          const mv = spotValue(selectedPos, getSpot(selectedPos.metal, prices));
+                          const mv = computePositionValue(selectedPos, getSpot(selectedPos.metal, prices));
                           return mv !== null ? `${formatEuro(mv)} \u20AC` : 'cours indisponible';
                         })()}
                       </Text>

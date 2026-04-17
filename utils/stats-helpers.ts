@@ -1,4 +1,4 @@
-import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { STATS } from '@/constants/stats-config';
 import { Position } from '@/types/position';
@@ -10,6 +10,7 @@ import {
   computeAbatement,
   isGainFiscalEligiblePosition,
 } from '@/utils/fiscal';
+import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 
 /** Format compact sans décimales : "12 460" au lieu de "12 460,00" */
 function fmtCompact(n: number): string {
@@ -299,10 +300,10 @@ export function computeMetalBreakdown(
     const spot = getSpot(mk, prices as any);
     const filtered = positions.filter(p => p.metal === mk);
     if (filtered.length === 0) continue;
-    const value = filtered.reduce((s, p) => s + (spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0), 0);
+    const value = filtered.reduce((s, p) => s + (computePositionValue(p, spot) ?? 0), 0);
     const gainEligible = filtered.filter(isGainFiscalEligiblePosition);
-    const cost = gainEligible.reduce((s, p) => s + p.quantity * p.purchasePrice, 0);
-    const gainValue = gainEligible.reduce((s, p) => s + (spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0), 0);
+    const cost = gainEligible.reduce((s, p) => s + computePositionCost(p), 0);
+    const gainValue = gainEligible.reduce((s, p) => s + (computePositionValue(p, spot) ?? 0), 0);
     if (value <= 0) continue;
     byMetal[mk] = { value, cost, gainValue };
     totalValue += value;

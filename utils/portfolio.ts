@@ -1,5 +1,5 @@
 import { Position } from '@/types/position';
-import { MetalType, OZ_TO_G } from '@/constants/metals';
+import { MetalType } from '@/constants/metals';
 import {
   FiscalCountdown,
   RegimeComparison,
@@ -8,6 +8,7 @@ import {
   computeRegimeComparison,
   isGainFiscalEligiblePosition,
 } from '@/utils/fiscal';
+import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 import { stripMetalFromName } from '@/utils/format';
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -46,10 +47,8 @@ export function computePositionMetrics(
   spotPrice: number | null,
 ): PositionMetrics {
   const isGainFiscalEligible = isGainFiscalEligiblePosition(pos);
-  const totalCost = isGainFiscalEligible ? pos.quantity * pos.purchasePrice : 0;
-  const currentValue = spotPrice !== null
-    ? pos.quantity * (pos.weightG / OZ_TO_G) * spotPrice
-    : null;
+  const totalCost = isGainFiscalEligible ? computePositionCost(pos) : 0;
+  const currentValue = computePositionValue(pos, spotPrice);
   const gainLoss = currentValue !== null && isGainFiscalEligible ? currentValue - totalCost : null;
   const gainPct = gainLoss !== null && totalCost > 0
     ? (gainLoss / totalCost) * 100

@@ -26,12 +26,13 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Defs, LinearGradient, Path, Stop } from 'react-native-svg';
 
-import { METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
+import { METAL_CONFIG, getSpot } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, formatPct, formatG, formatGain, stripMetalFromName, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { PARTIAL_ESTIMATE_NOTICE, isGainFiscalEligiblePosition } from '@/utils/fiscal';
+import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 import { usePositions } from '@/hooks/use-positions';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
@@ -185,8 +186,8 @@ export default function AccueilScreen() {
 
     for (const p of positions) {
       const spot = getSpot(p.metal, prices);
-      const cost = p.quantity * p.purchasePrice;
-      const val = spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0;
+      const cost = computePositionCost(p);
+      const val = computePositionValue(p, spot) ?? 0;
       const isGainFiscalEligible = isGainFiscalEligiblePosition(p);
       totalValue += val;
 

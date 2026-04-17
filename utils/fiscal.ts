@@ -1,7 +1,8 @@
 import { TAX } from '@/constants/tax';
 import { parseDate, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
-import { type MetalType, getSpot, OZ_TO_G } from '@/constants/metals';
+import { type MetalType, getSpot } from '@/constants/metals';
 import { Position } from '@/types/position';
+import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 
 /** Seuil en € en dessous duquel les deux régimes sont considérés équivalents */
 export const REGIME_EQUALITY_THRESHOLD = 1;
@@ -179,9 +180,9 @@ export function computePortfolioFiscalSummary(
       continue;
     }
     const spot = getSpot(pos.metal as MetalType, prices as any);
-    if (spot === null) continue;
-    const salePrice = pos.quantity * (pos.weightG / OZ_TO_G) * spot;
-    const costPrice = pos.quantity * pos.purchasePrice;
+    const salePrice = computePositionValue(pos, spot);
+    if (salePrice === null) continue;
+    const costPrice = computePositionCost(pos);
 
     const purchaseDate = parseDate(pos.purchaseDate);
     if (!purchaseDate) continue;
