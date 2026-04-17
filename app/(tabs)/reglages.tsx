@@ -23,6 +23,7 @@ import { STORAGE_KEYS, WIPE_STORAGE_KEYS } from '@/constants/storage-keys';
 import { resetPositionsCache, awaitPendingPositionWrites } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
 import { reportError } from '@/utils/error-reporting';
+import { deleteAuthenticatedUserServerData } from '@/services/auth-session';
 
 // ─── Clés AsyncStorage ────────────────────────────────────────────────────────
 
@@ -293,10 +294,10 @@ export default function ReglagesScreen() {
 
   // ── Suppression totale ────────────────────────────────────────────────────
 
-  // NOTE: Ce wipe supprime uniquement les données locales (AsyncStorage).
-  // Les données serveur (alertes, tokens de notification, installations) ne
-  // peuvent pas être supprimées proprement sans identité backend et RPC.
-  const wipeAllUserData = async () => {
+  // Local wipe only. Isolated so the server-aware orchestration below can call
+  // it in both the happy path (skipped/success) and the user-confirmed
+  // fallback path when the server purge failed.
+  const runLocalWipe = async (): Promise<boolean> => {
     try {
       // 1. Drainer la queue des mutations positions en cours pour empêcher un
       //    setItem stale de réécrire après le multiRemove.
@@ -311,13 +312,55 @@ export default function ReglagesScreen() {
       // 3. Invalider le cache mémoire et rediriger.
       resetPositionsCache();
       router.replace('/onboarding');
+      return true;
     } catch (error) {
       reportError(error, { scope: 'data-wipe', action: 'wipe_local_user_data' });
       Alert.alert(
         'Suppression locale impossible',
         'Les données locales n’ont pas été supprimées complètement. Réessayez avant de désinstaller ou de réinitialiser l’app.'
       );
+      return false;
     }
+  };
+
+  // Sprint 3B-1 defensive orchestration.
+  //
+  // - No Supabase session available ⇒ server purge is skipped (outcome
+  //   'skipped'). The local wipe runs exactly as before. The confirmation
+  //   wording above is accurate in this branch: only local data is touched.
+  // - Supabase session available AND RPC succeeded ⇒ server-side rows owned
+  //   by auth.uid() have been deleted and the session has been signed out.
+  //   Local wipe runs next.
+  // - Supabase session available AND RPC failed ⇒ do NOT proceed to local
+  //   wipe automatically. Present an honest choice: retry, proceed with
+  //   local-only wipe (explicitly flagged as leaving server data in place),
+  //   or cancel. Never claim server data was removed when it was not.
+  //
+  // Legacy rows with owner_id IS NULL are not removed by the RPC by design;
+  // this is an accepted Sprint 3B-1 limitation covered by the product wording
+  // in the user-facing confirmation steps above.
+  const wipeAllUserData = async () => {
+    const outcome = await deleteAuthenticatedUserServerData();
+
+    if (outcome === 'failed') {
+      Alert.alert(
+        'Suppression serveur impossible',
+        'Vos données serveur (alertes, tokens de notification, installations) n’ont pas pu être supprimées. Vous pouvez réessayer, ou continuer en supprimant uniquement les données stockées sur cet appareil — vos données serveur resteront alors en place.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Réessayer', onPress: wipeAllUserData },
+          {
+            text: 'Continuer localement',
+            style: 'destructive',
+            onPress: () => { runLocalWipe(); },
+          },
+        ],
+      );
+      return;
+    }
+
+    // outcome is 'skipped' (no session) or 'success' (server purge + signOut).
+    await runLocalWipe();
   };
 
   const confirmWipe = () => {

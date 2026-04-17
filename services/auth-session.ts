@@ -1,6 +1,8 @@
 import { supabase } from '../lib/supabase'
 import { reportError } from '@/utils/error-reporting'
 
+export type ServerAccountDeletionOutcome = 'skipped' | 'success' | 'failed'
+
 // Transition-only Sprint 3A helper.
 // Reads the current Supabase session if one happens to exist. This is a
 // technical probe, not an auth flow: no sign-in, sign-up or session creation
@@ -35,4 +37,65 @@ export async function getCurrentSessionUserId(): Promise<string | null> {
     reportError(error, { scope: 'auth_session', action: 'get_current_session' })
     return null
   }
+}
+
+// Sprint 3B-1 defensive wiring.
+// Invokes the backend RPC `public.delete_current_user_data()` when (and only
+// when) a usable Supabase session is present, then signs the user out.
+//
+// Contract:
+//   - 'skipped'  : no session / no client ⇒ nothing attempted on the server.
+//                  Caller must still perform local wipe and never claim that
+//                  server data was deleted.
+//   - 'success'  : RPC call returned without error. A best-effort signOut is
+//                  attempted after the RPC; a signOut failure does NOT
+//                  downgrade the outcome because the server purge already
+//                  happened. The caller can proceed to the local wipe.
+//   - 'failed'   : RPC call errored or threw. signOut is NOT attempted
+//                  (keeping the session alive lets the user retry). The
+//                  caller must present an honest choice and must not claim
+//                  the server data was deleted.
+//
+// This function does not create sessions and does not trigger any auth UX.
+// Until the RLS target is activated the RPC only removes rows where
+// owner_id = auth.uid(); legacy rows with owner_id IS NULL stay on the
+// server by design.
+export async function deleteAuthenticatedUserServerData(): Promise<ServerAccountDeletionOutcome> {
+  const userId = await getCurrentSessionUserId()
+  if (!userId) return 'skipped'
+  if (!supabase) return 'skipped'
+
+  try {
+    const { error } = await supabase.rpc('delete_current_user_data')
+    if (error) {
+      reportError(error, {
+        scope: 'account_deletion',
+        action: 'delete_current_user_data_rpc',
+      })
+      return 'failed'
+    }
+  } catch (error) {
+    reportError(error, {
+      scope: 'account_deletion',
+      action: 'delete_current_user_data_rpc',
+    })
+    return 'failed'
+  }
+
+  try {
+    const { error } = await supabase.auth.signOut()
+    if (error) {
+      reportError(error, {
+        scope: 'account_deletion',
+        action: 'sign_out_after_rpc',
+      })
+    }
+  } catch (error) {
+    reportError(error, {
+      scope: 'account_deletion',
+      action: 'sign_out_after_rpc',
+    })
+  }
+
+  return 'success'
 }
