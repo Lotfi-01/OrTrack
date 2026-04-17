@@ -31,25 +31,27 @@ export async function registerForPushNotifications(): Promise<string | null> {
     const tokenData = await Notifications.getExpoPushTokenAsync({
       projectId: EAS_PROJECT_ID,
     })
-    const token = tokenData.data
+    const notificationToken = tokenData.data
 
     try {
-      await AsyncStorage.setItem(STORAGE_KEYS.pushToken, token)
+      await AsyncStorage.setItem(STORAGE_KEYS.notificationToken, notificationToken)
     } catch (error) {
-      reportError(error, { scope: 'notifications', action: 'store_push_token' })
+      reportError(error, { scope: 'notifications', action: 'store_notification_token' })
     }
 
-    if (!supabase) return token
+    if (!supabase) return notificationToken
 
     try {
+      // Transport token registry only. This table must not be used as business
+      // ownership; alert ownership requires a separate backend identity model.
       await supabase
         .from('push_tokens')
-        .upsert({ token }, { onConflict: 'token' })
+        .upsert({ token: notificationToken }, { onConflict: 'token' })
     } catch (error) {
-      reportError(error, { scope: 'notifications', action: 'upsert_push_token' })
+      reportError(error, { scope: 'notifications', action: 'upsert_notification_token' })
     }
 
-    return token
+    return notificationToken
   } catch (error) {
     reportError(error, { scope: 'notifications', action: 'register_for_push_notifications' })
     return null

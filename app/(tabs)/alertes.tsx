@@ -23,8 +23,10 @@ import {
   createAlert,
   deleteAlert,
   updateAlert,
+  createLegacyNotificationTokenAlertScope,
   type Alert,
   type Condition,
+  type LegacyNotificationTokenAlertScope,
 } from '../../services/alerts'
 import {
   type MetalType,
@@ -48,8 +50,8 @@ function parseTargetPriceInput(value: string): number | null {
 
 export default function AlertesScreen() {
   const params = useLocalSearchParams<{ metal?: string }>()
-  // Expo push token: notification routing token. Backend v1 also uses it to
-  // scope alerts until a durable server-side ownership model exists.
+  // Expo notification token: transport only. Backend v1 still uses it as a
+  // legacy alert access scope until real ownership/RLS/RPC exists.
   const [notificationToken, setNotificationToken] = useState<string | null>(null)
   const [tokenLoading, setTokenLoading] = useState(true)
   const [alerts, setAlerts] = useState<Alert[]>([])
@@ -87,9 +89,10 @@ export default function AlertesScreen() {
     async function init() {
       setTokenLoading(true)
       try {
-        const token = await AsyncStorage.getItem(STORAGE_KEYS.pushToken)
-        setNotificationToken(token)
-        if (token) await loadAlerts(token)
+        const storedNotificationToken = await AsyncStorage.getItem(STORAGE_KEYS.notificationToken)
+        setNotificationToken(storedNotificationToken)
+        const legacyScope = createLegacyNotificationTokenAlertScope(storedNotificationToken)
+        if (legacyScope) await loadAlerts(legacyScope)
       } catch (error) {
         reportError(error, { scope: 'alerts', action: 'load_notification_token' })
       } finally {
@@ -99,10 +102,10 @@ export default function AlertesScreen() {
     init()
   }, [])
 
-  async function loadAlerts(token: string) {
+  async function loadAlerts(scope: LegacyNotificationTokenAlertScope) {
     setAlertsLoading(true)
     try {
-      const data = await getAlerts(token)
+      const data = await getAlerts(scope)
       setAlerts(data)
     } catch (error) {
       reportError(error, { scope: 'alerts', action: 'load_alerts' })
@@ -144,12 +147,12 @@ export default function AlertesScreen() {
       return
     }
 
-    // Obtenir un token push si absent (demande de permission à ce moment)
-    let token = notificationToken
-    if (!token) {
-      token = await registerForPushNotifications()
-      if (token) {
-        setNotificationToken(token)
+    // Obtenir un token de notification si absent (demande de permission à ce moment)
+    let currentNotificationToken = notificationToken
+    if (!currentNotificationToken) {
+      currentNotificationToken = await registerForPushNotifications()
+      if (currentNotificationToken) {
+        setNotificationToken(currentNotificationToken)
       } else {
         // Permission refusée — vérifier si refus définitif
         try {
@@ -189,6 +192,15 @@ export default function AlertesScreen() {
       }
     }
 
+    const legacyScope = createLegacyNotificationTokenAlertScope(currentNotificationToken)
+    if (!legacyScope) {
+      RNAlert.alert(
+        'Alerte impossible',
+        'Cette version ne peut pas enregistrer une alerte serveur sans token de notification valide.'
+      )
+      return
+    }
+
     // Si création (pas édition), vérifier la limite premium
     if (!editingAlertId && !canAddAlert(alerts.length)) {
       closeModal()
@@ -201,7 +213,7 @@ export default function AlertesScreen() {
     try {
       let success: boolean
       if (editingAlertId) {
-        const result = await updateAlert(token, editingAlertId, {
+        const result = await updateAlert(legacyScope, editingAlertId, {
           metal: selectedMetal,
           condition: selectedCondition,
           target_price: parsedTargetPrice,
@@ -209,7 +221,7 @@ export default function AlertesScreen() {
         success = result.success
       } else {
         success = await createAlert(
-          token,
+          legacyScope,
           selectedMetal,
           selectedCondition,
           parsedTargetPrice
@@ -219,7 +231,7 @@ export default function AlertesScreen() {
       if (success) {
         closeModal()
         setTargetPrice('')
-        await loadAlerts(token)
+        await loadAlerts(legacyScope)
       } else {
         RNAlert.alert('Alerte impossible', 'L’alerte n’a pas pu être enregistrée. Réessayez.')
       }
@@ -241,14 +253,18 @@ export default function AlertesScreen() {
           text: 'Supprimer',
           style: 'destructive',
           onPress: async () => {
-            if (!notificationToken) {
-              RNAlert.alert('Suppression impossible', 'Le token de notification est introuvable. Réessayez.')
+            const legacyScope = createLegacyNotificationTokenAlertScope(notificationToken)
+            if (!legacyScope) {
+              RNAlert.alert(
+                'Suppression impossible',
+                'Cette version ne peut supprimer une alerte serveur que si le token de notification local est encore disponible.'
+              )
               return
             }
             try {
-              const result = await deleteAlert(notificationToken, alertId)
+              const result = await deleteAlert(legacyScope, alertId)
               if (result.success) {
-                await loadAlerts(notificationToken)
+                await loadAlerts(legacyScope)
               } else {
                 RNAlert.alert('Suppression impossible', 'Cette alerte n’a pas pu être supprimée. Réessayez.')
               }

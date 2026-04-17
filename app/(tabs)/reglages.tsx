@@ -294,8 +294,8 @@ export default function ReglagesScreen() {
   // ── Suppression totale ────────────────────────────────────────────────────
 
   // NOTE: Ce wipe supprime uniquement les données locales (AsyncStorage).
-  // Les données côté serveur (alertes, push token, install) ne sont pas supprimées.
-  // Suppression distante à implémenter en v1.1.
+  // Les données serveur (alertes, tokens de notification, installations) ne
+  // peuvent pas être supprimées proprement sans identité backend et RPC.
   const wipeAllUserData = async () => {
     try {
       // 1. Drainer la queue des mutations positions en cours pour empêcher un
@@ -323,7 +323,7 @@ export default function ReglagesScreen() {
   const confirmWipe = () => {
     Alert.alert(
       'Supprimer mes données locales',
-      'Cette action efface uniquement les données stockées sur cet appareil : portefeuille, réglages et caches. Les alertes, push tokens et installations déjà envoyés au serveur ne sont pas supprimés dans cette version. Pensez à partager vos données avant.',
+      'Cette action efface uniquement les données stockées sur cet appareil : portefeuille, réglages et caches. Les alertes serveur, tokens de notification et installations déjà envoyés au serveur ne sont pas supprimés dans cette version. Pensez à partager vos données avant.',
       [
         { text: 'Annuler', style: 'cancel' },
         { text: 'Partager', onPress: sharePositionsAsJson },
@@ -518,7 +518,7 @@ export default function ReglagesScreen() {
               onPress={() =>
                 Alert.alert(
                   'Politique de confidentialité',
-                  'Votre portefeuille et vos préférences sont stockés localement sur votre appareil. Les alertes de prix et les notifications push nécessitent un échange avec nos serveurs : push token et paramètres d\'alerte. OrTrack ne collecte pas votre nom, votre email ni de compte utilisateur. Un identifiant technique anonyme est utilisé pour le suivi des installations.'
+                  'Votre portefeuille et vos préférences sont stockés localement sur votre appareil. Les alertes de prix et les notifications push nécessitent un échange avec nos serveurs : token de notification Expo et paramètres d\'alerte. Dans cette version, ce token sert aussi à retrouver les alertes côté serveur, mais ce n\'est pas une identité utilisateur. OrTrack ne collecte pas votre nom, votre email ni de compte utilisateur. Un identifiant technique anonyme est utilisé pour le suivi des installations.'
                 )
               }>
               <Text style={styles.rowLabel}>Politique de confidentialité</Text>

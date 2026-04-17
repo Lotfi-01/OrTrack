@@ -136,7 +136,10 @@ Deno.serve(async (req) => {
 
       if (!isTriggered) continue
 
-      if (!alert.push_token || typeof alert.push_token !== 'string' || alert.push_token.trim() === '') {
+      // alerts.push_token is only the Expo notification destination. It is not
+      // ownership; this cron runs with service_role and processes active rows.
+      const notificationToken = alert.push_token
+      if (!notificationToken || typeof notificationToken !== 'string' || notificationToken.trim() === '') {
         console.log(`Alerte ${alert.id} déclenchée mais token push absent — laissée active`)
         continue
       }
@@ -150,7 +153,7 @@ Deno.serve(async (req) => {
       triggered.push({
         alertId: alert.id,
         message: {
-          to: alert.push_token,
+          to: notificationToken,
           title: `🔔 Alerte ${label}`,
           body: `${label} ${conditionLabel} ${fmt(targetPrice)}€ — actuellement ${fmt(currentPrice)}€`,
           sound: 'default',

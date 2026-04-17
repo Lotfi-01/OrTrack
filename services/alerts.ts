@@ -6,6 +6,8 @@ export type Condition = 'above' | 'below'
 
 export interface Alert {
   id: string
+  // Legacy database column used by the alert cron as Expo notification routing.
+  // This is not a business owner and must not be treated as durable identity.
   push_token: string
   metal: MetalType
   condition: Condition
@@ -18,9 +20,24 @@ export interface Alert {
 export type AlertMutationResult = { success: boolean; error?: string }
 
 export type NotificationToken = string
+export type LegacyNotificationTokenAlertScope = {
+  kind: 'legacy_notification_token_scope'
+  notificationToken: NotificationToken
+}
 
 function hasValidNotificationToken(notificationToken: NotificationToken): boolean {
   return notificationToken.trim().length > 0
+}
+
+export function createLegacyNotificationTokenAlertScope(
+  notificationToken: NotificationToken | null | undefined,
+): LegacyNotificationTokenAlertScope | null {
+  if (!notificationToken || !hasValidNotificationToken(notificationToken)) return null
+
+  return {
+    kind: 'legacy_notification_token_scope',
+    notificationToken,
+  }
 }
 
 function hasValidTargetPrice(targetPrice: number): boolean {
@@ -34,22 +51,22 @@ function reportAlertError(action: string, error: unknown, metadata?: Record<stri
 function mutationResult(data: Pick<Alert, 'id'>[] | null, error: { message?: string } | null): AlertMutationResult {
   if (error) return { success: false, error: error.message ?? 'supabase_error' }
   const affectedRows = data?.length ?? 0
-  if (affectedRows === 0) return { success: false, error: 'not_found_or_not_owner' }
+  if (affectedRows === 0) return { success: false, error: 'not_found_or_not_in_legacy_scope' }
   if (affectedRows > 1) return { success: false, error: 'integrity_anomaly_multiple_rows' }
   return { success: true }
 }
 
-// Current v1 backend schema scopes alerts by push_token. This token is a
-// notification routing token, not a durable business owner. Keep this filter
-// until the server has account/device ownership, RLS, and RPCs.
-export async function getAlerts(notificationToken: NotificationToken): Promise<Alert[]> {
-  if (!hasValidNotificationToken(notificationToken)) return []
+// Current v1 backend schema partitions mobile access by the notification token
+// stored in alerts.push_token. This is a legacy transport-token scope, not
+// ownership. Real ownership requires a backend identity, RLS, and RPC migration.
+export async function getAlerts(scope: LegacyNotificationTokenAlertScope): Promise<Alert[]> {
+  if (!hasValidNotificationToken(scope.notificationToken)) return []
   if (!supabase) return []
   try {
     const { data, error } = await supabase
       .from('alerts')
       .select('*')
-      .eq('push_token', notificationToken)
+      .eq('push_token', scope.notificationToken)
       .eq('is_active', true)
       .order('created_at', { ascending: false })
     if (error) {
@@ -64,14 +81,15 @@ export async function getAlerts(notificationToken: NotificationToken): Promise<A
 }
 
 export async function createAlert(
-  notificationToken: NotificationToken,
+  scope: LegacyNotificationTokenAlertScope,
   metal: MetalType,
   condition: Condition,
   targetPrice: number
 ): Promise<boolean> {
-  if (!hasValidNotificationToken(notificationToken) || !hasValidTargetPrice(targetPrice)) {
+  if (!hasValidNotificationToken(scope.notificationToken) || !hasValidTargetPrice(targetPrice)) {
     reportAlertError('create_alert_invalid_payload', new Error('invalid_alert_payload'), {
-      hasNotificationToken: hasValidNotificationToken(notificationToken),
+      scope: scope.kind,
+      hasNotificationToken: hasValidNotificationToken(scope.notificationToken),
       metal,
       condition,
       targetPrice,
@@ -81,7 +99,7 @@ export async function createAlert(
   if (!supabase) return false
   try {
     const { error } = await supabase.from('alerts').insert({
-      push_token: notificationToken,
+      push_token: scope.notificationToken,
       metal,
       condition,
       target_price: targetPrice,
@@ -99,8 +117,11 @@ export async function createAlert(
   }
 }
 
-export async function deleteAlert(notificationToken: NotificationToken, alertId: string): Promise<AlertMutationResult> {
-  if (!hasValidNotificationToken(notificationToken) || alertId.trim().length === 0) {
+export async function deleteAlert(
+  scope: LegacyNotificationTokenAlertScope,
+  alertId: string,
+): Promise<AlertMutationResult> {
+  if (!hasValidNotificationToken(scope.notificationToken) || alertId.trim().length === 0) {
     return { success: false, error: 'invalid_alert_delete_payload' }
   }
   if (!supabase) return { success: false, error: 'supabase_unavailable' }
@@ -109,7 +130,7 @@ export async function deleteAlert(notificationToken: NotificationToken, alertId:
       .from('alerts')
       .update({ is_active: false })
       .eq('id', alertId)
-      .eq('push_token', notificationToken)
+      .eq('push_token', scope.notificationToken)
       .select('id')
     const result = mutationResult(data, error)
     if (!result.success) reportAlertError('delete_alert', new Error(result.error), { alertId })
@@ -121,7 +142,7 @@ export async function deleteAlert(notificationToken: NotificationToken, alertId:
 }
 
 export async function updateAlert(
-  notificationToken: NotificationToken,
+  scope: LegacyNotificationTokenAlertScope,
   alertId: string,
   updates: {
     metal: MetalType;
@@ -130,7 +151,7 @@ export async function updateAlert(
   },
 ): Promise<AlertMutationResult> {
   if (
-    !hasValidNotificationToken(notificationToken)
+    !hasValidNotificationToken(scope.notificationToken)
     || alertId.trim().length === 0
     || !hasValidTargetPrice(updates.target_price)
   ) {
@@ -146,7 +167,7 @@ export async function updateAlert(
         target_price: updates.target_price,
       })
       .eq('id', alertId)
-      .eq('push_token', notificationToken)
+      .eq('push_token', scope.notificationToken)
       .select('id')
     const result = mutationResult(data, error)
     if (!result.success) {

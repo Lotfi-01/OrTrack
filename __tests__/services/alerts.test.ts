@@ -5,7 +5,11 @@ jest.mock('../../lib/supabase', () => ({
 }))
 
 import { supabase } from '../../lib/supabase'
-import { deleteAlert, updateAlert } from '../../services/alerts'
+import {
+  createLegacyNotificationTokenAlertScope,
+  deleteAlert,
+  updateAlert,
+} from '../../services/alerts'
 
 const mockFrom = supabase?.from as jest.Mock
 
@@ -20,15 +24,16 @@ function mockMutationResult(result: { data: { id: string }[] | null; error: { me
   return { update, eqId, eqPushToken, select }
 }
 
-describe('alerts service ownership mutations', () => {
+describe('alerts service legacy notification token scoped mutations', () => {
   beforeEach(() => {
     jest.clearAllMocks()
   })
 
   it('deleteAlert returns success with the correct token', async () => {
     const chain = mockMutationResult({ data: [{ id: 'alert-1' }], error: null })
+    const scope = createLegacyNotificationTokenAlertScope('token-1')!
 
-    await expect(deleteAlert('token-1', 'alert-1')).resolves.toEqual({ success: true })
+    await expect(deleteAlert(scope, 'alert-1')).resolves.toEqual({ success: true })
     expect(mockFrom).toHaveBeenCalledWith('alerts')
     expect(chain.update).toHaveBeenCalledWith({ is_active: false })
     expect(chain.eqId).toHaveBeenCalledWith('id', 'alert-1')
@@ -36,19 +41,21 @@ describe('alerts service ownership mutations', () => {
     expect(chain.select).toHaveBeenCalledWith('id')
   })
 
-  it('deleteAlert returns not_found_or_not_owner with an incorrect token', async () => {
+  it('deleteAlert returns not_found_or_not_in_legacy_scope with an incorrect token', async () => {
     mockMutationResult({ data: [], error: null })
+    const scope = createLegacyNotificationTokenAlertScope('wrong-token')!
 
-    await expect(deleteAlert('wrong-token', 'alert-1')).resolves.toEqual({
+    await expect(deleteAlert(scope, 'alert-1')).resolves.toEqual({
       success: false,
-      error: 'not_found_or_not_owner',
+      error: 'not_found_or_not_in_legacy_scope',
     })
   })
 
   it('deleteAlert returns the Supabase error message', async () => {
     mockMutationResult({ data: null, error: { message: 'delete failed' } })
+    const scope = createLegacyNotificationTokenAlertScope('token-1')!
 
-    await expect(deleteAlert('token-1', 'alert-1')).resolves.toEqual({
+    await expect(deleteAlert(scope, 'alert-1')).resolves.toEqual({
       success: false,
       error: 'delete failed',
     })
@@ -56,9 +63,10 @@ describe('alerts service ownership mutations', () => {
 
   it('updateAlert returns success with the correct token', async () => {
     const chain = mockMutationResult({ data: [{ id: 'alert-1' }], error: null })
+    const scope = createLegacyNotificationTokenAlertScope('token-1')!
 
     await expect(
-      updateAlert('token-1', 'alert-1', {
+      updateAlert(scope, 'alert-1', {
         metal: 'or',
         condition: 'above',
         target_price: 1234,
@@ -74,26 +82,28 @@ describe('alerts service ownership mutations', () => {
     expect(chain.select).toHaveBeenCalledWith('id')
   })
 
-  it('updateAlert returns not_found_or_not_owner with an incorrect token', async () => {
+  it('updateAlert returns not_found_or_not_in_legacy_scope with an incorrect token', async () => {
     mockMutationResult({ data: [], error: null })
+    const scope = createLegacyNotificationTokenAlertScope('wrong-token')!
 
     await expect(
-      updateAlert('wrong-token', 'alert-1', {
+      updateAlert(scope, 'alert-1', {
         metal: 'argent',
         condition: 'below',
         target_price: 42,
       }),
     ).resolves.toEqual({
       success: false,
-      error: 'not_found_or_not_owner',
+      error: 'not_found_or_not_in_legacy_scope',
     })
   })
 
   it('updateAlert returns the Supabase error message', async () => {
     mockMutationResult({ data: null, error: { message: 'update failed' } })
+    const scope = createLegacyNotificationTokenAlertScope('token-1')!
 
     await expect(
-      updateAlert('token-1', 'alert-1', {
+      updateAlert(scope, 'alert-1', {
         metal: 'platine',
         condition: 'above',
         target_price: 999,
