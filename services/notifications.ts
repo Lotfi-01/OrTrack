@@ -4,6 +4,7 @@ import { Platform } from 'react-native'
 import { supabase } from '../lib/supabase'
 import { STORAGE_KEYS } from '@/constants/storage-keys'
 import { reportError } from '@/utils/error-reporting'
+import { getCurrentSessionUserId } from './auth-session'
 
 const EAS_PROJECT_ID = 'db42a187-7b2b-44e3-9a14-65210a86a1b6'
 
@@ -42,11 +43,19 @@ export async function registerForPushNotifications(): Promise<string | null> {
     if (!supabase) return notificationToken
 
     try {
-      // Transport token registry only. This table must not be used as business
-      // ownership; alert ownership requires a separate backend identity model.
+      // Transport token registry. The `token` column is the legacy routing key
+      // and remains the onConflict target. owner_id is populated only when a
+      // real Supabase session is available at write time; otherwise the row
+      // stays legacy-unowned. The notification token is never used as owner.
+      // This is structural alignment with the owner-based migration and is
+      // NOT effective access control until target RLS is activated.
+      const ownerId = await getCurrentSessionUserId()
+      const payload: Record<string, unknown> = { token: notificationToken }
+      if (ownerId) payload.owner_id = ownerId
+
       await supabase
         .from('push_tokens')
-        .upsert({ token: notificationToken }, { onConflict: 'token' })
+        .upsert(payload, { onConflict: 'token' })
     } catch (error) {
       reportError(error, { scope: 'notifications', action: 'upsert_notification_token' })
     }
