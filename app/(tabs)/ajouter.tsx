@@ -188,6 +188,15 @@ export default function AjouterScreen() {
   const dateRef = useRef(purchaseDate);
   dateRef.current = purchaseDate;
 
+  // ── Focus effect : réarme le guard de sauvegarde à chaque retour d'écran
+  // (le composant ne se démonte pas entre navigations Expo Router tabs)
+  useFocusEffect(
+    useCallback(() => {
+      savingRef.current = false;
+      setSaving(false);
+    }, [])
+  );
+
   // ── Focus effect : edit session resolution ──────────────────────────────
 
   useFocusEffect(
