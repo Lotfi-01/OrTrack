@@ -13,7 +13,6 @@ import { router } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -32,6 +31,7 @@ import { TAX } from '@/constants/tax';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, formatPct, formatG, formatGain, stripMetalFromName, JOURS_FR, MOIS_FR } from '@/utils/format';
+import { PARTIAL_ESTIMATE_NOTICE, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import { usePositions } from '@/hooks/use-positions';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
@@ -179,29 +179,38 @@ export default function AccueilScreen() {
   const portfolio = useMemo(() => {
     let totalValue = 0;
     let totalCost = 0;
-    const byMetal: Record<string, { count: number; totalG: number; value: number; cost: number }> = {};
+    let gainValue = 0;
+    let excludedFromGainCount = 0;
+    const byMetal: Record<string, { count: number; totalG: number; value: number; cost: number; gainValue: number; excludedFromGainCount: number }> = {};
 
     for (const p of positions) {
       const spot = getSpot(p.metal, prices);
       const cost = p.quantity * p.purchasePrice;
-      totalCost += cost;
       const val = spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0;
+      const isGainFiscalEligible = isGainFiscalEligiblePosition(p);
       totalValue += val;
 
-      if (!byMetal[p.metal]) byMetal[p.metal] = { count: 0, totalG: 0, value: 0, cost: 0 };
+      if (!byMetal[p.metal]) byMetal[p.metal] = { count: 0, totalG: 0, value: 0, cost: 0, gainValue: 0, excludedFromGainCount: 0 };
       byMetal[p.metal].count += p.quantity;
       byMetal[p.metal].totalG += p.quantity * p.weightG;
       byMetal[p.metal].value += val;
-      byMetal[p.metal].cost += cost;
+      if (isGainFiscalEligible) {
+        totalCost += cost;
+        gainValue += val;
+        byMetal[p.metal].cost += cost;
+        byMetal[p.metal].gainValue += val;
+      } else {
+        excludedFromGainCount++;
+        byMetal[p.metal].excludedFromGainCount++;
+      }
     }
 
-    const gain = totalCost > 0 ? totalValue - totalCost : 0;
+    const gain = totalCost > 0 ? gainValue - totalCost : 0;
     const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
-    // Affiché uniquement sous le guard `portfolio.gain > 0` — le calcul
-    // forfaitaire reste donc toujours pertinent à cet endroit.
-    const netEstime = totalValue - (totalValue * TAX.forfaitaireRate) - totalCost;
+    // Affiché pour tout résultat (positif, négatif, nul) dès qu'il y a des positions.
+    const netEstime = gainValue - (gainValue * TAX.forfaitaireRate) - totalCost;
 
-    return { totalValue, totalCost, gain, gainPct, netEstime, byMetal };
+    return { totalValue, totalCost, gain, gainPct, netEstime, byMetal, excludedFromGainCount, hasPartialEstimate: excludedFromGainCount > 0 };
   }, [positions, prices]);
 
   const hasPositions = positions.length > 0;
@@ -359,7 +368,7 @@ export default function AccueilScreen() {
                 </View>
               )}
 
-              {hasPositions && portfolio.gain > 0 && (() => {
+              {hasPositions && (() => {
                 const netG = formatGain(portfolio.netEstime);
                 const netColor = masked
                   ? C.textDim
@@ -368,13 +377,16 @@ export default function AccueilScreen() {
                     : netG.state === 'positive' ? C.green : C.red;
                 return (
                   <View style={[st.netBlock, masked && st.netMasked]}>
-                    <Text style={st.netLabel}>Net estimé après taxe</Text>
+                    <Text style={st.netLabel}>Résultat net estimé</Text>
                     <Text style={[st.netValue, { color: netColor }]}>
                       {m(`${netG.text} ${currencySymbol}`)}
                     </Text>
                   </View>
                 );
               })()}
+              {hasPositions && portfolio.hasPartialEstimate && (
+                <Text style={st.partialNotice}>{PARTIAL_ESTIMATE_NOTICE}</Text>
+              )}
             </>
           ) : spotError ? (
             <Text style={{ color: C.textMuted, fontSize: 12, marginTop: 4, textAlign: 'center' }}>Cours indisponibles</Text>
@@ -413,7 +425,7 @@ export default function AccueilScreen() {
           {Object.entries(portfolio.byMetal).map(([mk, data], i) => {
             const cfg = METAL_CONFIG[mk as MetalType];
             if (!cfg) return null;
-            const net = data.value - data.cost;
+            const net = data.cost > 0 ? data.gainValue - data.cost : 0;
             const metalPositions = positions.filter(p => p.metal === mk);
             const isSinglePosition = metalPositions.length === 1;
             const title = isSinglePosition
@@ -576,6 +588,8 @@ export default function AccueilScreen() {
         )}
 
         {/* ── 4b. RADAR PRIME ─────────────────────────────── */}
+        {/* SCREENSHOT MODE — Radar Prime masqué temporairement */}
+        {false && (
         <TouchableOpacity
           style={st.radarTeaserCard}
           activeOpacity={0.85}
@@ -609,6 +623,7 @@ export default function AccueilScreen() {
             <Text style={st.radarTeaserInline}>Disponible prochainement.</Text>
           )}
         </TouchableOpacity>
+        )}
 
         {/* ── 5. ALERTES ─────────────────────────────────── */}
         <TouchableOpacity style={st.alertCard} onPress={() => router.replace({ pathname: '/(tabs)/alertes' as any, params: { metal: selectedMetal.symbol } })} activeOpacity={0.7}>
@@ -710,6 +725,7 @@ const st = StyleSheet.create({
   netMasked: { backgroundColor: 'rgba(245,240,232,0.02)', borderColor: 'rgba(245,240,232,0.06)' },
   netLabel: { color: C.textDim, fontSize: 12 },
   netValue: { color: C.gold, fontSize: 17, fontWeight: '700' },
+  partialNotice: { color: C.textDim, fontSize: 11, lineHeight: 16, marginTop: 8 },
 
   ctaFiscal: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 12, paddingVertical: 12, marginTop: 14 },
   ctaFiscalText: { color: C.gold, fontSize: 13.5, fontWeight: '700', textAlign: 'center' },

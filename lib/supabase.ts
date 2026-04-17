@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 import AsyncStorage from '@react-native-async-storage/async-storage'
+import { reportError } from '@/utils/error-reporting'
 
 let supabaseInstance: SupabaseClient | null = null;
 
@@ -24,8 +25,8 @@ try {
       },
     });
   }
-} catch {
-  // Supabase init failed — app runs without backend
+} catch (error) {
+  reportError(error, { scope: 'supabase', action: 'init_client' })
 }
 
 export const supabase = supabaseInstance;

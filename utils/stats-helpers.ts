@@ -8,6 +8,7 @@ import {
   PortfolioFiscalSummary,
   computeFiscalCountdown,
   computeAbatement,
+  isGainFiscalEligiblePosition,
 } from '@/utils/fiscal';
 
 /** Format compact sans décimales : "12 460" au lieu de "12 460,00" */
@@ -113,8 +114,8 @@ export function selectInsight(
         return {
           type: 'fiscal-watch',
           title: 'POSITION À SURVEILLER',
-          phrase: `${stripMetalFromName(pf.pos.product)} \u00B7 prochain palier dans ${monthsToTier} mois.`,
-          subtext: 'L\u2019abattement sur plus-value augmente par palier.',
+          phrase: `${stripMetalFromName(pf.pos.product)} \u00B7 palier fiscal dans ${monthsToTier} mois.`,
+          subtext: 'Ce palier peut améliorer votre net.',
           method: 'Abattement progressif \u00B7 art. 150 VI CGI',
         };
       }
@@ -293,22 +294,24 @@ export function computeMetalBreakdown(
   let totalGain = 0;
 
   // First pass: compute values
-  const byMetal: Record<string, { value: number; cost: number }> = {};
+  const byMetal: Record<string, { value: number; cost: number; gainValue: number }> = {};
   for (const mk of metalKeys) {
     const spot = getSpot(mk, prices as any);
     const filtered = positions.filter(p => p.metal === mk);
     if (filtered.length === 0) continue;
     const value = filtered.reduce((s, p) => s + (spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0), 0);
-    const cost = filtered.reduce((s, p) => s + p.quantity * p.purchasePrice, 0);
+    const gainEligible = filtered.filter(isGainFiscalEligiblePosition);
+    const cost = gainEligible.reduce((s, p) => s + p.quantity * p.purchasePrice, 0);
+    const gainValue = gainEligible.reduce((s, p) => s + (spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0), 0);
     if (value <= 0) continue;
-    byMetal[mk] = { value, cost };
+    byMetal[mk] = { value, cost, gainValue };
     totalValue += value;
-    totalGain += value - cost;
+    totalGain += cost > 0 ? gainValue - cost : 0;
   }
 
   // Second pass: compute ratios
   for (const [mk, data] of Object.entries(byMetal)) {
-    const gainEur = data.value - data.cost;
+    const gainEur = data.cost > 0 ? data.gainValue - data.cost : 0;
     result.push({
       metal: mk as MetalType,
       name: METAL_CONFIG[mk as MetalType].name,

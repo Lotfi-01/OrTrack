@@ -5,6 +5,11 @@ import { Position } from '@/types/position';
 
 /** Seuil en € en dessous duquel les deux régimes sont considérés équivalents */
 export const REGIME_EQUALITY_THRESHOLD = 1;
+export const PARTIAL_ESTIMATE_NOTICE = "Estimation partielle : les positions à prix d'achat nul sont exclues des gains, du net estimé et de la fiscalité.";
+
+export function isGainFiscalEligiblePosition(pos: Pick<Position, 'purchasePrice'>): boolean {
+  return Number.isFinite(pos.purchasePrice) && pos.purchasePrice > 0;
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -138,6 +143,8 @@ export type PortfolioFiscalSummary = {
   bestRegime: 'forfaitaire' | 'plusvalues' | null;
   delta: number;
   isEquality: boolean;
+  excludedFromFiscalCount: number;
+  hasPartialEstimate: boolean;
   /** Per-position fiscal data (for insights) */
   positionFiscals: {
     pos: Position;
@@ -164,13 +171,17 @@ export function computePortfolioFiscalSummary(
 ): PortfolioFiscalSummary | null {
   const now = new Date();
   const positionFiscals: PortfolioFiscalSummary['positionFiscals'] = [];
+  let excludedFromFiscalCount = 0;
 
   for (const pos of positions) {
+    if (!isGainFiscalEligiblePosition(pos)) {
+      excludedFromFiscalCount++;
+      continue;
+    }
     const spot = getSpot(pos.metal as MetalType, prices as any);
     if (spot === null) continue;
     const salePrice = pos.quantity * (pos.weightG / OZ_TO_G) * spot;
     const costPrice = pos.quantity * pos.purchasePrice;
-    if (!Number.isFinite(costPrice) || costPrice <= 0) continue;
 
     const purchaseDate = parseDate(pos.purchaseDate);
     if (!purchaseDate) continue;
@@ -212,6 +223,8 @@ export function computePortfolioFiscalSummary(
     totalForfaitaireTax, totalPVTax,
     netForfaitaire, netPlusValues,
     bestNet, bestRegime, delta, isEquality,
+    excludedFromFiscalCount,
+    hasPartialEstimate: excludedFromFiscalCount > 0,
     positionFiscals,
   };
 }

@@ -23,7 +23,7 @@ import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
-import { REGIME_EQUALITY_THRESHOLD } from '@/utils/fiscal';
+import { PARTIAL_ESTIMATE_NOTICE, REGIME_EQUALITY_THRESHOLD, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
@@ -107,7 +107,7 @@ export default function FiscaliteScreen() {
   const saleDateValid = saleDateParsed !== null;
 
   // Guard: purchasePrice invalide
-  const dataValid = selectedPos ? Number.isFinite(selectedPos.purchasePrice) && selectedPos.purchasePrice > 0 : false;
+  const dataValid = selectedPos ? isGainFiscalEligiblePosition(selectedPos) : false;
   // Guard: spot disponible
   const spotAvailable = selectedPos ? getSpot(selectedPos.metal, prices) !== null : false;
   // Guard: date de cession < date d'achat
@@ -119,9 +119,9 @@ export default function FiscaliteScreen() {
   }, [purchaseDateParsed, saleDateParsed, dateFuture]);
 
   const taxResult = useMemo(() => {
-    if (salePrice === null || costPrice === null || years === null) return null;
+    if (salePrice === null || costPrice === null || years === null || !dataValid) return null;
     return computeTax(salePrice, costPrice, years);
-  }, [salePrice, costPrice, years]);
+  }, [salePrice, costPrice, years, dataValid]);
 
   const grossGain = salePrice !== null && costPrice !== null ? salePrice - costPrice : null;
 
@@ -147,7 +147,7 @@ export default function FiscaliteScreen() {
   const errorMessage = !selectedPos
     ? null
     : !dataValid
-    ? 'Données de la position incomplètes.'
+    ? selectedPos.purchasePrice === 0 ? PARTIAL_ESTIMATE_NOTICE : 'Données de la position incomplètes.'
     : !spotAvailable
     ? 'Cours indisponible — réessayez ultérieurement.'
     : !saleDateValid

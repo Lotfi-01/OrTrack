@@ -21,7 +21,7 @@ import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
-import { REGIME_EQUALITY_THRESHOLD } from '@/utils/fiscal';
+import { PARTIAL_ESTIMATE_NOTICE, REGIME_EQUALITY_THRESHOLD, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
@@ -81,8 +81,8 @@ export default function FiscaliteGlobaleScreen() {
   const saleDateParsed = useMemo(() => parseDate(saleDate), [saleDate]);
   const saleDateValid = saleDateParsed !== null;
 
-  const { computed, excluded, exclusionReason } = useMemo(() => {
-    if (!saleDateValid) return { computed: [] as PositionResult[], excluded: [] as Position[], exclusionReason: null as string | null };
+  const { computed, excluded, exclusionReason, hasZeroPurchaseExcluded } = useMemo(() => {
+    if (!saleDateValid) return { computed: [] as PositionResult[], excluded: [] as Position[], exclusionReason: null as string | null, hasZeroPurchaseExcluded: false };
 
     const comp: PositionResult[] = [];
     const excl: Position[] = [];
@@ -90,12 +90,13 @@ export default function FiscaliteGlobaleScreen() {
     let dateMissing = 0;
     let dateFuture = 0;
     let dataInvalid = 0;
+    let zeroPurchasePrice = 0;
 
     for (const pos of positions) {
-      // Garde-fou NaN / Infinity / négatif sur purchasePrice
-      if (!Number.isFinite(pos.purchasePrice) || pos.purchasePrice <= 0) {
+      if (!isGainFiscalEligiblePosition(pos)) {
         excl.push(pos);
         dataInvalid++;
+        if (pos.purchasePrice === 0) zeroPurchasePrice++;
         continue;
       }
 
@@ -133,6 +134,8 @@ export default function FiscaliteGlobaleScreen() {
         reason = `Cours indisponibles pour ${n} position${plural ? 's' : ''}`;
       } else if (dateMissing > 0 && spotMissing === 0 && dateFuture === 0 && dataInvalid === 0) {
         reason = `${n} position${plural ? 's' : ''} avec date d\u2019achat invalide`;
+      } else if (zeroPurchasePrice > 0 && zeroPurchasePrice === dataInvalid && spotMissing === 0 && dateFuture === 0 && dateMissing === 0) {
+        reason = PARTIAL_ESTIMATE_NOTICE;
       } else if (dataInvalid > 0 && spotMissing === 0 && dateFuture === 0 && dateMissing === 0) {
         reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} \u2014 données incomplètes`;
       } else {
@@ -140,7 +143,7 @@ export default function FiscaliteGlobaleScreen() {
       }
     }
 
-    return { computed: comp, excluded: excl, exclusionReason: reason };
+    return { computed: comp, excluded: excl, exclusionReason: reason, hasZeroPurchaseExcluded: zeroPurchasePrice > 0 };
   }, [positions, prices, saleDateValid, saleDateParsed]);
 
   // Agrégats
@@ -263,7 +266,9 @@ export default function FiscaliteGlobaleScreen() {
               {/* SIMULATION PARTIELLE — avertissement */}
               {excluded.length > 0 && (
                 <Text style={st.partialNotice}>
-                  Simulation sur {computed.length} position{computed.length > 1 ? 's' : ''} sur {positions.length}. {excluded.length} position{excluded.length > 1 ? 's' : ''} exclue{excluded.length > 1 ? 's' : ''}.
+                  {hasZeroPurchaseExcluded
+                    ? PARTIAL_ESTIMATE_NOTICE
+                    : `Simulation sur ${computed.length} position${computed.length > 1 ? 's' : ''} sur ${positions.length}. ${excluded.length} position${excluded.length > 1 ? 's' : ''} exclue${excluded.length > 1 ? 's' : ''}.`}
                 </Text>
               )}
 

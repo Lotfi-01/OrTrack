@@ -32,7 +32,6 @@ export default function PositionCard({
   isLevel2,
   masked,
   currencySymbol,
-  isPremium,
   timeStr,
   onToggle,
   onExpandL2,
@@ -40,11 +39,9 @@ export default function PositionCard({
   onEdit,
   onDelete,
   onSimulateSale,
-  onShowPaywall,
   isDeleting,
 }: PositionCardProps) {
   const pos = viewModel.position;
-  // BYPASS PREMIUM - A RETIRER : `regime: sellerNets` etait lu uniquement par le teaser Premium commente ligne 126-154. Restaurer si reactivation.
   const { currentValue, totalCost, gainLoss, gainPct, fiscal, sellerNetForfaitaire: posSellerNet } = viewModel.metrics;
   const cfg = METAL_CONFIG[pos.metal as MetalType];
 
@@ -123,36 +120,6 @@ export default function PositionCard({
           >
             <Text style={st.ctaSimulerText}>{'Simuler ma vente →'}</Text>
           </TouchableOpacity>
-
-          {/*
-            BYPASS PREMIUM - A RETIRER : teaser Premium masque en v1
-            Bloc d'origine conserve en commentaire pour reversibilite.
-            Pour reactiver : retirer ce commentaire et restaurer le JSX ci-dessous.
-
-            {!isPremium && (
-              <TouchableOpacity style={st.premiumTeaser} onPress={onShowPaywall} activeOpacity={0.7}>
-                <Ionicons name="lock-closed-outline" size={12} color={C.textDim} />
-                <View style={{ flex: 1 }}>
-                  <Text style={st.premiumTeaserTitle}>
-                    {(() => {
-                      if (!sellerNets) return 'Comparer les 2 régimes fiscaux';
-                      if (sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50)
-                        return `Un autre régime pourrait vous faire économiser ~${formatEuro(sellerNets.delta)}`;
-                      return 'Comparer les 2 régimes fiscaux';
-                    })()}
-                  </Text>
-                  <Text style={st.premiumTeaserSub}>
-                    {sellerNets && sellerNets.bestRegime === 'plusvalues' && sellerNets.delta > 50
-                      ? 'Comparez en 1 clic'
-                      : 'Quel régime vous laisse le plus de net ?'}
-                  </Text>
-                </View>
-                <View style={st.premiumBadge}>
-                  <Text style={st.premiumBadgeText}>PREMIUM</Text>
-                </View>
-              </TouchableOpacity>
-            )}
-          */}
 
           {!isLevel2 && (
             <TouchableOpacity style={st.expandBtn} onPress={onExpandL2}>
@@ -265,11 +232,6 @@ const st = StyleSheet.create({
   l1TrustText: { color: C.textDim, fontSize: 10 },
   ctaSimuler: { borderWidth: 1.5, borderColor: C.gold, backgroundColor: 'transparent', borderRadius: 10, paddingVertical: 12, marginBottom: 12 },
   ctaSimulerText: { color: C.gold, fontSize: 13, fontWeight: '700', textAlign: 'center' },
-  premiumTeaser: { backgroundColor: 'rgba(201,168,76,0.03)', borderWidth: 1, borderColor: C.border, borderRadius: 10, padding: 12, flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
-  premiumTeaserTitle: { color: C.textDim, fontSize: 11, fontWeight: '600' },
-  premiumTeaserSub: { color: C.textDim, fontSize: 9.5, marginTop: 1 },
-  premiumBadge: { backgroundColor: C.goldDim, borderRadius: 3, paddingVertical: 2, paddingHorizontal: 6 },
-  premiumBadgeText: { color: C.gold, fontSize: 8, fontWeight: '700' },
   expandBtn: { borderTopWidth: 1, borderTopColor: C.divider, paddingVertical: 10, alignItems: 'center' },
   expandBtnText: { color: C.textDim, fontSize: 11 },
   l2: { borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 12, paddingHorizontal: 16 },

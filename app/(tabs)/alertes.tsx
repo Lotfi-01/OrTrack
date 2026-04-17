@@ -37,12 +37,20 @@ import { useSpotPrices } from '../../hooks/use-spot-prices'
 import { formatEuro } from '@/utils/format'
 import { STORAGE_KEYS } from '@/constants/storage-keys'
 import { registerForPushNotifications } from '@/services/notifications'
+import { reportError } from '@/utils/error-reporting'
 
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium']
 
+function parseTargetPriceInput(value: string): number | null {
+  const parsed = Number(value.trim().replace(',', '.'))
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null
+}
+
 export default function AlertesScreen() {
   const params = useLocalSearchParams<{ metal?: string }>()
-  const [pushToken, setPushToken] = useState<string | null>(null)
+  // Expo push token: notification routing token. Backend v1 also uses it to
+  // scope alerts until a durable server-side ownership model exists.
+  const [notificationToken, setNotificationToken] = useState<string | null>(null)
   const [tokenLoading, setTokenLoading] = useState(true)
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [alertsLoading, setAlertsLoading] = useState(false)
@@ -60,7 +68,7 @@ export default function AlertesScreen() {
   useEffect(() => {
     if (didAutoOpen.current) return
     const sym = params.metal
-    if (!sym || !pushToken || tokenLoading) return
+    if (!sym || !notificationToken || tokenLoading) return
     // Mappe symbole ISO → MetalType key
     const entry = METALS.find(k => METAL_CONFIG[k].symbol === sym)
     const m = entry ?? (METALS.includes(sym as MetalType) ? sym as MetalType : undefined)
@@ -73,24 +81,35 @@ export default function AlertesScreen() {
       setTargetPrice('')
       setModalVisible(true)
     }
-  }, [params.metal, pushToken, tokenLoading])
+  }, [params.metal, notificationToken, tokenLoading])
 
   useEffect(() => {
     async function init() {
       setTokenLoading(true)
-      const token = await AsyncStorage.getItem(STORAGE_KEYS.pushToken)
-      setPushToken(token)
-      setTokenLoading(false)
-      if (token) loadAlerts(token)
+      try {
+        const token = await AsyncStorage.getItem(STORAGE_KEYS.pushToken)
+        setNotificationToken(token)
+        if (token) await loadAlerts(token)
+      } catch (error) {
+        reportError(error, { scope: 'alerts', action: 'load_notification_token' })
+      } finally {
+        setTokenLoading(false)
+      }
     }
     init()
   }, [])
 
   async function loadAlerts(token: string) {
     setAlertsLoading(true)
-    const data = await getAlerts(token)
-    setAlerts(data)
-    setAlertsLoading(false)
+    try {
+      const data = await getAlerts(token)
+      setAlerts(data)
+    } catch (error) {
+      reportError(error, { scope: 'alerts', action: 'load_alerts' })
+      setAlerts([])
+    } finally {
+      setAlertsLoading(false)
+    }
   }
 
   const openNewAlert = useCallback(() => {
@@ -119,14 +138,18 @@ export default function AlertesScreen() {
   }, [])
 
   async function handleCreate() {
-    if (!targetPrice || isNaN(parseFloat(targetPrice))) return
+    const parsedTargetPrice = parseTargetPriceInput(targetPrice)
+    if (parsedTargetPrice == null) {
+      RNAlert.alert('Prix cible invalide', 'Saisissez un prix cible supérieur à zéro.')
+      return
+    }
 
     // Obtenir un token push si absent (demande de permission à ce moment)
-    let token = pushToken
+    let token = notificationToken
     if (!token) {
       token = await registerForPushNotifications()
       if (token) {
-        setPushToken(token)
+        setNotificationToken(token)
       } else {
         // Permission refusée — vérifier si refus définitif
         try {
@@ -136,7 +159,14 @@ export default function AlertesScreen() {
               'Notifications bloquées',
               'Les notifications sont désactivées pour OrTrack. Activez-les dans les réglages de votre appareil pour recevoir vos alertes de prix.',
               [
-                { text: 'Ouvrir les réglages', onPress: () => Linking.openSettings() },
+                {
+                  text: 'Ouvrir les réglages',
+                  onPress: () => {
+                    Linking.openSettings().catch(error => {
+                      reportError(error, { scope: 'alerts', action: 'open_notification_settings' })
+                    })
+                  },
+                },
                 { text: 'Annuler', style: 'cancel' },
               ]
             )
@@ -147,7 +177,8 @@ export default function AlertesScreen() {
               [{ text: 'Compris' }]
             )
           }
-        } catch {
+        } catch (error) {
+          reportError(error, { scope: 'alerts', action: 'read_notification_permission_details' })
           RNAlert.alert(
             'Notifications requises',
             'Impossible d\u2019activer les notifications. Réessayez.',
@@ -167,27 +198,36 @@ export default function AlertesScreen() {
 
     setCreating(true)
 
-    let success: boolean
-    if (editingAlertId) {
-      const result = await updateAlert(token, editingAlertId, {
-        metal: selectedMetal,
-        condition: selectedCondition,
-        target_price: parseFloat(targetPrice),
-      })
-      success = result.success
-    } else {
-      success = await createAlert(
-        token,
-        selectedMetal,
-        selectedCondition,
-        parseFloat(targetPrice)
-      )
-    }
-    setCreating(false)
-    if (success) {
-      closeModal()
-      setTargetPrice('')
-      loadAlerts(token)
+    try {
+      let success: boolean
+      if (editingAlertId) {
+        const result = await updateAlert(token, editingAlertId, {
+          metal: selectedMetal,
+          condition: selectedCondition,
+          target_price: parsedTargetPrice,
+        })
+        success = result.success
+      } else {
+        success = await createAlert(
+          token,
+          selectedMetal,
+          selectedCondition,
+          parsedTargetPrice
+        )
+      }
+
+      if (success) {
+        closeModal()
+        setTargetPrice('')
+        await loadAlerts(token)
+      } else {
+        RNAlert.alert('Alerte impossible', 'L’alerte n’a pas pu être enregistrée. Réessayez.')
+      }
+    } catch (error) {
+      reportError(error, { scope: 'alerts', action: 'save_alert' })
+      RNAlert.alert('Alerte impossible', 'L’alerte n’a pas pu être enregistrée. Réessayez.')
+    } finally {
+      setCreating(false)
     }
   }
 
@@ -201,9 +241,21 @@ export default function AlertesScreen() {
           text: 'Supprimer',
           style: 'destructive',
           onPress: async () => {
-            if (!pushToken) return
-            const result = await deleteAlert(pushToken, alertId)
-            if (result.success) loadAlerts(pushToken)
+            if (!notificationToken) {
+              RNAlert.alert('Suppression impossible', 'Le token de notification est introuvable. Réessayez.')
+              return
+            }
+            try {
+              const result = await deleteAlert(notificationToken, alertId)
+              if (result.success) {
+                await loadAlerts(notificationToken)
+              } else {
+                RNAlert.alert('Suppression impossible', 'Cette alerte n’a pas pu être supprimée. Réessayez.')
+              }
+            } catch (error) {
+              reportError(error, { scope: 'alerts', action: 'delete_alert', metadata: { alertId } })
+              RNAlert.alert('Suppression impossible', 'Cette alerte n’a pas pu être supprimée. Réessayez.')
+            }
           },
         },
       ]
@@ -232,30 +284,19 @@ export default function AlertesScreen() {
         {!tokenLoading && (
           <>
             {/* CTA pleine largeur — adapté au quota */}
-            {/* BYPASS PREMIUM - A RETIRER : CTA upsell "Debloquer illimitees" masque en v1, quota reste applique dans openNewAlert */}
             {!alertsLoading && (
-              false ? (
-                <TouchableOpacity
-                  style={[styles.createButton, styles.createButtonPremium]}
-                  onPress={showPaywall}
-                >
-                  <Text style={styles.createButtonText}>Débloquer les alertes illimitées</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.createButton}
-                  onPress={openNewAlert}
-                >
-                  <Text style={styles.createButtonText}>+ Nouvelle alerte</Text>
-                </TouchableOpacity>
-              )
+              <TouchableOpacity
+                style={styles.createButton}
+                onPress={openNewAlert}
+              >
+                <Text style={styles.createButtonText}>+ Nouvelle alerte</Text>
+              </TouchableOpacity>
             )}
 
             <View style={styles.alertsHeader}>
               <Text style={[styles.sectionTitle, { marginBottom: 0 }]}>
                 MES ALERTES
               </Text>
-              {/* BYPASS PREMIUM - A RETIRER : compteur quota conserve, upsell "Passe a l'illimite" masque */}
               {!isPremium && (
                 <Text style={styles.alertsLimit}>
                   {alerts.length}/{limits.maxAlerts} utilisée{alerts.length === 1 ? '' : 's'}
@@ -574,8 +615,8 @@ export default function AlertesScreen() {
               {/* Validation + Boutons */}
               {(() => {
                 const spot = getSpot(selectedMetal, alertPricesEur)
-                const parsed = parseFloat(targetPrice)
-                const hasValue = targetPrice.trim() !== '' && !isNaN(parsed) && parsed > 0
+                const parsed = parseTargetPriceInput(targetPrice)
+                const hasValue = parsed != null
                 const isValid = hasValue && spot != null && (
                   selectedCondition === 'above' ? parsed > spot : parsed < spot
                 )

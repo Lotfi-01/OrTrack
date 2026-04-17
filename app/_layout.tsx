@@ -13,6 +13,7 @@ import { OrTrackColors } from '@/constants/theme';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { PremiumProvider } from '@/contexts/premium-context';
 import { trackInstall } from '@/lib/trackInstall';
+import { reportError } from '@/utils/error-reporting';
 
 // Afficher les notifications quand l'app est au premier plan
 try {
@@ -25,8 +26,8 @@ try {
       shouldSetBadge: false,
     }),
   });
-} catch {
-  // Notifications handler setup failed — silencieux
+} catch (error) {
+  reportError(error, { scope: 'bootstrap', action: 'set_notification_handler' });
 }
 
 const OrTrackNavTheme = {
@@ -63,17 +64,31 @@ export default function RootLayout() {
       if (result.success) {
         setBiometricLocked(false);
       }
-    } catch {
-      // Echec silencieux → écran reste affiché
+    } catch (error) {
+      reportError(error, { scope: 'bootstrap', action: 'biometric_authenticate' });
     }
   }
 
   // Vérifier si l'onboarding a déjà été fait
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.onboardingComplete).then((done) => {
-      needsOnboarding.current = done !== 'true';
-      setReady(true);
-    });
+    let mounted = true;
+
+    async function loadOnboardingState() {
+      try {
+        const done = await AsyncStorage.getItem(STORAGE_KEYS.onboardingComplete);
+        if (!mounted) return;
+        needsOnboarding.current = done !== 'true';
+      } catch (error) {
+        reportError(error, { scope: 'bootstrap', action: 'load_onboarding_state' });
+        if (!mounted) return;
+        needsOnboarding.current = false;
+      } finally {
+        if (mounted) setReady(true);
+      }
+    }
+
+    loadOnboardingState();
+    return () => { mounted = false; };
   }, []);
 
   // Une fois le Stack monté, rediriger vers l'onboarding si nécessaire
@@ -91,14 +106,18 @@ export default function RootLayout() {
         name: 'Alertes de cours',
         importance: Notifications.AndroidImportance.HIGH,
         vibrationPattern: [0, 250, 250, 250],
-      }).catch(() => {});
+      }).catch(error => {
+        reportError(error, { scope: 'bootstrap', action: 'set_android_notification_channel' });
+      });
     }
   }, [ready]);
 
   // Tracker l'installation (après onboarding)
   useEffect(() => {
     if (!ready || needsOnboarding.current) return;
-    trackInstall();
+    trackInstall().catch(error => {
+      reportError(error, { scope: 'bootstrap', action: 'track_install' });
+    });
   }, [ready]);
 
   // Vérifier si la biométrie est activée et verrouiller si nécessaire
@@ -122,7 +141,8 @@ export default function RootLayout() {
 
         setBiometricLocked(true);
         setBiometricChecked(true);
-      } catch {
+      } catch (error) {
+        reportError(error, { scope: 'bootstrap', action: 'check_biometric_setting' });
         setBiometricChecked(true);
       }
     }

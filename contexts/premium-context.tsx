@@ -14,6 +14,7 @@ import {
   initWithTimeout,
   RC_INIT_TIMEOUT_MS,
 } from '@/services/revenuecat';
+import { reportError } from '@/utils/error-reporting';
 
 // v1.1: replace with import { PurchasesPackage } from 'react-native-purchases'
 type PurchasesPackage = { identifier: string; product: { priceString: string } };
@@ -26,6 +27,8 @@ const PREMIUM_LIMITS = {
   maxNewsSources: 2,
   freePeriods: ['1S', '1M', '3M', '1A'] as const,
 };
+
+const DEV_PREMIUM_BYPASS = __DEV__ && process.env.EXPO_PUBLIC_DEV_PREMIUM_BYPASS === 'true';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -53,12 +56,11 @@ const PremiumContext = createContext<PremiumContextType | null>(null);
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 function PremiumProvider({ children }: { children: React.ReactNode }) {
-  const [isPremium, setIsPremium] = useState(false);
+  const [isPremium, setIsPremium] = useState(DEV_PREMIUM_BYPASS);
   const [isLoading, setIsLoading] = useState(true);
   const [showPaywallModal, setShowPaywallModal] = useState(false);
   const [offerings, setOfferings] = useState<{ monthly: PurchasesPackage | null; annual: PurchasesPackage | null }>({ monthly: null, annual: null });
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [sdkReady, setSdkReady] = useState(false);
   // v1.1: uncomment when RevenueCat is enabled
   // const purchaseInProgress = useRef(false);
 
@@ -71,36 +73,39 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
       try {
         await initRevenueCat();
 
-        if (mounted) {
-          setSdkReady(true);
-        }
-
         const [premiumStatus, offeringsResult] = await initWithTimeout(
           Promise.all([checkPremiumStatus(), getOfferings()]),
           RC_INIT_TIMEOUT_MS
         );
 
-        // launchPremium désactivé pour v1.0 : ne doit pas activer premium en production.
-        // À réactiver uniquement pour tests internes ou stratégie v1.1 explicite.
+        // RevenueCat est desactive en v1.0. En production, premiumStatus doit rester
+        // false tant que le SDK et la verification serveur ne sont pas branches.
+        const effectivePremiumStatus = DEV_PREMIUM_BYPASS ? true : premiumStatus;
 
         if (mounted) {
-          setIsPremium(premiumStatus);
+          setIsPremium(effectivePremiumStatus);
           setOfferings(offeringsResult);
           setIsLoading(false);
 
           // Migration du flag "Me prévenir au lancement"
-          if (premiumStatus) {
-            AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(() => {});
+          if (effectivePremiumStatus) {
+            AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(error => {
+              reportError(error, { scope: 'premium', action: 'remove_premium_notify_after_unlock' });
+            });
           } else {
             const notifyFlag = await AsyncStorage.getItem(STORAGE_KEYS.premiumNotify);
             if (notifyFlag === 'true') {
               setShowPaywallModal(true);
-              AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(() => {});
+              AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(error => {
+                reportError(error, { scope: 'premium', action: 'remove_premium_notify_after_paywall' });
+              });
             }
           }
         }
-      } catch {
+      } catch (error) {
+        reportError(error, { scope: 'premium', action: 'init_premium_context' });
         if (mounted) {
+          setIsPremium(DEV_PREMIUM_BYPASS);
           setIsLoading(false);
         }
       }
@@ -131,11 +136,14 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
   const activateLaunchFree = useCallback(async () => {
     // v1.0 : ne déverrouille pas le premium. Écrit uniquement le flag "Me prévenir"
     // pour canal d'acquisition. Le paywall se ferme normalement.
-    await AsyncStorage.setItem(STORAGE_KEYS.premiumNotify, 'true').catch(() => {});
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.premiumNotify, 'true');
+    } catch (error) {
+      reportError(error, { scope: 'premium', action: 'store_premium_notify_interest' });
+    }
     setShowPaywallModal(false);
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handlePurchase = useCallback(async (_pkg: PurchasesPackage) => {
     // v1.1: enable when RevenueCat is active
     setIsPurchasing(true);
@@ -145,12 +153,13 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
         setIsPremium(true);
         setShowPaywallModal(false);
       }
+    } catch (error) {
+      reportError(error, { scope: 'premium', action: 'purchase_package' });
     } finally {
       setIsPurchasing(false);
     }
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const handleRestore = useCallback(async (): Promise<boolean> => {
     setIsPurchasing(true);
     try {
@@ -160,17 +169,21 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
         setShowPaywallModal(false);
       }
       return restored;
+    } catch (error) {
+      reportError(error, { scope: 'premium', action: 'restore_purchases' });
+      return false;
     } finally {
       setIsPurchasing(false);
     }
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const retryLoadOfferings = useCallback(async () => {
     try {
       const result = await getOfferings();
       setOfferings(result);
-    } catch {}
+    } catch (error) {
+      reportError(error, { scope: 'premium', action: 'retry_load_offerings' });
+    }
   }, []);
 
   // ── Guards ───────────────────────────────────────────────────────────────

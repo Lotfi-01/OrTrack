@@ -19,7 +19,7 @@ import { OrTrackColors } from '@/constants/theme';
 import { STATS } from '@/constants/stats-config';
 import { formatEuro, formatG, formatPct } from '@/utils/format';
 import { parseDate } from '@/utils/tax-helpers';
-import { computePortfolioFiscalSummary, computeFiscalCountdown } from '@/utils/fiscal';
+import { PARTIAL_ESTIMATE_NOTICE, computePortfolioFiscalSummary, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import {
   selectInsight,
   selectDecisionCards,
@@ -63,17 +63,25 @@ export default function StatistiquesScreen() {
 
   const hasPositions = positions.length > 0;
 
-  const { totalCost, totalValue, totalGain, totalGainPct } = useMemo(() => {
+  const { totalCost, totalValue, totalGain, totalGainPct, excludedFromGainCount } = useMemo(() => {
     let cost = 0;
     let value = 0;
+    let gainValue = 0;
+    let excluded = 0;
     for (const p of positions) {
       const spot = getSpot(p.metal, prices);
-      cost += p.quantity * p.purchasePrice;
-      if (spot !== null) value += p.quantity * (p.weightG / OZ_TO_G) * spot;
+      const currentValue = spot !== null ? p.quantity * (p.weightG / OZ_TO_G) * spot : 0;
+      value += currentValue;
+      if (isGainFiscalEligiblePosition(p)) {
+        cost += p.quantity * p.purchasePrice;
+        gainValue += currentValue;
+      } else {
+        excluded++;
+      }
     }
-    const gain = cost > 0 ? value - cost : 0;
+    const gain = cost > 0 ? gainValue - cost : 0;
     const gainPct = cost > 0 ? (gain / cost) * 100 : null;
-    return { totalCost: cost, totalValue: value, totalGain: gain, totalGainPct: gainPct };
+    return { totalCost: cost, totalValue: value, totalGain: gain, totalGainPct: gainPct, excludedFromGainCount: excluded };
   }, [positions, prices]);
 
   const fiscal = useMemo(
@@ -100,6 +108,8 @@ export default function StatistiquesScreen() {
     () => computePositionRanking(fiscal, positions, prices),
     [fiscal, positions, prices],
   );
+
+  const hasPartialEstimate = excludedFromGainCount > 0 || Boolean(fiscal?.hasPartialEstimate);
 
   const oldestDate = useMemo(() => {
     let oldest: string | null = null;
@@ -217,6 +227,9 @@ export default function StatistiquesScreen() {
                   {totalGain >= 0 ? '+' : ''}{formatPct(totalGainPct, 2)}
                 </Text>
               )}
+              {hasPartialEstimate && (
+                <Text style={st.partialNotice}>{PARTIAL_ESTIMATE_NOTICE}</Text>
+              )}
               {oldestDate && <Text style={st.heroRef}>Depuis votre 1ère position ({oldestDate})</Text>}
 
               <View style={st.heroRow}>
@@ -240,11 +253,9 @@ export default function StatistiquesScreen() {
                     </TouchableOpacity>
                   </View>
                   <Text style={st.heroNetValue}>{m(`${formatEuro(fiscal.bestNet)} ${currencySymbol}`)}</Text>
-                  {(() => {
-                    // Dériver la fiscalité du même totalValue affiché pour garantir A - B = C visuellement
-                    const fiscDisplayed = totalValue - fiscal.bestNet;
-                    return <Text style={st.heroNetFiscal}>Fiscalité estimée : {m(`${formatEuro(fiscDisplayed)} ${currencySymbol}`)}</Text>;
-                  })()}
+                  <Text style={st.heroNetFiscal}>
+                    Fiscalité estimée : {m(`${formatEuro(fiscal.bestRegime === 'plusvalues' ? fiscal.totalPVTax : fiscal.totalForfaitaireTax)} ${currencySymbol}`)}
+                  </Text>
                   <Text style={st.heroMethod}>(Régime le plus favorable {'\u00B7'} hors frais)</Text>
                 </View>
               ) : (
@@ -479,6 +490,7 @@ const st = StyleSheet.create({
   heroCard: { backgroundColor: C.card, borderRadius: 14, padding: 20, marginBottom: 24, borderWidth: 1, borderColor: 'rgba(201,168,76,0.25)' },
   heroValue: { fontSize: 32, fontWeight: '800', marginBottom: 2 },
   heroPercent: { fontSize: 18, fontWeight: '600', marginBottom: 4 },
+  partialNotice: { fontSize: 11, color: C.textDim, lineHeight: 16, marginBottom: 10 },
   heroRef: { fontSize: 11, color: C.textDim, marginBottom: 12, fontStyle: 'italic' },
   heroRow: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.border, paddingTop: 12, marginTop: 4 },
   heroCol: { flex: 1 },

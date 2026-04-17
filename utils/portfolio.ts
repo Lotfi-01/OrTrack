@@ -6,6 +6,7 @@ import {
   computeFiscalCountdown,
   computeSellerNetForfaitaire,
   computeRegimeComparison,
+  isGainFiscalEligiblePosition,
 } from '@/utils/fiscal';
 import { stripMetalFromName } from '@/utils/format';
 
@@ -33,6 +34,9 @@ export type PortfolioSummary = {
   gainPct: number;
   sellerNet: number;
   positionCount: number;
+  gainValue: number;
+  excludedFromGainCount: number;
+  hasPartialEstimate: boolean;
 };
 
 // ── Fonctions ──────────────────────────────────────────────────────────────
@@ -41,18 +45,19 @@ export function computePositionMetrics(
   pos: Position,
   spotPrice: number | null,
 ): PositionMetrics {
-  const totalCost = pos.quantity * pos.purchasePrice;
+  const isGainFiscalEligible = isGainFiscalEligiblePosition(pos);
+  const totalCost = isGainFiscalEligible ? pos.quantity * pos.purchasePrice : 0;
   const currentValue = spotPrice !== null
     ? pos.quantity * (pos.weightG / OZ_TO_G) * spotPrice
     : null;
-  const gainLoss = currentValue !== null ? currentValue - totalCost : null;
+  const gainLoss = currentValue !== null && isGainFiscalEligible ? currentValue - totalCost : null;
   const gainPct = gainLoss !== null && totalCost > 0
     ? (gainLoss / totalCost) * 100
     : null;
-  const sellerNetForfaitaire = currentValue !== null
+  const sellerNetForfaitaire = currentValue !== null && isGainFiscalEligible
     ? computeSellerNetForfaitaire(currentValue)
     : null;
-  const fiscal = computeFiscalCountdown(pos.purchaseDate);
+  const fiscal = isGainFiscalEligible ? computeFiscalCountdown(pos.purchaseDate) : null;
   const regime = currentValue !== null && gainLoss !== null && fiscal
     ? computeRegimeComparison(currentValue, totalCost, fiscal.years)
     : null;
@@ -73,19 +78,38 @@ export function computePositionViewModels(
 export function computePortfolioSummary(viewModels: PositionViewModel[]): PortfolioSummary {
   let totalValue = 0;
   let totalCost = 0;
+  let gainValue = 0;
+  let excludedFromGainCount = 0;
 
   for (const vm of viewModels) {
-    totalCost += vm.metrics.totalCost;
     if (vm.metrics.currentValue !== null) {
       totalValue += vm.metrics.currentValue;
     }
+    if (isGainFiscalEligiblePosition(vm.position)) {
+      totalCost += vm.metrics.totalCost;
+      if (vm.metrics.currentValue !== null) {
+        gainValue += vm.metrics.currentValue;
+      }
+    } else {
+      excludedFromGainCount++;
+    }
   }
 
-  const gain = totalCost > 0 ? totalValue - totalCost : 0;
+  const gain = totalCost > 0 ? gainValue - totalCost : 0;
   const gainPct = totalCost > 0 ? (gain / totalCost) * 100 : 0;
-  const sellerNet = computeSellerNetForfaitaire(totalValue);
+  const sellerNet = computeSellerNetForfaitaire(gainValue);
 
-  return { totalValue, totalCost, gain, gainPct, sellerNet, positionCount: viewModels.length };
+  return {
+    totalValue,
+    totalCost,
+    gain,
+    gainPct,
+    sellerNet,
+    positionCount: viewModels.length,
+    gainValue,
+    excludedFromGainCount,
+    hasPartialEstimate: excludedFromGainCount > 0,
+  };
 }
 
 export function sortPositions(viewModels: PositionViewModel[]): PositionViewModel[] {

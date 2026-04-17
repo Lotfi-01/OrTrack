@@ -45,9 +45,6 @@ const useStaggerAnim = (delay: number) => {
 
 // ─── Source de vérité produit ────────────────────────────────────────────────
 
-type PremiumReleaseMode = 'launch_free' | 'waitlist';
-const PREMIUM_RELEASE_MODE: PremiumReleaseMode = 'waitlist';
-
 // ─── Composant ──────────────────────────────────────────────────────────────
 
 export default function PremiumPaywall({ onClose }: { onClose: () => void }) {

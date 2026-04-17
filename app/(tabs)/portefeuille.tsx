@@ -26,6 +26,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
 import { truncName } from '@/utils/format';
 import { computePositionViewModels, computePortfolioSummary, getBestPerformerName } from '@/utils/portfolio';
+import { PARTIAL_ESTIMATE_NOTICE } from '@/utils/fiscal';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import PortfolioHero from '@/components/portfolio/PortfolioHero';
@@ -245,6 +246,9 @@ export default function PortefeuilleScreen() {
           }}
           ctaDisabled={!hasFilteredPositions || !pricesReady || masked}
         />
+        {hasFilteredPositions && summary.hasPartialEstimate && (
+          <Text style={st.partialNotice}>{PARTIAL_ESTIMATE_NOTICE}</Text>
+        )}
 
         {/* ── 4. POSITIONS ───────────────────────────────── */}
         <View style={st.posHeader}>
@@ -386,6 +390,7 @@ const st = StyleSheet.create({
   posHeaderTitle: { fontSize: 12, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1 },
   quota: { fontSize: 10, color: C.textDim },
   quotaFull: { fontSize: 10, color: C.gold, fontWeight: '600' },
+  partialNotice: { color: C.textDim, fontSize: 11, lineHeight: 16, marginTop: -4, marginBottom: 12 },
 
   // Trust footer
   trustFooter: { marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: C.divider, alignItems: 'center' },

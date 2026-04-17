@@ -15,15 +15,14 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path } from 'react-native-svg';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { usePremium } from '@/contexts/premium-context';
 
 import { OrTrackColors } from '@/constants/theme';
 import { STORAGE_KEYS, WIPE_STORAGE_KEYS } from '@/constants/storage-keys';
 import { resetPositionsCache, awaitPendingPositionWrites } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
+import { reportError } from '@/utils/error-reporting';
 
 // ─── Clés AsyncStorage ────────────────────────────────────────────────────────
 
@@ -164,20 +163,31 @@ export default function ReglagesScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
-  const { showPaywall } = usePremium();
 
   // ── Chargement initial ────────────────────────────────────────────────────
 
   useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEYS.settings).then((raw) => {
-      if (!raw) return;
+    let mounted = true;
+
+    async function loadSettings() {
       try {
-        setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
-      } catch (e: any) {
-        console.warn('[Settings] Parse error:', e?.message);
-        AsyncStorage.removeItem(STORAGE_KEYS.settings).catch(() => {});
+        const raw = await AsyncStorage.getItem(STORAGE_KEYS.settings);
+        if (!raw || !mounted) return;
+        try {
+          setSettings({ ...DEFAULT_SETTINGS, ...JSON.parse(raw) });
+        } catch (error) {
+          reportError(error, { scope: 'settings', action: 'parse_settings' });
+          AsyncStorage.removeItem(STORAGE_KEYS.settings).catch(removeError => {
+            reportError(removeError, { scope: 'settings', action: 'remove_invalid_settings' });
+          });
+        }
+      } catch (error) {
+        reportError(error, { scope: 'settings', action: 'load_settings' });
       }
-    });
+    }
+
+    loadSettings();
+    return () => { mounted = false; };
   }, []);
 
   useEffect(() => {
@@ -188,7 +198,8 @@ export default function ReglagesScreen() {
         setBiometricAvailable(compatible && enrolled);
         const stored = await AsyncStorage.getItem(STORAGE_KEYS.biometricEnabled);
         setBiometricEnabled(stored === 'true');
-      } catch {
+      } catch (error) {
+        reportError(error, { scope: 'settings', action: 'load_biometric_settings' });
         setBiometricAvailable(false);
       }
     }
@@ -197,37 +208,53 @@ export default function ReglagesScreen() {
 
   // ── Mise à jour + sauvegarde instantanée des préférences ──────────────────
 
-  const updateSettings = async (patch: Partial<AppSettings>) => {
+  const updateSettings = async (patch: Partial<AppSettings>): Promise<boolean> => {
+    const previous = settings;
     const next = { ...settings, ...patch };
     setSettings(next);
-    await AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next));
-    if (patch.currency && patch.currency !== settings.currency) {
-      await AsyncStorage.removeItem(STORAGE_KEYS.spotCache);
-      const periods = ['1M', '3M', '1A', '5A', '10A', '20A'];
-      const currencies = ['EUR', 'USD', 'CHF'];
-      const metals = ['gold', 'silver', 'platinum', 'palladium'];
-      const histCacheKeys = [
-        // Nouveau format avec métal
-        ...periods.flatMap(p =>
-          currencies.flatMap(c =>
-            metals.map(m => `${STORAGE_KEYS.historyCachePrefix}${p}_${c}_${m}`)
-          )
-        ),
-        // Ancien format sans métal (nettoyage des clés obsolètes)
-        ...periods.flatMap(p =>
-          currencies.map(c => `${STORAGE_KEYS.historyCachePrefix}${p}_${c}`)
-        ),
-      ];
-      await Promise.all(histCacheKeys.map(k => AsyncStorage.removeItem(k)));
+    try {
+      await AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next));
+      if (patch.currency && patch.currency !== settings.currency) {
+        await AsyncStorage.removeItem(STORAGE_KEYS.spotCache);
+        const periods = ['1M', '3M', '1A', '5A', '10A', '20A'];
+        const currencies = ['EUR', 'USD', 'CHF'];
+        const metals = ['gold', 'silver', 'platinum', 'palladium'];
+        const histCacheKeys = [
+          // Nouveau format avec métal
+          ...periods.flatMap(p =>
+            currencies.flatMap(c =>
+              metals.map(m => `${STORAGE_KEYS.historyCachePrefix}${p}_${c}_${m}`)
+            )
+          ),
+          // Ancien format sans métal (nettoyage des clés obsolètes)
+          ...periods.flatMap(p =>
+            currencies.map(c => `${STORAGE_KEYS.historyCachePrefix}${p}_${c}`)
+          ),
+        ];
+        await Promise.all(histCacheKeys.map(k => AsyncStorage.removeItem(k)));
+      }
+      return true;
+    } catch (error) {
+      setSettings(previous);
+      reportError(error, { scope: 'settings', action: 'persist_settings', metadata: { patch } });
+      Alert.alert('Réglages', 'Impossible d’enregistrer ce changement. Réessayez.');
+      return false;
     }
   };
 
   async function toggleBiometric(value: boolean) {
+    const previous = biometricEnabled;
     setBiometricEnabled(value);
-    await AsyncStorage.setItem(
-      STORAGE_KEYS.biometricEnabled,
-      value ? 'true' : 'false'
-    );
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.biometricEnabled,
+        value ? 'true' : 'false'
+      );
+    } catch (error) {
+      setBiometricEnabled(previous);
+      reportError(error, { scope: 'settings', action: 'persist_biometric_setting' });
+      Alert.alert('Sécurité', 'Impossible d’enregistrer le réglage biométrique. Réessayez.');
+    }
   }
 
   // ── Partager le portefeuille ─────────────────────────────────────────────
@@ -237,7 +264,10 @@ export default function ReglagesScreen() {
       const raw = await AsyncStorage.getItem(STORAGE_KEYS.positions);
       if (!raw) return;
       await Share.share({ message: raw, title: 'OrTrack — Données JSON' });
-    } catch {}
+    } catch (error) {
+      reportError(error, { scope: 'data-export', action: 'share_positions_json' });
+      Alert.alert('Export impossible', 'Impossible de partager vos données JSON. Réessayez.');
+    }
   };
 
   const sharePositionsAsCsv = async () => {
@@ -255,7 +285,10 @@ export default function ReglagesScreen() {
           .map(csvEscape).join(',')
       );
       await Share.share({ message: [header, ...rows].join('\n'), title: 'OrTrack — Données CSV' });
-    } catch {}
+    } catch (error) {
+      reportError(error, { scope: 'data-export', action: 'share_positions_csv' });
+      Alert.alert('Export impossible', 'Impossible de partager vos données CSV. Réessayez.');
+    }
   };
 
   // ── Suppression totale ────────────────────────────────────────────────────
@@ -264,28 +297,33 @@ export default function ReglagesScreen() {
   // Les données côté serveur (alertes, push token, install) ne sont pas supprimées.
   // Suppression distante à implémenter en v1.1.
   const wipeAllUserData = async () => {
-    // 1. Drainer la queue des mutations positions en cours pour empêcher un
-    //    setItem stale de réécrire après le multiRemove.
-    await awaitPendingPositionWrites();
+    try {
+      // 1. Drainer la queue des mutations positions en cours pour empêcher un
+      //    setItem stale de réécrire après le multiRemove.
+      await awaitPendingPositionWrites();
 
-    // 2. Nettoyage local — clés fixes et caches historiques.
-    const allKeys = await AsyncStorage.getAllKeys();
-    const dynamicKeys = allKeys.filter(key => key.startsWith(STORAGE_KEYS.historyCachePrefix));
+      // 2. Nettoyage local — clés fixes et caches historiques.
+      const allKeys = await AsyncStorage.getAllKeys();
+      const dynamicKeys = allKeys.filter(key => key.startsWith(STORAGE_KEYS.historyCachePrefix));
 
-    // NOTE: Ce wipe supprime uniquement les données locales (AsyncStorage).
-    // Les données côté serveur (alertes, push token, install) ne sont pas supprimées.
-    // Suppression distante à implémenter en v1.1.
-    await AsyncStorage.multiRemove([...WIPE_STORAGE_KEYS, ...dynamicKeys]);
+      await AsyncStorage.multiRemove([...WIPE_STORAGE_KEYS, ...dynamicKeys]);
 
-    // 3. Invalider le cache mémoire et rediriger.
-    resetPositionsCache();
-    router.replace('/onboarding');
+      // 3. Invalider le cache mémoire et rediriger.
+      resetPositionsCache();
+      router.replace('/onboarding');
+    } catch (error) {
+      reportError(error, { scope: 'data-wipe', action: 'wipe_local_user_data' });
+      Alert.alert(
+        'Suppression locale impossible',
+        'Les données locales n’ont pas été supprimées complètement. Réessayez avant de désinstaller ou de réinitialiser l’app.'
+      );
+    }
   };
 
   const confirmWipe = () => {
     Alert.alert(
-      'Supprimer toutes mes données',
-      'Cette action efface votre portefeuille, vos réglages et vos caches locaux. Les données serveur liées aux alertes et aux notifications ne sont pas supprimées dans cette version. Pensez à partager vos données avant.',
+      'Supprimer mes données locales',
+      'Cette action efface uniquement les données stockées sur cet appareil : portefeuille, réglages et caches. Les alertes, push tokens et installations déjà envoyés au serveur ne sont pas supprimés dans cette version. Pensez à partager vos données avant.',
       [
         { text: 'Annuler', style: 'cancel' },
         { text: 'Partager', onPress: sharePositionsAsJson },
@@ -294,11 +332,11 @@ export default function ReglagesScreen() {
           style: 'destructive',
           onPress: () => {
             Alert.alert(
-              'Confirmation finale',
-              'Cette suppression est irréversible.',
+              'Supprimer les données locales ?',
+              'Cette suppression locale est irréversible sur cet appareil.',
               [
                 { text: 'Annuler', style: 'cancel' },
-                { text: 'Supprimer', style: 'destructive', onPress: wipeAllUserData },
+                { text: 'Supprimer localement', style: 'destructive', onPress: wipeAllUserData },
               ],
             );
           },
@@ -317,7 +355,8 @@ export default function ReglagesScreen() {
       } else {
         Alert.alert('Nous contacter', 'contact@ortrack.fr');
       }
-    } catch {
+    } catch (error) {
+      reportError(error, { scope: 'settings', action: 'open_contact_mail' });
       Alert.alert('Nous contacter', 'contact@ortrack.fr');
     }
   }, []);
@@ -338,32 +377,6 @@ export default function ReglagesScreen() {
           <Text style={styles.headerTitle}>Réglages</Text>
 
           {/* ── PREMIUM ─────────────────────────────────────────────── */}
-          {/* BYPASS PREMIUM - A RETIRER : carte entry "OrTrack Premium" masquee en v1 */}
-          {false && (
-          <TouchableOpacity
-            style={styles.premiumCard}
-            onPress={showPaywall}
-            activeOpacity={0.8}
-          >
-            <View style={styles.premiumLeft}>
-              <Svg width={32} height={32} viewBox="0 0 24 24" fill="none">
-                <Path
-                  d="M2 8l4 12h12l4-12-5 4-5-8-5 8-5-4z"
-                  fill={OrTrackColors.gold}
-                  opacity={0.9}
-                />
-                <Path
-                  d="M6 20h12v2H6z"
-                  fill={OrTrackColors.gold}
-                  opacity={0.7}
-                />
-              </Svg>
-              <Text style={styles.premiumTitle}>OrTrack Premium</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={OrTrackColors.gold} />
-          </TouchableOpacity>
-          )}
-
           {/* ── PRÉFÉRENCES ────────────────────────────────────────────── */}
           <SectionTitle title="Préférences" />
           <View style={styles.card}>
@@ -377,8 +390,8 @@ export default function ReglagesScreen() {
               ]}
               value={settings.currency}
               onChange={async (v) => {
-                await updateSettings({ currency: v });
-                router.replace('/(tabs)/' as any);
+                const saved = await updateSettings({ currency: v });
+                if (saved) router.replace('/(tabs)/' as any);
               }}
             />
 
@@ -447,7 +460,7 @@ export default function ReglagesScreen() {
             <ItemSeparator />
 
             <ActionRow
-              label="Supprimer toutes mes données"
+              label="Supprimer mes données locales"
               iconName="trash-outline"
               color="#E07070"
               onPress={confirmWipe}
@@ -517,8 +530,13 @@ export default function ReglagesScreen() {
               style={styles.row}
               activeOpacity={0.7}
               onPress={async () => {
-                await AsyncStorage.removeItem(STORAGE_KEYS.onboardingComplete);
-                setTimeout(() => router.replace('/onboarding'), 0);
+                try {
+                  await AsyncStorage.removeItem(STORAGE_KEYS.onboardingComplete);
+                  setTimeout(() => router.replace('/onboarding'), 0);
+                } catch (error) {
+                  reportError(error, { scope: 'settings', action: 'restart_onboarding' });
+                  Alert.alert('Tutoriel', 'Impossible de relancer le tutoriel. Réessayez.');
+                }
               }}>
               <View style={styles.actionRowInner}>
                 <Ionicons

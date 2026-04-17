@@ -3,6 +3,7 @@ import * as Application from 'expo-application';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { reportError } from '@/utils/error-reporting';
 
 export async function trackInstall(): Promise<void> {
   try {
@@ -26,8 +27,13 @@ export async function trackInstall(): Promise<void> {
       { onConflict: 'device_id' }
     );
 
-    if (error) return;
+    if (error) {
+      reportError(error, { scope: 'install', action: 'upsert_app_install' });
+      return;
+    }
 
     await AsyncStorage.setItem(STORAGE_KEYS.installTracked, 'true');
-  } catch {}
+  } catch (error) {
+    reportError(error, { scope: 'install', action: 'track_install' });
+  }
 }
