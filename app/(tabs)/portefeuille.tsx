@@ -24,8 +24,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot } from '@/constants/metals';
-import { truncName } from '@/utils/format';
-import { computePositionViewModels, computePortfolioSummary, getBestPerformerName } from '@/utils/portfolio';
+import { computePositionViewModels, computePortfolioSummary } from '@/utils/portfolio';
 import { PARTIAL_ESTIMATE_NOTICE } from '@/utils/fiscal';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
@@ -186,8 +185,6 @@ export default function PortefeuilleScreen() {
     return `${String(lastUpdated.getHours()).padStart(2, '0')}:${String(lastUpdated.getMinutes()).padStart(2, '0')}`;
   }, [lastUpdated]);
 
-  const bestPerformerName = useMemo(() => getBestPerformerName(viewModels), [viewModels]);
-
   // ── Loading guard ─────────────────────────────────────────────────────
 
   if (positionsLoading) {
@@ -250,13 +247,10 @@ export default function PortefeuilleScreen() {
           <Text style={st.partialNotice}>{PARTIAL_ESTIMATE_NOTICE}</Text>
         )}
 
-        {/* ── 5. STATS TEASER ────────────────────────────── */}
+        {/* ── 4. STATS TEASER ────────────────────────────── */}
         {hasPositions && (
           <View style={{ marginTop: -4, marginBottom: -4 }}>
             <PortfolioStatsTeaser
-              subtitleText={bestPerformerName
-                ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
-                : 'Voyez quelles positions tirent vraiment votre performance'}
               onPress={() => {
                 if (!isPremium) {
                   showPaywall();
@@ -268,7 +262,7 @@ export default function PortefeuilleScreen() {
           </View>
         )}
 
-        {/* ── 4. POSITIONS ───────────────────────────────── */}
+        {/* ── 5. POSITIONS ───────────────────────────────── */}
         <View style={st.posHeader}>
           <Text style={st.posHeaderTitle}>POSITIONS ({filteredPositions.length})</Text>
           {!masked && !isPremium && (

@@ -5,17 +5,16 @@ import { OrTrackColors } from '@/constants/theme';
 const C = OrTrackColors;
 
 type PortfolioStatsTeaserProps = {
-  subtitleText: string;
   onPress: () => void;
 };
 
-export default function PortfolioStatsTeaser({ subtitleText, onPress }: PortfolioStatsTeaserProps) {
+export default function PortfolioStatsTeaser({ onPress }: PortfolioStatsTeaserProps) {
   return (
     <TouchableOpacity style={st.statsTeaser} onPress={onPress} activeOpacity={0.7}>
       <Ionicons name="bar-chart-outline" size={18} color={C.gold} />
       <View style={{ flex: 1 }}>
         <Text style={st.statsTeaserTitle}>Analyses</Text>
-        <Text style={st.statsTeaserSub}>{subtitleText}</Text>
+        <Text style={st.statsTeaserSub}>Net si vente, performance et positions à surveiller</Text>
       </View>
     </TouchableOpacity>
   );

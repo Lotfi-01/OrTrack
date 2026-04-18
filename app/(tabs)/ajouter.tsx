@@ -65,7 +65,6 @@ export default function AjouterScreen() {
   useFocusEffect(
     useCallback(() => {
       refresh();
-      setIsPriceFocused(false);
     }, [refresh])
   );
 
@@ -91,7 +90,6 @@ export default function AjouterScreen() {
   const [confirmed, setConfirmed] = useState(false);
   const [isStep2Active, setIsStep2Active] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
-  const [isPriceFocused, setIsPriceFocused] = useState(false);
   const priceLocalRef = useRef(purchasePrice);
   const [priceKey, setPriceKey] = useState(0);
   const [priceDisplay, setPriceDisplay] = useState('');
@@ -178,7 +176,6 @@ export default function AjouterScreen() {
           setConfirmed(false);
           setIsStep2Active(false);
           setCoinSearch('');
-          setIsPriceFocused(false);
           return;
         }
         if (!existing) return;
@@ -206,7 +203,6 @@ export default function AjouterScreen() {
         setConfirmed(false);
         setIsStep2Active(true);
         setCoinSearch('');
-        setIsPriceFocused(false);
       } else {
         setMetal('or');
         setProduct(null);
@@ -220,13 +216,12 @@ export default function AjouterScreen() {
         setConfirmed(false);
         setIsStep2Active(false);
         setCoinSearch('');
-        setIsPriceFocused(false);
 
         if (!canAddPosition(positions.length)) {
           showPaywall();
         }
       }
-    }, [isEditMode, editId, staleEditId, positions, canAddPosition, showPaywall])
+    }, [editId, staleEditId, positions, canAddPosition, showPaywall])
   );
 
   // Cleanup timeout
@@ -243,7 +238,6 @@ export default function AjouterScreen() {
     setProduct(null);
     setCustomWeight('');
     setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
-    setIsPriceFocused(false);
     setShowAllPieces(false);
     setShowAllBars(false);
     setIsStep2Active(false);
@@ -350,7 +344,6 @@ export default function AjouterScreen() {
 
     setProduct(p);
     setCustomWeight('');
-    setIsPriceFocused(false);
 
     const w = p.weightG ?? 0;
     const spot = getSpot(metal, prices);
@@ -365,7 +358,6 @@ export default function AjouterScreen() {
     } else {
       setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
     }
-    setIsPriceFocused(false);
 
     if (!dateRef.current) {
       setPurchaseDate(formatDateDMY(new Date()));
@@ -377,7 +369,6 @@ export default function AjouterScreen() {
   // ── "Continuer" handler ───────────────────────────────────────────────
 
   const handleContinue = useCallback(() => {
-    setIsPriceFocused(false);
     setIsStep2Active(true);
     setCoinSearch('');
     justTappedContinue.current = true;
@@ -521,7 +512,6 @@ export default function AjouterScreen() {
       setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
       setPurchaseDate('');
       setNote('');
-      setIsPriceFocused(false);
       setShowAllPieces(false);
 
       setConfirmed(true);
@@ -849,7 +839,6 @@ export default function AjouterScreen() {
                               setPriceDisplay(formatPriceDisplay(spotVal));
                               priceLocalRef.current = spotFr;
                               setPriceKey(k => k + 1);
-                              setIsPriceFocused(false);
                             }}
                             activeOpacity={0.7}
                           >
@@ -865,7 +854,6 @@ export default function AjouterScreen() {
                           placeholder="Ex : 1 700"
                           placeholderTextColor={OrTrackColors.tabIconDefault}
                           defaultValue={priceDisplay}
-                          onFocus={() => setIsPriceFocused(true)}
                           onBlur={() => {
                             let n = priceLocalRef.current;
                             n = n.replace(/[\s\u00A0]/g, '');
@@ -880,7 +868,6 @@ export default function AjouterScreen() {
                             const formatted = !isNaN(num) && num > 0 ? formatEuro(num) : n.replace(/\./g, ',');
                             setPriceDisplay(formatted);
                             setPriceKey(k => k + 1);
-                            setIsPriceFocused(false);
                           }}
                           onChangeText={(text) => {
                             priceLocalRef.current = text;

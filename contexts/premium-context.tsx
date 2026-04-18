@@ -28,7 +28,11 @@ const PREMIUM_LIMITS = {
   freePeriods: ['1S', '1M', '3M', '1A'] as const,
 };
 
-const DEV_PREMIUM_BYPASS = __DEV__ && process.env.EXPO_PUBLIC_DEV_PREMIUM_BYPASS === 'true';
+// Hard dev-only guard. Any production build evaluates this to false regardless
+// of environment variables: __DEV__ is statically replaced by the bundler.
+const DEV_PREMIUM_BYPASS = __DEV__
+  ? process.env.EXPO_PUBLIC_DEV_PREMIUM_BYPASS === 'true'
+  : false;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

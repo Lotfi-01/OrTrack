@@ -9,7 +9,6 @@ import {
   isGainFiscalEligiblePosition,
 } from '@/utils/fiscal';
 import { computePositionCost, computePositionValue } from '@/utils/position-calc';
-import { stripMetalFromName } from '@/utils/format';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -116,16 +115,3 @@ export function sortPositions(viewModels: PositionViewModel[]): PositionViewMode
   return viewModels;
 }
 
-export function getBestPerformerName(viewModels: PositionViewModel[]): string | null {
-  if (viewModels.length < 2) return null;
-  let bestPct = -Infinity;
-  let bestName = '';
-  for (const vm of viewModels) {
-    const pct = vm.metrics.gainPct;
-    if (pct !== null && pct > bestPct) {
-      bestPct = pct;
-      bestName = stripMetalFromName(vm.position.product);
-    }
-  }
-  return bestName || null;
-}
