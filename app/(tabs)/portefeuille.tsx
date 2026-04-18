@@ -250,6 +250,24 @@ export default function PortefeuilleScreen() {
           <Text style={st.partialNotice}>{PARTIAL_ESTIMATE_NOTICE}</Text>
         )}
 
+        {/* ── 5. STATS TEASER ────────────────────────────── */}
+        {hasPositions && (
+          <View style={{ marginTop: -4, marginBottom: -4 }}>
+            <PortfolioStatsTeaser
+              subtitleText={bestPerformerName
+                ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
+                : 'Voyez quelles positions tirent vraiment votre performance'}
+              onPress={() => {
+                if (!isPremium) {
+                  showPaywall();
+                  return;
+                }
+                router.push('/statistiques' as never);
+              }}
+            />
+          </View>
+        )}
+
         {/* ── 4. POSITIONS ───────────────────────────────── */}
         <View style={st.posHeader}>
           <Text style={st.posHeaderTitle}>POSITIONS ({filteredPositions.length})</Text>
@@ -340,20 +358,6 @@ export default function PortefeuilleScreen() {
           />
         ) : null}
 
-        {/* ── 5. STATS TEASER ────────────────────────────── */}
-        <PortfolioStatsTeaser
-          subtitleText={bestPerformerName
-            ? `Votre ${truncName(bestPerformerName)} est votre meilleur performer`
-            : 'Voyez quelles positions tirent vraiment votre performance'}
-          onPress={() => {
-            if (!isPremium) {
-              showPaywall();
-              return;
-            }
-            router.push('/statistiques' as never);
-          }}
-        />
-
         {/* ── 6. TRUST FOOTER ────────────────────────────── */}
         <View style={st.trustFooter}>
           <Text style={st.trustLine1}>
@@ -386,10 +390,10 @@ const st = StyleSheet.create({
   filterClear: { color: C.textDim, fontSize: 11, fontWeight: '600' },
 
   // Positions header
-  posHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  posHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 30, marginBottom: 10 },
   posHeaderTitle: { fontSize: 12, fontWeight: '700', color: C.textDim, textTransform: 'uppercase', letterSpacing: 1 },
   quota: { fontSize: 10, color: C.textDim },
-  quotaFull: { fontSize: 10, color: C.gold, fontWeight: '600' },
+  quotaFull: { fontSize: 10, color: C.textDim, fontWeight: '600' },
   partialNotice: { color: C.textDim, fontSize: 11, lineHeight: 16, marginTop: -4, marginBottom: 12 },
 
   // Trust footer
