@@ -236,18 +236,26 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
           <View style={{ flex: 1 }}>
             <View style={s.pricingCard}>
               <Text style={s.pricingLabel}>Mensuel</Text>
-              <Text style={s.pricingPrice}>2,99€</Text>
-              <Text style={s.pricingSub}>/mois</Text>
+              <View style={s.pricingPriceRow}>
+                <Text style={s.pricingPrice}>4,99 €</Text>
+                <Text style={s.pricingUnit}>/mois</Text>
+              </View>
+              {/* Réserve une zone basse équivalente à pricingSub + pricingMostChosen
+                  de la carte annuelle. Garde une structure 3-zones commune aux 2 cartes. */}
+              <View style={s.pricingBottomSpacer} />
             </View>
           </View>
 
           {/* Annuel */}
           <View style={{ flex: 1 }}>
             <View style={s.pricingCardAnnual}>
-              <View style={s.badgeDiscount}><Text style={s.badgeDiscountText}>{'−21€/an'}</Text></View>
+              <View style={s.badgeDiscount}><Text style={s.badgeDiscountText}>{'-58%'}</Text></View>
               <Text style={s.pricingLabel}>Annuel</Text>
-              <Text style={s.pricingPrice}>14,99€</Text>
-              <Text style={s.pricingSub}>/an {'·'} soit 1,25€/mois</Text>
+              <View style={s.pricingPriceRow}>
+                <Text style={s.pricingPrice}>24,99 €</Text>
+                <Text style={s.pricingUnit}>/an</Text>
+              </View>
+              <Text style={s.pricingSub}>soit 2,08€/mois</Text>
               <Text style={s.pricingMostChosen}>Le plus choisi</Text>
             </View>
           </View>
@@ -441,18 +449,23 @@ const s = StyleSheet.create({
     borderRadius: 12, borderWidth: 1, borderColor: OrTrackColors.border,
     backgroundColor: OrTrackColors.card,
     paddingTop: 14, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+    minHeight: 130,
     opacity: 0.6,
   },
   pricingCardAnnual: {
     borderRadius: 12, borderWidth: 1, borderColor: OrTrackColors.border,
     backgroundColor: OrTrackColors.card,
     paddingTop: 20, paddingBottom: 14, paddingHorizontal: 8, alignItems: 'center',
+    minHeight: 130,
     opacity: 0.6,
   },
   pricingLabel: { fontSize: 11, fontWeight: '500', color: OrTrackColors.subtext, marginBottom: 3 },
   pricingPrice: { fontSize: 24, fontWeight: '700', color: OrTrackColors.white },
+  pricingPriceRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'center', gap: 4 },
+  pricingUnit: { fontSize: 13, fontWeight: '500', color: OrTrackColors.subtext },
   pricingSub: { fontSize: 11, color: OrTrackColors.subtext, marginTop: 2 },
   pricingMostChosen: { fontSize: 10, color: OrTrackColors.gold, opacity: 0.7, marginTop: 4 },
+  pricingBottomSpacer: { height: 33 },
   badgeDiscount: {
     position: 'absolute', top: -9, right: -4,
     backgroundColor: OrTrackColors.gold,
