@@ -34,12 +34,12 @@ const SLIDES: Slide[] = [
   {
     id: 1,
     icon: 'trending-up',
-    title: 'Votre or vaut combien\naujourd\'hui ?',
-    subtitle: 'Cours en direct pour l\'Or, l\'Argent,\nle Platine et le Palladium',
+    title: 'Suivez la valeur de vos métaux',
+    subtitle: 'Cours du jour, portefeuille et gain en un coup d\'œil',
     isFirst: true,
     encartIcon: 'notifications-outline',
-    proofCardLabel: 'Alertes personnalisables',
-    proofCardText: 'Soyez notifié dès que le prix cible est atteint',
+    proofCardLabel: 'Suivi clair',
+    proofCardText: 'Visualisez rapidement ce que valent vos métaux',
   },
   {
     id: 2,
@@ -54,12 +54,12 @@ const SLIDES: Slide[] = [
   {
     id: 3,
     icon: 'calculator-outline',
-    title: 'Simulation fiscale\nincluse',
-    subtitle: 'Calculez vos plus-values et anticipez\nvotre imposition en quelques secondes',
+    title: 'Sachez combien vous récupérez si vous vendez',
+    subtitle: 'Estimez votre net après impôt et comparez les régimes en quelques secondes',
     isFirst: false,
     encartIcon: 'checkmark-circle',
-    proofCardLabel: 'Conforme au droit français',
-    proofCardText: 'Régime forfaitaire et abattement inclus',
+    proofCardLabel: 'Net estimé',
+    proofCardText: 'Forfaitaire et plus-values inclus',
   },
 ]
 
