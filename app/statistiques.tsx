@@ -192,7 +192,7 @@ export default function StatistiquesScreen() {
             <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
               <Text style={st.backText}>{'\u2190'} Retour</Text>
             </TouchableOpacity>
-            <Text style={st.headerTitle}>Statistiques</Text>
+            <Text style={st.headerTitle}>Analyses</Text>
           </View>
 
           <Text style={st.sectionTitle}>Analyses {'\u00B7'} Bientôt disponible</Text>
@@ -224,13 +224,13 @@ export default function StatistiquesScreen() {
           <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
             <Text style={st.backText}>{'\u2190'} Retour</Text>
           </TouchableOpacity>
-          <Text style={st.headerTitle}>Statistiques</Text>
+          <Text style={st.headerTitle}>Analyses</Text>
         </View>
 
         {!hasPositions ? (
           <View style={st.emptyState}>
             <Text style={st.emptyTitle}>Aucune position</Text>
-            <Text style={st.emptyText}>Ajoutez des actifs pour voir vos statistiques.</Text>
+            <Text style={st.emptyText}>Ajoutez des actifs pour voir vos analyses.</Text>
           </View>
         ) : (
           <>

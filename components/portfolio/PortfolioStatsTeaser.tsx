@@ -14,7 +14,7 @@ export default function PortfolioStatsTeaser({ subtitleText, onPress }: Portfoli
     <TouchableOpacity style={st.statsTeaser} onPress={onPress} activeOpacity={0.7}>
       <Ionicons name="bar-chart-outline" size={18} color={C.gold} />
       <View style={{ flex: 1 }}>
-        <Text style={st.statsTeaserTitle}>Statistiques</Text>
+        <Text style={st.statsTeaserTitle}>Analyses</Text>
         <Text style={st.statsTeaserSub}>{subtitleText}</Text>
       </View>
     </TouchableOpacity>

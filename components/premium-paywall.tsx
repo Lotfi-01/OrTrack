@@ -21,7 +21,7 @@ const FEATURES = [
   { icon: '\uD83D\uDCC8', name: 'Historique', free: '1 an', premium: '20 ans', hl: false },
   { icon: '\uD83D\uDD14', name: 'Alertes', free: '2 max', premium: 'Illimitées', hl: false },
   { icon: '\uD83D\uDCF0', name: 'Actualités', free: '2 sources', premium: 'Toutes', hl: false },
-  { icon: '\uD83D\uDCCA', name: 'Statistiques', free: '—', premium: '✓', hl: false },
+  { icon: '\uD83D\uDCCA', name: 'Analyses', free: '—', premium: '✓', hl: false },
 ];
 
 // ─── Animation helper ────────────────────────────────────────────────────────
