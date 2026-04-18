@@ -141,6 +141,69 @@ export async function deleteAlert(
   }
 }
 
+export type AlertMigrationResult =
+  | { outcome: 'no_previous_token' }
+  | { outcome: 'invalid_current_token' }
+  | { outcome: 'no_op_same_token' }
+  | { outcome: 'skipped_conflict'; alertsOnCurrent: number }
+  | { outcome: 'migrated'; migratedCount: number }
+  | { outcome: 'failed'; reason: string }
+
+// Reassigns the legacy `push_token` routing column on active alerts from a
+// previous Expo token to the current one. Idempotent: once the rotation is
+// persisted locally, the caller stops invoking this function, so re-runs only
+// happen when an actual rotation is detected. When active alerts already
+// exist on the current token, the migration halts without any mutation to
+// avoid merging potentially distinct alert sets.
+export async function migrateLegacyAlertsToNewToken(
+  previousToken: NotificationToken | null | undefined,
+  currentToken: NotificationToken,
+): Promise<AlertMigrationResult> {
+  if (!previousToken || !hasValidNotificationToken(previousToken)) {
+    return { outcome: 'no_previous_token' }
+  }
+  if (!hasValidNotificationToken(currentToken)) {
+    return { outcome: 'invalid_current_token' }
+  }
+  if (previousToken === currentToken) {
+    return { outcome: 'no_op_same_token' }
+  }
+  if (!supabase) return { outcome: 'failed', reason: 'supabase_unavailable' }
+
+  try {
+    const { count, error: countError } = await supabase
+      .from('alerts')
+      .select('id', { count: 'exact', head: true })
+      .eq('push_token', currentToken)
+      .eq('is_active', true)
+
+    if (countError) {
+      reportAlertError('migrate_alerts_count_current', countError)
+      return { outcome: 'failed', reason: 'count_current_failed' }
+    }
+
+    const alertsOnCurrent = count ?? 0
+    if (alertsOnCurrent > 0) return { outcome: 'skipped_conflict', alertsOnCurrent }
+
+    const { data, error } = await supabase
+      .from('alerts')
+      .update({ push_token: currentToken })
+      .eq('push_token', previousToken)
+      .eq('is_active', true)
+      .select('id')
+
+    if (error) {
+      reportAlertError('migrate_alerts_update', error)
+      return { outcome: 'failed', reason: 'update_failed' }
+    }
+
+    return { outcome: 'migrated', migratedCount: data?.length ?? 0 }
+  } catch (error) {
+    reportAlertError('migrate_alerts_unexpected', error)
+    return { outcome: 'failed', reason: 'unexpected' }
+  }
+}
+
 export async function updateAlert(
   scope: LegacyNotificationTokenAlertScope,
   alertId: string,

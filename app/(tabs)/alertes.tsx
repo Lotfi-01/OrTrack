@@ -12,10 +12,12 @@ import {
   ActivityIndicator,
   Alert as RNAlert,
   Linking,
+  AppState,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons'
 import { useLocalSearchParams } from 'expo-router'
+import { useFocusEffect } from '@react-navigation/native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import * as Notifications from 'expo-notifications'
 import {
@@ -24,6 +26,7 @@ import {
   deleteAlert,
   updateAlert,
   createLegacyNotificationTokenAlertScope,
+  migrateLegacyAlertsToNewToken,
   type Alert,
   type Condition,
   type LegacyNotificationTokenAlertScope,
@@ -38,7 +41,12 @@ import { usePremium } from '../../contexts/premium-context'
 import { useSpotPrices } from '../../hooks/use-spot-prices'
 import { formatEuro } from '@/utils/format'
 import { STORAGE_KEYS } from '@/constants/storage-keys'
-import { registerForPushNotifications } from '@/services/notifications'
+import {
+  registerForPushNotifications,
+  getCurrentPermissionStatus,
+  refreshCurrentPushToken,
+  type NotificationPermissionStatus,
+} from '@/services/notifications'
 import { reportError } from '@/utils/error-reporting'
 
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium']
@@ -62,6 +70,7 @@ export default function AlertesScreen() {
   const [targetPrice, setTargetPrice] = useState('')
   const [creating, setCreating] = useState(false)
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null)
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermissionStatus | null>(null)
   const { pricesEur: alertPricesEur } = useSpotPrices()
   const { canAddAlert, showPaywall, isPremium, limits } = usePremium()
   const didAutoOpen = useRef(false)
@@ -115,6 +124,53 @@ export default function AlertesScreen() {
     }
   }
 
+  // Reconciles OS permission state and silently detects Expo push token
+  // rotation. Drives the permission banner and, on rotation, transfers legacy
+  // alerts from the previous token to the current one before reloading the
+  // list. Safe to call on mount, on screen focus and on foreground
+  // transitions; does not prompt the user.
+  const reconcilePushStatus = useCallback(async () => {
+    const status = await getCurrentPermissionStatus()
+    setPermissionStatus(status)
+    if (status.state !== 'granted') return
+
+    try {
+      const refresh = await refreshCurrentPushToken()
+      if (refresh.outcome !== 'rotated') return
+
+      await migrateLegacyAlertsToNewToken(refresh.previous, refresh.current)
+      setNotificationToken(refresh.current)
+      const scope = createLegacyNotificationTokenAlertScope(refresh.current)
+      if (!scope) return
+
+      setAlertsLoading(true)
+      try {
+        const data = await getAlerts(scope)
+        setAlerts(data)
+      } catch (error) {
+        reportError(error, { scope: 'alerts', action: 'reload_after_rotation' })
+        setAlerts([])
+      } finally {
+        setAlertsLoading(false)
+      }
+    } catch (error) {
+      reportError(error, { scope: 'alerts', action: 'reconcile_push_status' })
+    }
+  }, [])
+
+  useFocusEffect(
+    useCallback(() => {
+      void reconcilePushStatus()
+    }, [reconcilePushStatus])
+  )
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void reconcilePushStatus()
+    })
+    return () => sub.remove()
+  }, [reconcilePushStatus])
+
   const openNewAlert = useCallback(() => {
     if (!canAddAlert(alerts.length)) {
       showPaywall()
@@ -153,6 +209,7 @@ export default function AlertesScreen() {
       currentNotificationToken = await registerForPushNotifications()
       if (currentNotificationToken) {
         setNotificationToken(currentNotificationToken)
+        void reconcilePushStatus()
       } else {
         // Permission refusée — vérifier si refus définitif
         try {
@@ -286,6 +343,42 @@ export default function AlertesScreen() {
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Alertes</Text>
         </View>
+
+        {/* Bandeau d'état permissions notifications — ne s'affiche que si l'OS
+            bloque ou si l'état n'est pas lisible. 'undetermined' reste silencieux. */}
+        {permissionStatus && (permissionStatus.state === 'denied' || permissionStatus.state === 'unavailable') && (
+          <View style={styles.permissionBanner}>
+            <Ionicons
+              name={permissionStatus.state === 'denied' ? 'notifications-off-outline' : 'help-circle-outline'}
+              size={18}
+              color={'#E07070'}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.permissionBannerTitle}>
+                {permissionStatus.state === 'denied'
+                  ? 'Notifications désactivées'
+                  : 'État des notifications inconnu'}
+              </Text>
+              <Text style={styles.permissionBannerSub}>
+                {permissionStatus.state === 'denied'
+                  ? 'Vos alertes ne peuvent pas vous prévenir tant qu\u2019elles restent bloquées par l\u2019appareil.'
+                  : 'Impossible de v\u00E9rifier l\u2019\u00E9tat des notifications sur cet appareil.'}
+              </Text>
+            </View>
+            {permissionStatus.state === 'denied' && (
+              <TouchableOpacity
+                style={styles.permissionBannerCta}
+                onPress={() => {
+                  Linking.openSettings().catch(error => {
+                    reportError(error, { scope: 'alerts', action: 'open_notification_settings_from_banner' })
+                  })
+                }}
+              >
+                <Text style={styles.permissionBannerCtaText}>Réglages</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
 
         {/* CAS 1 : chargement token */}
         {tokenLoading && (
@@ -707,6 +800,43 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '300',
     color: OrTrackColors.gold,
+  },
+
+  // Permission banner
+  permissionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: 'rgba(224,112,112,0.08)',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(224,112,112,0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  permissionBannerTitle: {
+    color: OrTrackColors.white,
+    fontSize: 13,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  permissionBannerSub: {
+    color: OrTrackColors.subtext,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  permissionBannerCta: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: OrTrackColors.gold,
+  },
+  permissionBannerCtaText: {
+    color: OrTrackColors.gold,
+    fontSize: 12,
+    fontWeight: '600',
   },
 
   // Empty states
