@@ -6,7 +6,7 @@ import { computePositionCost, computePositionValue } from '@/utils/position-calc
 
 /** Seuil en € en dessous duquel les deux régimes sont considérés équivalents */
 export const REGIME_EQUALITY_THRESHOLD = 1;
-export const PARTIAL_ESTIMATE_NOTICE = "Estimation partielle : les positions à prix d'achat nul sont exclues des gains, du net estimé et de la fiscalité.";
+export const PARTIAL_ESTIMATE_NOTICE = "Estimation partielle : certaines positions sont exclues des calculs faute de données complètes.";
 
 export function isGainFiscalEligiblePosition(pos: Pick<Position, 'purchasePrice'>): boolean {
   return Number.isFinite(pos.purchasePrice) && pos.purchasePrice > 0;
