@@ -507,7 +507,6 @@ export default function ReglagesScreen() {
           {/* En-tête */}
           <Text style={styles.headerTitle}>Réglages</Text>
 
-          {/* ── PREMIUM ─────────────────────────────────────────────── */}
           {/* ── PRÉFÉRENCES ────────────────────────────────────────────── */}
           <SectionTitle title="Préférences" />
           <View style={styles.card}>
@@ -826,28 +825,6 @@ const styles = StyleSheet.create({
   },
 
   // Premium card
-  premiumCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.3)',
-    paddingVertical: 18,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  premiumLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  premiumTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-  },
 
   // Segmented control row
   segmentRow: {
