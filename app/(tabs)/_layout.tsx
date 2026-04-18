@@ -3,9 +3,11 @@ import { Tabs } from 'expo-router';
 
 import { HapticTab } from '@/components/haptic-tab';
 import { OrTrackColors } from '@/constants/theme';
+import { SpotPricesProvider } from '@/contexts/spot-prices-context';
 
 export default function TabLayout() {
   return (
+    <SpotPricesProvider>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: OrTrackColors.gold,
@@ -77,5 +79,6 @@ export default function TabLayout() {
         }}
       />
     </Tabs>
+    </SpotPricesProvider>
   );
 }

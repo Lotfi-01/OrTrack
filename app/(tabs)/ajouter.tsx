@@ -24,7 +24,7 @@ import { PRODUCTS, type Product } from '@/constants/products';
 import { formatEuro, formatG } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
-import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
 import { parseDate } from '@/utils/tax-helpers';
@@ -58,7 +58,7 @@ export default function AjouterScreen() {
     activeEditId != null &&
     activeEditId === editId &&
     activeEditId !== staleEditId;
-  const { prices, currencySymbol, refresh } = useSpotPrices();
+  const { prices, currencySymbol, refresh } = useSharedSpotPrices();
   const { canAddPosition, showPaywall } = usePremium();
   const { positions, reloadPositions, addPosition, updatePosition } = usePositions();
 

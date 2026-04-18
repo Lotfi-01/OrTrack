@@ -1,6 +1,6 @@
 // ─── ÉTAPE 0 — Hooks et sources identifiés ───
 // Hook positions : usePositions (hooks/use-positions.ts)
-// Hook spot/prix : useSpotPrices (hooks/use-spot-prices.ts) → prices.gold etc. en EUR/oz
+// Hook spot/prix : useSharedSpotPrices (contexts/spot-prices-context.tsx) → prices.gold etc. en EUR/oz
 // Source historique : loadPriceHistory (hooks/use-metal-history.ts) → PricePoint[]
 // Fonction calcul fiscal : TAX.forfaitaireRate (constants/tax.ts)
 // Route fiscalité : /fiscalite-globale (app/fiscalite-globale.tsx)
@@ -34,7 +34,7 @@ import { formatEuro, formatPct, formatG, formatGain, stripMetalFromName, JOURS_F
 import { PARTIAL_ESTIMATE_NOTICE, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 import { usePositions } from '@/hooks/use-positions';
-import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
 import { usePremium } from '@/contexts/premium-context';
 
@@ -108,7 +108,7 @@ function formatChartDate(dateStr: string, period?: string, shortRange?: boolean)
 
 export default function AccueilScreen() {
   const { positions, loading: positionsLoading, reloadPositions } = usePositions();
-  const { prices, loading: spotLoading, refreshing, lastUpdated, refresh, currencySymbol, error: spotError } = useSpotPrices();
+  const { prices, loading: spotLoading, refreshing, lastUpdated, refresh, currencySymbol, error: spotError } = useSharedSpotPrices();
   const { isPremium, isPeriodLocked, showPaywall } = usePremium();
 
   const [masked, setMasked] = useState(false);

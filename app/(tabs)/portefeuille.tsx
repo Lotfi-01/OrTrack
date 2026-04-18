@@ -1,6 +1,6 @@
 // ─── ÉTAPE 0 — Hooks et sources identifiés ───
 // Hook positions : usePositions (hooks/use-positions.ts) → positions, loading, reloadPositions, deletePosition
-// Hook spot : useSpotPrices (hooks/use-spot-prices.ts) → prices, loading, lastUpdated, currencySymbol, error
+// Hook spot : useSharedSpotPrices (contexts/spot-prices-context.tsx) → prices, loading, lastUpdated, currencySymbol, error
 // Fonction suppression position : deletePosition(id: string) → from usePositions
 // Fonction calcul fiscal : utils/fiscal.ts (computeRegimeComparison, computeFiscalCountdown, computeSellerNetForfaitaire)
 // Route fiscalité : /fiscalite-globale (stack push)
@@ -33,7 +33,7 @@ import PositionCard from '@/components/portfolio/PositionCard';
 import PortfolioEmptyState from '@/components/portfolio/PortfolioEmptyState';
 import PortfolioStatsTeaser from '@/components/portfolio/PortfolioStatsTeaser';
 import { usePremium } from '@/contexts/premium-context';
-import { useSpotPrices } from '@/hooks/use-spot-prices';
+import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { usePositions } from '@/hooks/use-positions';
 
 const C = OrTrackColors;
@@ -51,7 +51,7 @@ function symbolToMetal(sym: string): MetalType | null {
 
 export default function PortefeuilleScreen() {
   const { positions, loading: positionsLoading, reloadPositions, deletePosition } = usePositions();
-  const { prices, loading: spotLoading, lastUpdated, currencySymbol, error: spotError } = useSpotPrices();
+  const { prices, loading: spotLoading, lastUpdated, currencySymbol, error: spotError } = useSharedSpotPrices();
   const { showPaywall, isPremium, limits } = usePremium();
 
   const { metal: paramMetal } = useLocalSearchParams<{ metal?: string }>();
