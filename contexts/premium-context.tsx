@@ -23,11 +23,11 @@ type PurchasesPackage = { identifier: string; product: { priceString: string } }
 
 const PREMIUM_LIMITS = {
   // Teaser assumé (v1.0) : aucun achat réel n'est disponible. Le quota
-  // positions est temporairement relevé à 10 (vs 3 cible Premium) pour rester
+  // positions est temporairement relevé à 5 (vs 3 cible Premium) pour rester
   // cohérent avec la promesse "Portefeuille illimité" affichée dans le paywall
   // tant que l'abonnement n'est pas ouvert. À ramener à 3 lors de l'activation
   // commerciale Premium.
-  maxPositions: 10,
+  maxPositions: 5,
   maxAlerts: 2,
   maxNewsSources: 2,
   freePeriods: ['1S', '1M', '3M', '1A'] as const,

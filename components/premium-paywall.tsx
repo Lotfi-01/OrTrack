@@ -16,7 +16,7 @@ const BENEFITS = [
 ];
 
 const FEATURES = [
-  { icon: '\uD83E\uDD47', name: 'Positions', free: '10 max', premium: 'Illimité', hl: false },
+  { icon: '\uD83E\uDD47', name: 'Positions', free: '5 max', premium: 'Illimité', hl: false },
   { icon: '\uD83C\uDFDB\uFE0F', name: 'Fiscalité', free: 'Forfaitaire', premium: 'Comparatif', hl: true },
   { icon: '\uD83D\uDCC8', name: 'Historique', free: '1 an', premium: '20 ans', hl: false },
   { icon: '\uD83D\uDD14', name: 'Alertes', free: '2 max', premium: 'Illimitées', hl: false },
