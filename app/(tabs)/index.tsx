@@ -378,7 +378,7 @@ export default function AccueilScreen() {
                     : netG.state === 'positive' ? C.green : C.red;
                 return (
                   <View style={[st.netBlock, masked && st.netMasked]}>
-                    <Text style={st.netLabel}>Résultat net estimé</Text>
+                    <Text style={st.netLabel}>Résultat net si vente aujourd{'\u2019'}hui</Text>
                     <Text style={[st.netValue, { color: netColor }]}>
                       {m(`${netG.text} ${currencySymbol}`)}
                     </Text>
