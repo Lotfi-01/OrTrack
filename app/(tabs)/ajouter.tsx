@@ -217,7 +217,13 @@ export default function AjouterScreen() {
         setIsStep2Active(false);
         setCoinSearch('');
 
-        if (!canAddPosition(positions.length)) {
+        // Ne pas ouvrir le paywall pendant un save en cours : quand une création
+        // réussit, `positions` change et ce useFocusEffect ré-exécute avec le
+        // nouveau quota atteint (ex: 5/5 après avoir légitimement ajouté la 5e).
+        // Le paywall s'ouvrirait alors à tort avant la redirection. `savingRef`
+        // est true durant toute la fenêtre save+confirmation et est réarmé à
+        // chaque re-focus de l'écran (useFocusEffect ligne 102-107).
+        if (!canAddPosition(positions.length) && !savingRef.current) {
           showPaywall();
         }
       }
