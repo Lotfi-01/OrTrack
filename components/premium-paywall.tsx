@@ -16,7 +16,7 @@ const BENEFITS = [
 ];
 
 const FEATURES = [
-  { icon: '\uD83E\uDD47', name: 'Positions', free: '3 max', premium: 'Illimité', hl: false },
+  { icon: '\uD83E\uDD47', name: 'Positions', free: '10 max', premium: 'Illimité', hl: false },
   { icon: '\uD83C\uDFDB\uFE0F', name: 'Fiscalité', free: 'Forfaitaire', premium: 'Comparatif', hl: true },
   { icon: '\uD83D\uDCC8', name: 'Historique', free: '1 an', premium: '20 ans', hl: false },
   { icon: '\uD83D\uDD14', name: 'Alertes', free: '2 max', premium: 'Illimitées', hl: false },
@@ -142,9 +142,9 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
 
       {/* 4b. Statut produit */}
       <Animated.View style={[s.launchBanner, { opacity: animB.fade, transform: [{ translateY: animB.slide }] }]}>
-        <Text style={s.launchBannerTitle}>Premium bientôt disponible</Text>
+        <Text style={s.launchBannerTitle}>Abonnements en préparation</Text>
         <Text style={s.launchBannerSub}>
-          Laissez votre intérêt pour être prévenu au lancement.
+          Les abonnements Premium ne sont pas encore ouverts. Laissez votre intérêt pour être prévenu au lancement.
         </Text>
       </Animated.View>
 

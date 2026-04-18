@@ -195,7 +195,7 @@ export default function StatistiquesScreen() {
             <Text style={st.headerTitle}>Analyses</Text>
           </View>
 
-          <Text style={st.sectionTitle}>Analyses {'\u00B7'} Bientôt disponible</Text>
+          <Text style={st.sectionTitle}>Analyses {'\u00B7'} Réservé Premium</Text>
           <View style={st.card}>
             {PREMIUM_FEATURES.map((item, i) => (
               <View key={item.title} style={[st.premiumRow, i < PREMIUM_FEATURES.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border }]}>
@@ -209,7 +209,7 @@ export default function StatistiquesScreen() {
             ))}
           </View>
           <TouchableOpacity style={st.premiumCta} onPress={showPaywall} activeOpacity={0.7}>
-            <Text style={st.premiumCtaText}>Débloquer les analyses</Text>
+            <Text style={st.premiumCtaText}>Découvrir Premium</Text>
           </TouchableOpacity>
         </ScrollView>
       </SafeAreaView>
