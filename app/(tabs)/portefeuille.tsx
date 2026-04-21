@@ -235,10 +235,8 @@ export default function PortefeuilleScreen() {
           spotError={spotError}
           hasFilteredPositions={hasFilteredPositions}
           onPressFiscal={() => {
-            if (!isPremium) {
-              showPaywall();
-              return;
-            }
+            // L'accès à Simulation globale est ouvert free + premium. Le gating
+            // Premium est localisé dans l'écran sur les blocs avancés.
             router.push('/fiscalite-globale');
           }}
           ctaDisabled={!hasFilteredPositions || !pricesReady || masked}

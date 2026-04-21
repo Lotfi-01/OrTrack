@@ -109,7 +109,7 @@ function formatChartDate(dateStr: string, period?: string, shortRange?: boolean)
 export default function AccueilScreen() {
   const { positions, loading: positionsLoading, reloadPositions } = usePositions();
   const { prices, loading: spotLoading, refreshing, lastUpdated, refresh, currencySymbol, error: spotError } = useSharedSpotPrices();
-  const { isPremium, isPeriodLocked, showPaywall } = usePremium();
+  const { isPeriodLocked, showPaywall } = usePremium();
 
   const [masked, setMasked] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<HistoryPeriod>('1A');
@@ -406,10 +406,8 @@ export default function AccueilScreen() {
             style={[st.ctaFiscal, (!hasPositions || !pricesReady) && { opacity: 0.5 }]}
             onPress={() => {
               if (!hasPositions || !pricesReady) return;
-              if (!isPremium) {
-                showPaywall();
-                return;
-              }
+              // L'accès à Simulation globale est ouvert free + premium. Le gating
+              // Premium est localisé dans l'écran sur les blocs avancés.
               router.push('/fiscalite-globale');
             }}
             activeOpacity={0.7}

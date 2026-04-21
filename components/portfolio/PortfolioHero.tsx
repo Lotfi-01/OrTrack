@@ -79,7 +79,7 @@ export default function PortfolioHero({
       >
         <Text style={st.ctaFiscalText}>{'Voir combien je récupère →'}</Text>
       </TouchableOpacity>
-      <Text style={st.ctaSub}>Comparez les régimes et voyez votre net de vente</Text>
+      <Text style={st.ctaSub}>Voyez votre net de vente estimé</Text>
     </View>
   );
 }
