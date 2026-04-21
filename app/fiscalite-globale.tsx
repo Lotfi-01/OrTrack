@@ -30,6 +30,15 @@ import { usePremium } from '@/contexts/premium-context';
 
 const C = OrTrackColors;
 
+// ─── Analytics (à brancher) ──────────────────────────────────────────────────
+// Aucun tracker commun n'est encore disponible. Events produit à câbler
+// quand l'infrastructure sera en place :
+//   - simulation_global_opened   → à l'ouverture de l'écran (mount ou focus)
+//   - premium_teaser_seen        → premier render du teaser pour un free user
+//   - premium_teaser_clicked     → clic CTA "Découvrir Premium" du teaser
+//   - paywall_opened_from_simulation → juste avant l'appel à showPaywall()
+// Pas de noop local : ne pas ajouter de stub avant que l'infrastructure existe.
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type PositionResult = {
@@ -166,21 +175,6 @@ export default function FiscaliteGlobaleScreen() {
 
   // ── Rendu ───────────────────────────────────────────────────────────────
 
-  if (!isPremium) {
-    return (
-      <SafeAreaView style={st.container} edges={['bottom']}>
-        <Stack.Screen options={{ title: 'Simulation globale' }} />
-        <View style={st.lockedCard}>
-          <Text style={st.lockedTitle}>Fiscalité {'\u00B7'} Bientôt disponible</Text>
-          <Text style={st.lockedText}>Les simulations fiscales globales sont réservées aux comptes Premium.</Text>
-          <TouchableOpacity style={st.lockedButton} onPress={showPaywall} activeOpacity={0.8}>
-            <Text style={st.lockedButtonText}>Débloquer la fiscalité</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={st.container} edges={['bottom']}>
       <Stack.Screen
@@ -225,9 +219,13 @@ export default function FiscaliteGlobaleScreen() {
               </TouchableOpacity>
               {!saleDateValid ? (
                 <Text style={st.dateError}>Date de cession invalide</Text>
-              ) : (
+              ) : isPremium ? (
                 <Text style={st.inputHint}>
                   La date de cession détermine l{'\u2019'}abattement du régime plus-values (5 % par an dès la 3e année).
+                </Text>
+              ) : (
+                <Text style={st.inputHint}>
+                  Date à laquelle vous estimez vendre vos positions.
                 </Text>
               )}
             </View>
@@ -271,9 +269,11 @@ export default function FiscaliteGlobaleScreen() {
               {/* 3. HERO — Montant récupérable estimé */}
               <View style={st.heroCard}>
                 <Text style={st.heroLabel}>MONTANT RÉCUPÉRABLE ESTIMÉ</Text>
-                <Text style={st.heroValue}>{m(`${formatEuro(heroNet)} \u20AC`)}</Text>
+                <Text style={st.heroValue}>{m(`${formatEuro(isPremium ? heroNet : netForfaitaire)} \u20AC`)}</Text>
                 {masked ? (
                   <Text style={st.heroSub}>Résultat masqué en mode confidentialité</Text>
+                ) : !isPremium ? (
+                  <Text style={st.heroSub}>Régime forfaitaire au {saleDate}</Text>
                 ) : isEquality ? (
                   <Text style={st.heroSub}>Les deux régimes donnent un net équivalent à cette date.</Text>
                 ) : (
@@ -306,20 +306,43 @@ export default function FiscaliteGlobaleScreen() {
                 </View>
               </View>
 
-              {/* 5. POURQUOI CE RÉSULTAT ? */}
+              {/* 5. POURQUOI CE RÉSULTAT ? — texte comparatif réservé au premium */}
               <View style={st.explainCard}>
                 <Text style={st.explainTitle}>Pourquoi ce résultat ?</Text>
-                <Text style={st.explainText}>
-                  Le forfaitaire taxe le prix de vente total.{'\n'}
-                  Le régime plus-values taxe la plus-value après abattement.{'\n'}
-                  La date de cession influence l{'\u2019'}abattement appliqué.
-                </Text>
-                {uniqueAbatement !== null && (
+                {isPremium ? (
+                  <Text style={st.explainText}>
+                    Le forfaitaire taxe le prix de vente total.{'\n'}
+                    Le régime plus-values taxe la plus-value après abattement.{'\n'}
+                    La date de cession influence l{'\u2019'}abattement appliqué.
+                  </Text>
+                ) : (
+                  <Text style={st.explainText}>
+                    Le régime forfaitaire taxe votre prix de vente total à un taux unique.{'\n'}
+                    Cette estimation applique ce régime à l{'\u2019'}ensemble de vos positions éligibles.
+                  </Text>
+                )}
+                {isPremium && uniqueAbatement !== null && (
                   <Text style={st.explainAbatement}>Abattement pris en compte : {uniqueAbatement} %</Text>
                 )}
               </View>
 
-              {/* 6. COMPARAISON DES 2 RÉGIMES */}
+              {/* 6. COMPARAISON DES 2 RÉGIMES — Premium uniquement */}
+              {!isPremium && (
+                <View style={st.premiumTeaser}>
+                  <Text style={st.premiumTeaserTitle}>Comparer les 2 régimes fiscaux</Text>
+                  <Text style={st.premiumTeaserText}>
+                    Débloquez le comparatif fiscal complet et le détail par position pour mieux préparer vos ventes.
+                  </Text>
+                  <TouchableOpacity
+                    style={st.premiumTeaserCta}
+                    onPress={showPaywall}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={st.premiumTeaserCtaText}>Découvrir Premium</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {isPremium && (
               <View style={st.section}>
                 <Text style={st.sectionLabel}>COMPARAISON DES 2 RÉGIMES</Text>
                 <View style={st.regimeColumns}>
@@ -343,8 +366,11 @@ export default function FiscaliteGlobaleScreen() {
                   </View>
                 </View>
               </View>
+              )}
 
-              {/* 7. DÉTAIL PAR POSITION */}
+              {/* 7. DÉTAIL PAR POSITION — Premium uniquement (contient la comparaison fine par position) */}
+              {isPremium && (
+              <>
               <TouchableOpacity
                 onPress={() => setDetailExpanded(!detailExpanded)}
                 activeOpacity={0.7}
@@ -409,6 +435,8 @@ export default function FiscaliteGlobaleScreen() {
                     })}
                   </View>
                 </View>
+              )}
+              </>
               )}
 
               {/* 8. FOOTER CONFIANCE */}
@@ -523,11 +551,12 @@ const st = StyleSheet.create({
   warningText: { fontSize: 13, color: C.subtext },
   excludedBanner: { backgroundColor: '#2A1800', borderRadius: 8, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#8A4A00' },
   excludedText: { fontSize: 12, color: '#E0A060' },
-  lockedCard: { margin: 20, backgroundColor: C.card, borderRadius: 12, padding: 20, borderWidth: 1, borderColor: C.border, gap: 12 },
-  lockedTitle: { fontSize: 18, fontWeight: '700', color: C.white, textAlign: 'center' },
-  lockedText: { fontSize: 13, color: C.subtext, textAlign: 'center', lineHeight: 20 },
-  lockedButton: { backgroundColor: C.gold, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 4 },
-  lockedButtonText: { color: C.background, fontSize: 14, fontWeight: '700' },
+  // Premium teaser (remplace COMPARAISON DES 2 RÉGIMES pour free users)
+  premiumTeaser: { backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(201,168,76,0.3)', padding: 20, marginBottom: 20, alignItems: 'center', gap: 10 },
+  premiumTeaserTitle: { fontSize: 15, fontWeight: '700', color: C.white, textAlign: 'center' },
+  premiumTeaserText: { fontSize: 12, color: C.subtext, textAlign: 'center', lineHeight: 18 },
+  premiumTeaserCta: { backgroundColor: C.gold, borderRadius: 10, paddingVertical: 12, paddingHorizontal: 24, marginTop: 4 },
+  premiumTeaserCtaText: { color: C.background, fontSize: 13, fontWeight: '700' },
 
   // Footer
   reassurance: { fontSize: 11, color: C.subtext, textAlign: 'center', marginTop: 16, marginBottom: 8 },
