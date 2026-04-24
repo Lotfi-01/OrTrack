@@ -1,4 +1,4 @@
-import { isValidPosition } from '@/hooks/use-positions';
+import { normalizePersistedPosition } from '@/hooks/use-positions';
 import type { Position } from '@/types/position';
 
 export const EXPORT_SCHEMA_VERSION = 1;
@@ -24,7 +24,7 @@ export type ExportPayloadV1 = {
 };
 
 export type ImportResult = {
-  // Accepted positions, already filtered by isValidPosition.
+  // Accepted positions, already normalized and filtered.
   positions: Position[];
   // Number of entries that failed validation (present in the file but rejected).
   rejected: number;
@@ -46,7 +46,7 @@ export type ImportError =
 /**
  * Builds a sanitized, versioned export payload from in-memory data.
  *
- * - Positions are filtered through isValidPosition. Corrupt entries are
+ * - Positions are normalized through the same compatibility path as storage. Corrupt entries are
  *   silently dropped: an export must never propagate invalid data.
  * - Settings are optional. When present, they are type-checked and only
  *   the known fields are carried. Unknown or malformed settings are
@@ -57,7 +57,9 @@ export function exportPayload(
   positions: Position[],
   settings?: unknown,
 ): ExportPayloadV1 {
-  const sanitizedPositions = positions.filter(isValidPosition);
+  const sanitizedPositions = positions
+    .map(normalizePersistedPosition)
+    .filter((p): p is Position => p !== null);
   const sanitizedSettings = validateExportableSettings(settings);
   const payload: ExportPayloadV1 = {
     app: EXPORT_APP_NAME,
@@ -84,7 +86,7 @@ export function serializeExportPayload(payload: ExportPayloadV1): string {
  *   - v0 legacy: a bare array `[ {...}, {...} ]` produced by older exports
  *
  * Validation semantics:
- *   - Each entry in the positions array passes through isValidPosition.
+ *   - Each entry in the positions array passes through storage-compatible normalization.
  *     Accepted entries are counted; others increment `rejected`.
  *   - If zero valid positions remain, returns `no_valid_position` error
  *     so the caller can refuse the import.
@@ -124,8 +126,9 @@ export function parseImportPayload(
   const accepted: Position[] = [];
   let rejected = 0;
   for (const entry of rawPositions) {
-    if (isValidPosition(entry)) {
-      accepted.push(entry);
+    const normalized = normalizePersistedPosition(entry);
+    if (normalized) {
+      accepted.push(normalized);
     } else {
       rejected++;
     }

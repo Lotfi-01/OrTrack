@@ -21,6 +21,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { PRODUCTS, type Product } from '@/constants/products';
+import { SILVER_MVP_PRODUCTS, getSilverMvpProductById, type SilverMvpProduct } from '@/constants/silver-products';
 import { formatEuro, formatG } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
@@ -28,6 +29,8 @@ import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
 import { parseDate } from '@/utils/tax-helpers';
+import { computeSilverBreakdown } from '@/utils/silver-breakdown';
+import { computeSilverMvpPremiumWarning } from '@/utils/silver-premium';
 import {
   autoFormatDate,
   formatDateDMY,
@@ -44,6 +47,82 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CONFIG[MetalType]][];
+
+type SelectableProduct = Product | SilverMvpProduct;
+
+function isSilverMvpProduct(product: SelectableProduct | null): product is SilverMvpProduct {
+  return product !== null && 'id' in product && product.metal === 'argent';
+}
+
+// ─── Ordre / whitelist / alias or — UI-only, écran Ajouter uniquement ────────
+// Ordre validé marché France pour la grille Or de l'écran Ajouter. Les pièces
+// non listées ici (s'il en existe au catalogue) sont rendues après, dans leur
+// ordre de catalogue.
+const GOLD_PRIORITY_ORDER: readonly string[] = [
+  'Napoléon 20F',
+  'Krugerrand 1oz',
+  'Souverain',
+  'Maple Leaf 1oz',
+  '20F Suisse Vreneli',
+  'American Gold Eagle 1oz',
+  'Philharmonique 1oz',
+  'Britannia 1oz',
+  '50 Pesos mexicain',
+  'Kangourou 1oz',
+  'Buffalo Américain 1oz',
+  'Panda de Chine 30g',
+];
+
+// UI-only, écran Ajouter uniquement : les badges "Populaire" sur la grille Or
+// sont pilotés par cette whitelist locale, pas par le champ `popular` global
+// du catalogue. Ne pas propager à d'autres écrans.
+const POPULAR_GOLD_COINS_ON_ADD: readonly string[] = [
+  'Napoléon 20F',
+  'Souverain',
+];
+
+const SILVER_POPULAR_BADGE_PRODUCT_IDS: readonly string[] = [
+  'silver-maple-leaf-1oz',
+  'american-silver-eagle-1oz',
+];
+
+const SILVER_SINGLE_LINE_PRODUCT_IDS: readonly string[] = [
+  'american-silver-eagle-1oz',
+  'vienna-philharmonic-silver-1oz',
+];
+
+const PRODUCT_SECTION_TITLE_BY_METAL: Record<MetalType, string> = {
+  or: 'PIÈCES D’OR',
+  argent: 'PIÈCES D’ARGENT',
+  platine: 'PIÈCES DE PLATINE',
+  palladium: 'PIÈCES DE PALLADIUM',
+};
+
+const SILVER_PREMIUM_WARNING_DISPLAY_THRESHOLD_PCT = 0.1;
+
+// Alias de recherche locaux à la grille Or. Utilisés en complément du match
+// substring sur le label normalisé (casse + accents).
+const COIN_ALIASES: Record<string, readonly string[]> = {
+  '20F Suisse Vreneli': ['20 francs suisse'],
+  'Panda de Chine 30g': ['panda chine', 'panda 30g'],
+};
+
+function normalizeSearch(s: string): string {
+  return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+function matchesCoinQuery(coin: SelectableProduct, query: string): boolean {
+  const q = normalizeSearch(query.trim());
+  if (!q) return true;
+  if (normalizeSearch(coin.label).includes(q)) return true;
+  const aliases = COIN_ALIASES[coin.label];
+  if (aliases) {
+    for (const a of aliases) {
+      if (normalizeSearch(a).includes(q)) return true;
+    }
+  }
+  return false;
+}
 
 // ─── Composant ────────────────────────────────────────────────────────────────
 
@@ -77,7 +156,7 @@ export default function AjouterScreen() {
   const justTappedContinue = useRef(false);
 
   const [metal, setMetal] = useState<MetalType>('or');
-  const [product, setProduct] = useState<Product | null>(null);
+  const [product, setProduct] = useState<SelectableProduct | null>(null);
   const [customWeight, setCustomWeight] = useState('');
   const [quantity, setQuantity] = useState('1');
   const [purchasePrice, setPurchasePrice] = useState('');
@@ -180,7 +259,10 @@ export default function AjouterScreen() {
         }
         if (!existing) return;
         setMetal(existing.metal);
-        const matchedProduct = PRODUCTS[existing.metal].find(p => p.label === existing.product) ?? null;
+        const matchedSilverProduct = existing.metal === 'argent'
+          ? getSilverMvpProductById(existing.productId)
+          : null;
+        const matchedProduct = matchedSilverProduct ?? PRODUCTS[existing.metal].find(p => p.label === existing.product) ?? null;
         if (matchedProduct) {
           setProduct(matchedProduct);
           if (matchedProduct.weightG === null) {
@@ -286,36 +368,96 @@ export default function AjouterScreen() {
     return { priceMatchesSpot: matches, showPriceReference: showRef };
   }, [purchasePrice, estimatedValue]);
 
+  const selectedSilverMvpProduct = isSilverMvpProduct(product) ? product : null;
+  const isSilverCreationFlow = !effectiveEditMode && metal === 'argent';
+
+  const silverBreakdown = useMemo(() => {
+    if (!isSilverCreationFlow || selectedSilverMvpProduct === null || price <= 0 || qty <= 0) return null;
+    try {
+      return computeSilverBreakdown({
+        unitPriceTTC: price,
+        quantity: qty,
+        vatRate: selectedSilverMvpProduct.vatRate,
+      });
+    } catch {
+      return null;
+    }
+  }, [isSilverCreationFlow, selectedSilverMvpProduct, price, qty]);
+
+  const silverPremiumWarning = useMemo(() => {
+    if (!isSilverCreationFlow || selectedSilverMvpProduct === null || price <= 0) return null;
+    return computeSilverMvpPremiumWarning({
+      productId: selectedSilverMvpProduct.id,
+      unitPriceTTC: price,
+      spotEur,
+    });
+  }, [isSilverCreationFlow, selectedSilverMvpProduct, price, spotEur]);
+  const displayedSilverPremiumWarning =
+    silverPremiumWarning !== null &&
+    Math.abs(silverPremiumWarning.premiumPct) >= SILVER_PREMIUM_WARNING_DISPLAY_THRESHOLD_PCT
+      ? silverPremiumWarning
+      : null;
+
+  const silverGapCopy = selectedSilverMvpProduct === null
+    ? null
+    : selectedSilverMvpProduct.vatRate !== null
+      ? `Prix TTC : la TVA (${Math.round(selectedSilverMvpProduct.vatRate * 100)} %) peut contribuer à l’écart au spot.`
+      : 'Prix TTC : TVA/fiscalité à confirmer, ne lisez pas l’écart au spot comme une prime seule.';
+
   // ── Grille pièces — scission en 2 useMemo (correction 8) ─────────────
 
   const allCoinsForMetal = useMemo(() => {
+    if (metal === 'argent' && !effectiveEditMode) {
+      return SILVER_MVP_PRODUCTS.map(product => ({
+        ...product,
+        popular: SILVER_POPULAR_BADGE_PRODUCT_IDS.includes(product.id),
+      }));
+    }
     const coins = PRODUCTS[metal].filter(p => p.category === 'piece');
-    return [...coins].sort((a, b) => (b.popular ? 1 : 0) - (a.popular ? 1 : 0));
-  }, [metal]);
+    if (metal !== 'or') {
+      // Autres métaux : comportement historique (tri popular-first).
+      return [...coins].sort((a, b) => (b.popular ? 1 : 0) - (a.popular ? 1 : 0));
+    }
+    // Or : ordre prioritaire explicite + override du champ `popular` par la
+    // whitelist locale POPULAR_GOLD_COINS_ON_ADD. Les pièces hors priorité
+    // (s'il en existe au catalogue) sont rendues après, dans leur ordre brut.
+    const prepared: Product[] = [];
+    for (const priorityLabel of GOLD_PRIORITY_ORDER) {
+      const p = coins.find(c => c.label === priorityLabel);
+      if (p) prepared.push({ ...p, popular: POPULAR_GOLD_COINS_ON_ADD.includes(priorityLabel) });
+    }
+    for (const p of coins) {
+      if (!GOLD_PRIORITY_ORDER.includes(p.label)) {
+        prepared.push({ ...p, popular: false });
+      }
+    }
+    return prepared;
+  }, [metal, effectiveEditMode]);
 
   const visiblePieces = useMemo(() => {
     let coins = allCoinsForMetal;
-    // Filter by search when expanded and search is non-empty
+    // Filter by search when expanded and search is non-empty (case + accent insensitive + aliases or).
     if (showAllPieces && coinSearch.trim()) {
-      coins = coins.filter(c =>
-        c.label.toLowerCase().includes(coinSearch.trim().toLowerCase())
-      );
+      coins = coins.filter(c => matchesCoinQuery(c, coinSearch));
     }
     if (!showAllPieces) {
-      const top4 = coins.slice(0, 4);
+      const reducedCoins = metal === 'or'
+        ? [...coins].sort((a, b) => Number(Boolean(b.popular)) - Number(Boolean(a.popular)))
+        : coins;
+      const top4 = reducedCoins.slice(0, 4);
       if (product && product.category === 'piece' && !top4.some(p => p.label === product.label)) {
-        const selected = coins.find(p => p.label === product.label);
+        const selected = reducedCoins.find(p => p.label === product.label);
         if (selected) top4.push(selected);
       }
       return top4;
     }
     return coins;
-  }, [allCoinsForMetal, showAllPieces, coinSearch, product]);
+  }, [allCoinsForMetal, showAllPieces, coinSearch, product, metal]);
 
   const showExpandPiecesButton = allCoinsForMetal.length > 4;
-  const hasPopularPieces = allCoinsForMetal.some(p => p.popular);
 
   const visibleLingots = useMemo(() => {
+    if (metal === 'argent' && !effectiveEditMode) return [];
     const allLingots = PRODUCTS[metal].filter(p => p.category === 'lingot' || p.category === 'autre');
     if (showAllBars) return allLingots;
     const top4 = allLingots.slice(0, 4);
@@ -324,9 +466,11 @@ export default function AjouterScreen() {
       if (selected) top4.push(selected);
     }
     return top4;
-  }, [metal, showAllBars, product]);
+  }, [metal, showAllBars, product, effectiveEditMode]);
 
-  const totalLingots = PRODUCTS[metal].filter(p => p.category === 'lingot' || p.category === 'autre').length;
+  const totalLingots = metal === 'argent' && !effectiveEditMode
+    ? 0
+    : PRODUCTS[metal].filter(p => p.category === 'lingot' || p.category === 'autre').length;
 
   // ── Toggles ──────────────────────────────────────────────────────────
 
@@ -345,7 +489,7 @@ export default function AjouterScreen() {
 
   // ── Sélection produit ─────────────────────────────────────────────────
 
-  const handleProductSelect = useCallback((p: Product) => {
+  const handleProductSelect = useCallback((p: SelectableProduct) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
     setProduct(p);
@@ -487,6 +631,11 @@ export default function AjouterScreen() {
     savingRef.current = true;
     setSaving(true);
     try {
+      const existing = effectiveEditMode ? positions.find(p => p.id === editId) : undefined;
+      const selectedSilverProduct = isSilverMvpProduct(product) ? product : null;
+      const productId = selectedSilverProduct?.id
+        ?? (existing?.productId && existing.product === product!.label ? existing.productId : undefined);
+
       const newPosition: Position = {
         id: effectiveEditMode ? editId! : Date.now().toString(36) + Math.random().toString(36).slice(2),
         metal,
@@ -498,10 +647,10 @@ export default function AjouterScreen() {
         createdAt: new Date().toISOString(),
         note: note.trim() || undefined,
         spotAtPurchase: estimatedValue ?? undefined,
+        productId,
       };
 
       if (effectiveEditMode) {
-        const existing = positions.find(p => p.id === editId);
         await updatePosition({ ...newPosition, id: editId!, createdAt: existing?.createdAt ?? newPosition.createdAt });
       } else {
         if (!canAddPosition(positions.length)) {
@@ -531,10 +680,10 @@ export default function AjouterScreen() {
           router.navigate('/(tabs)/portefeuille');
         }
       }, 1400);
-    } catch {
+    } catch (error) {
       savingRef.current = false;
       setSaving(false);
-      Alert.alert('Erreur', 'Impossible de sauvegarder la position.');
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de sauvegarder la position.');
     }
   };
 
@@ -550,8 +699,9 @@ export default function AjouterScreen() {
 
   // ── Indicateurs pour boutons expand ────────────────────────────────────
 
-  const selectedNonPopularPiece = PRODUCTS[metal].some(
-    p => p.category === 'piece' && !p.popular && p.label === product?.label
+  // Utilise la liste préparée (popular surchargé pour Or via whitelist locale).
+  const selectedNonPopularPiece = allCoinsForMetal.some(
+    p => !p.popular && p.label === product?.label
   );
   const selectedInLingots = PRODUCTS[metal].some(
     p => (p.category === 'lingot' || p.category === 'autre') && p.label === product?.label
@@ -577,7 +727,7 @@ export default function AjouterScreen() {
           <Text style={styles.headerSubtitle}>
             {effectiveEditMode
               ? 'Modifiez les détails de votre position'
-              : 'Choisissez votre produit, puis renseignez votre achat'}
+              : 'Choisissez votre produit, renseignez l’achat'}
           </Text>
           {!effectiveEditMode && !isStep2Active && (
             <Text style={styles.progressIndicator}>
@@ -591,7 +741,7 @@ export default function AjouterScreen() {
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 8 }}>
+              contentContainerStyle={styles.metalPillsRow}>
               {metalEntries.map(([key, cfg]) => {
                 const active = metal === key;
                 return (
@@ -632,10 +782,7 @@ export default function AjouterScreen() {
             {/* Pièces */}
             {allCoinsForMetal.length > 0 && (
               <>
-                {/* Mini-header "POPULAIRES" (correction 5) */}
-                {hasPopularPieces && coinSearch.trim() === '' && (
-                  <Text style={styles.popularSectionHeader}>POPULAIRES</Text>
-                )}
+                <Text style={styles.popularSectionHeader}>{PRODUCT_SECTION_TITLE_BY_METAL[metal]}</Text>
 
                 {/* Search field when expanded (correction 9) */}
                 {showAllPieces && (
@@ -662,6 +809,7 @@ export default function AjouterScreen() {
                       product={p}
                       active={product?.label === p.label}
                       compact={showAllPieces}
+                      singleLineLabel={isSilverCreationFlow && isSilverMvpProduct(p) && SILVER_SINGLE_LINE_PRODUCT_IDS.includes(p.id)}
                       onPress={handleProductSelect}
                     />
                   ))}
@@ -776,7 +924,7 @@ export default function AjouterScreen() {
                       </Text>
                     </View>
                     <View style={styles.spotInfoRow}>
-                      <Text style={styles.spotInfoLabel}>Valeur unitaire estimée</Text>
+                      <Text style={styles.spotInfoLabel}>{metal === 'argent' ? 'Valeur métal unitaire estimée' : 'Valeur unitaire estimée'}</Text>
                       <Text style={[styles.spotInfoValue, { color: OrTrackColors.gold }]}>
                         {formatEuro((effectiveWeightG / OZ_TO_G) * spotEur)} {currencySymbol}
                       </Text>
@@ -831,7 +979,9 @@ export default function AjouterScreen() {
 
                     <View style={styles.field}>
                       <View style={styles.fieldLabelRow}>
-                        <Text style={[styles.fieldLabel, highlightedField === 'price' && { color: OrTrackColors.gold }]}>Prix d’achat unitaire</Text>
+                        <Text style={[styles.fieldLabel, highlightedField === 'price' && { color: OrTrackColors.gold }]}>
+                          {metal === 'argent' ? 'Prix payé TTC' : 'Prix d’achat unitaire'}
+                        </Text>
                         {/* Correction 7 — Raccourci "Cours du jour" */}
                         {estimatedValue !== null && estimatedValue > 0 && (
                           <TouchableOpacity
@@ -848,7 +998,7 @@ export default function AjouterScreen() {
                             }}
                             activeOpacity={0.7}
                           >
-                            <Text style={styles.quickFillBtn}>Cours spot</Text>
+                            <Text style={styles.quickFillBtn}>{metal === 'argent' ? 'Valeur métal' : 'Cours spot'}</Text>
                           </TouchableOpacity>
                         )}
                       </View>
@@ -883,8 +1033,11 @@ export default function AjouterScreen() {
                       </View>
                       {priceAnalysis.showPriceReference && (
                         <Text style={styles.priceRef}>
-                          Cours actuel : {estimatedValue!.toFixed(2)} €
+                          {metal === 'argent' ? 'Valeur métal actuelle' : 'Cours actuel'} : {estimatedValue!.toFixed(2)} €
                         </Text>
+                      )}
+                      {isSilverCreationFlow && silverGapCopy && (
+                        <Text style={styles.priceRef}>{silverGapCopy}</Text>
                       )}
                     </View>
 
@@ -974,9 +1127,28 @@ export default function AjouterScreen() {
                         Cours spot : {formatEuro(spotEur)} {'\u20AC'}/oz {'\u00B7'} {formatG(effectiveWeightG)} par unité
                       </Text>
                       <Text style={styles.estimationDisclaimer}>
-                        Estimation basée sur le cours spot {'\u00B7'} Hors prime revendeur
+                        {metal === 'argent'
+                          ? 'Estimation basée sur le spot métal · L’écart au prix payé peut inclure TVA, prime, marge ou frais'
+                          : 'Estimation basée sur le cours spot \u00B7 Hors prime revendeur'}
                       </Text>
                     </>
+                  )}
+                  {isSilverCreationFlow && silverBreakdown && (
+                    <View style={styles.silverBreakdownBlock}>
+                      <Text style={styles.estimationDisclaimer}>
+                        Prix payé TTC : {formatEuro(silverBreakdown.totalPaidTTC)} €
+                      </Text>
+                      {Number.isFinite(silverBreakdown.estimatedVatImpact) && (
+                        <Text style={styles.estimationDisclaimer}>
+                          TVA estimée : {formatEuro(silverBreakdown.estimatedVatImpact!)} €
+                        </Text>
+                      )}
+                    </View>
+                  )}
+                  {displayedSilverPremiumWarning && (
+                    <Text style={styles.silverWarning}>
+                      Prix payé différent du spot actuel. L’écart peut inclure TVA, prime, marge ou frais.
+                    </Text>
                   )}
                 </View>
               )}
@@ -1058,9 +1230,13 @@ const styles = StyleSheet.create({
   },
 
   // Metal pills
+  metalPillsRow: {
+    gap: 6,
+  },
   metalPill: {
     paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
+    minHeight: 40,
     borderRadius: 20,
     borderWidth: 1.5,
   },
@@ -1276,7 +1452,7 @@ const styles = StyleSheet.create({
   },
   estimationLabel: {
     fontSize: 13,
-    color: OrTrackColors.subtext,
+    color: '#B3A692',
   },
   estimationValue: {
     fontSize: 20,
@@ -1291,14 +1467,24 @@ const styles = StyleSheet.create({
   negative: { color: '#E07070' },
   estimationHint: {
     fontSize: 11,
-    color: OrTrackColors.tabIconDefault,
+    color: '#B3A692',
     marginTop: 2,
   },
   estimationDisclaimer: {
     fontSize: 10,
-    color: OrTrackColors.textDim,
+    color: '#B3A692',
     marginTop: 4,
     fontStyle: 'italic',
+  },
+  silverBreakdownBlock: {
+    marginTop: 2,
+    gap: 2,
+  },
+  silverWarning: {
+    fontSize: 10,
+    color: '#E0A84F',
+    marginTop: 4,
+    lineHeight: 14,
   },
 
   // Sticky CTA

@@ -167,6 +167,7 @@ export default function PortefeuilleScreen() {
 
   const hasPositions = positions.length > 0;
   const hasFilteredPositions = filteredPositions.length > 0;
+  const hasSilverPositions = filteredPositions.some(p => p.metal === 'argent');
 
   // ── Card toggle ──────────────────────────────────────────────────────
 
@@ -234,6 +235,7 @@ export default function PortefeuilleScreen() {
           pricesReady={pricesReady}
           spotError={spotError}
           hasFilteredPositions={hasFilteredPositions}
+          hasSilverPositions={hasSilverPositions}
           onPressFiscal={() => {
             // L'accès à Simulation globale est ouvert free + premium. Le gating
             // Premium est localisé dans l'écran sur les blocs avancés.

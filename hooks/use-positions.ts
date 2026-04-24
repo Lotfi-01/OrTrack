@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { Position } from '@/types/position';
 import type { MetalType } from '@/constants/metals';
+import { PRODUCTS } from '@/constants/products';
 import { parseDate } from '@/utils/tax-helpers';
 
 const SUPPORTED_METALS: Set<string> = new Set<MetalType>(['or', 'argent', 'platine', 'palladium']);
@@ -40,6 +41,47 @@ export function isValidPosition(p: unknown): p is Position {
   );
 }
 
+function inferUniqueLegacyMetalFromProduct(product: string): MetalType | null {
+  const matches = (Object.entries(PRODUCTS) as [MetalType, (typeof PRODUCTS)[MetalType]][])
+    .filter(([, products]) => products.some(p => p.label === product));
+  return matches.length === 1 ? matches[0][0] : null;
+}
+
+export function isPlausibleLegacyPosition(p: unknown): boolean {
+  if (typeof p !== 'object' || p === null) return false;
+  const o = p as Record<string, unknown>;
+  return (
+    o.metal === undefined &&
+    typeof o.id === 'string' && o.id.length > 0 &&
+    typeof o.product === 'string' && o.product.trim().length > 0 &&
+    inferUniqueLegacyMetalFromProduct(o.product) !== null &&
+    typeof o.weightG === 'number' && o.weightG > 0 && isFinite(o.weightG) &&
+    typeof o.quantity === 'number' && o.quantity > 0 && Number.isInteger(o.quantity) &&
+    typeof o.purchasePrice === 'number' && o.purchasePrice > 0 && isFinite(o.purchasePrice) &&
+    typeof o.purchaseDate === 'string' && isValidPurchaseDate(o.purchaseDate) &&
+    typeof o.createdAt === 'string'
+  );
+}
+
+export function normalizePersistedPosition(p: unknown): Position | null {
+  if (isValidPosition(p)) return p;
+  if (!isPlausibleLegacyPosition(p)) return null;
+
+  const o = p as Omit<Position, 'metal'> & { product: string };
+  const inferredMetal = inferUniqueLegacyMetalFromProduct(o.product);
+  if (inferredMetal === null) return null;
+  return { ...o, metal: inferredMetal };
+}
+
+export function assertCanWriteNewPosition(position: unknown): asserts position is Position {
+  if (!isValidPosition(position)) {
+    throw new Error('Position invalide : impossible de l’enregistrer.');
+  }
+  if (position.metal === 'argent' && (typeof position.productId !== 'string' || position.productId.trim().length === 0)) {
+    throw new Error('Position argent invalide : productId stable requis.');
+  }
+}
+
 /** Parse et valide les positions depuis une chaîne AsyncStorage brute. */
 function parsePositions(raw: string | null): Position[] {
   if (!raw) return [];
@@ -51,12 +93,14 @@ function parsePositions(raw: string | null): Position[] {
     return [];
   }
   if (!Array.isArray(parsed)) return [];
-  const valid = parsed.filter(isValidPosition);
+  const valid = parsed
+    .map(normalizePersistedPosition)
+    .filter((p): p is Position => p !== null);
   const filtered = parsed.length - valid.length;
   if (filtered > 0) {
     const ids = parsed
       .filter((p): p is Record<string, unknown> => typeof p === 'object' && p !== null && typeof (p as any).id === 'string')
-      .filter(p => !isValidPosition(p))
+      .filter(p => normalizePersistedPosition(p) === null)
       .map(p => (p as any).id as string);
     console.warn(`[use-positions] ${filtered} position(s) filtrée(s)${ids.length > 0 ? ` (ids: ${ids.join(', ')})` : ''}`);
   }
@@ -174,6 +218,7 @@ export function usePositions() {
     loading,
     reloadPositions,
     addPosition: async (position: Position) => {
+      assertCanWriteNewPosition(position);
       return persistTransform((current) => [position, ...current]);
     },
     updatePosition: async (position: Position) => {

@@ -213,6 +213,36 @@ describe('parseImportPayload — v0 legacy array', () => {
     if (!res.ok) return;
     expect(res.result.settings).toBeUndefined();
   });
+
+  test('normalizes a plausible legacy position without metal like storage read', () => {
+    const { metal, ...legacy } = makePos({ product: 'Napoléon 20F' });
+    const res = parseImportPayload(JSON.stringify([legacy]));
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.result.positions[0]).toMatchObject({
+      metal: 'or',
+      product: 'Napoléon 20F',
+    });
+    expect(res.result.rejected).toBe(0);
+  });
+
+  test('keeps explicit silver metal and productId on import', () => {
+    const res = parseImportPayload(JSON.stringify([
+      makePos({
+        metal: 'argent',
+        product: 'Silver Maple Leaf 1 oz',
+        productId: 'silver-maple-leaf-1oz',
+      }),
+    ]));
+
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.result.positions[0]).toMatchObject({
+      metal: 'argent',
+      productId: 'silver-maple-leaf-1oz',
+    });
+  });
 });
 
 describe('parseImportPayload — rejection paths', () => {

@@ -30,7 +30,7 @@ import { METAL_CONFIG, getSpot } from '@/constants/metals';
 import { TAX } from '@/constants/tax';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatPct, formatG, formatGain, stripMetalFromName, JOURS_FR, MOIS_FR } from '@/utils/format';
+import { formatEuro, formatPct, formatG, formatGain, getDisplayPositionName, JOURS_FR, MOIS_FR } from '@/utils/format';
 import { PARTIAL_ESTIMATE_NOTICE, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 import { usePositions } from '@/hooks/use-positions';
@@ -378,7 +378,7 @@ export default function AccueilScreen() {
                     : netG.state === 'positive' ? C.green : C.red;
                 return (
                   <View style={[st.netBlock, masked && st.netMasked]}>
-                    <Text style={st.netLabel}>Résultat net si vente aujourd{'\u2019'}hui</Text>
+                    <Text style={st.netLabel}>Gain net estimé</Text>
                     <Text style={[st.netValue, { color: netColor }]}>
                       {m(`${netG.text} ${currencySymbol}`)}
                     </Text>
@@ -428,7 +428,7 @@ export default function AccueilScreen() {
             const metalPositions = positions.filter(p => p.metal === mk);
             const isSinglePosition = metalPositions.length === 1;
             const title = isSinglePosition
-              ? stripMetalFromName(metalPositions[0]!.product)
+              ? getDisplayPositionName(metalPositions[0]!)
               : cfg.name;
             const g = formatGain(net);
             const gainColor = masked

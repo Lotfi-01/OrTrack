@@ -13,7 +13,13 @@ jest.mock('@react-native-async-storage/async-storage', () => {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
-import { isValidPosition, resetPositionsCache } from '@/hooks/use-positions';
+import {
+  assertCanWriteNewPosition,
+  isPlausibleLegacyPosition,
+  isValidPosition,
+  normalizePersistedPosition,
+  resetPositionsCache,
+} from '@/hooks/use-positions';
 
 const storageMock = AsyncStorage as typeof AsyncStorage & { __store: Map<string, string> };
 
@@ -126,6 +132,63 @@ describe('isValidPosition', () => {
 });
 
 // ── AsyncStorage edge cases ──────────────────────────────────────────────────
+
+describe('legacy position compatibility', () => {
+  it('normalise une position legacy plausible sans metal quand le produit pointe vers un seul metal', () => {
+    const { metal, ...legacy } = makePosition({ product: 'Napoléon 20F' });
+
+    expect(isPlausibleLegacyPosition(legacy)).toBe(true);
+    expect(normalizePersistedPosition(legacy)).toMatchObject({
+      id: 'pos-1',
+      metal: 'or',
+      product: 'Napoléon 20F',
+    });
+  });
+
+  it('ne normalise pas une position sans metal si le label produit est cross-metal ambigu', () => {
+    const { metal, ...legacy } = makePosition({ product: 'Maple Leaf 1oz' });
+
+    expect(isPlausibleLegacyPosition(legacy)).toBe(false);
+    expect(normalizePersistedPosition(legacy)).toBeNull();
+  });
+
+  it('conserve une position silver explicite avec productId', () => {
+    const silver = makePosition({
+      metal: 'argent',
+      product: 'Silver Maple Leaf 1 oz',
+      productId: 'silver-maple-leaf-1oz',
+    });
+
+    expect(normalizePersistedPosition(silver)).toMatchObject({
+      metal: 'argent',
+      productId: 'silver-maple-leaf-1oz',
+    });
+  });
+});
+
+describe('assertCanWriteNewPosition', () => {
+  it('rejette une nouvelle position sans metal', () => {
+    const { metal, ...withoutMetal } = makePosition();
+
+    expect(() => assertCanWriteNewPosition(withoutMetal)).toThrow('Position invalide');
+  });
+
+  it('rejette une nouvelle position argent sans productId stable', () => {
+    const silver = makePosition({ metal: 'argent', product: 'Silver Maple Leaf 1 oz' });
+
+    expect(() => assertCanWriteNewPosition(silver)).toThrow('productId stable requis');
+  });
+
+  it('accepte une nouvelle position argent avec metal explicite et productId stable', () => {
+    const silver = makePosition({
+      metal: 'argent',
+      product: 'Silver Maple Leaf 1 oz',
+      productId: 'silver-maple-leaf-1oz',
+    });
+
+    expect(() => assertCanWriteNewPosition(silver)).not.toThrow();
+  });
+});
 
 describe('parsePositions edge cases (via isValidPosition)', () => {
   beforeEach(() => {

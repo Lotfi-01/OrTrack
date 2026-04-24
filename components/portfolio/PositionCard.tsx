@@ -1,10 +1,12 @@
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG } from '@/constants/metals';
+import { getSilverMvpProductById } from '@/constants/silver-products';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
-import { formatEuro, formatQty, formatPctSigned, formatGain, stripMetalFromName } from '@/utils/format';
+import { formatEuro, formatQty, formatPctSigned, formatGain, getDisplayPositionName } from '@/utils/format';
 import { PositionViewModel } from '@/utils/portfolio';
+import { computeSilverBreakdown } from '@/utils/silver-breakdown';
 
 const C = OrTrackColors;
 
@@ -44,6 +46,20 @@ export default function PositionCard({
   const pos = viewModel.position;
   const { currentValue, totalCost, gainLoss, gainPct, fiscal, sellerNetForfaitaire: posSellerNet } = viewModel.metrics;
   const cfg = METAL_CONFIG[pos.metal as MetalType];
+  const displayName = getDisplayPositionName(pos);
+  const silverProduct = pos.metal === 'argent' ? getSilverMvpProductById(pos.productId) : null;
+  const silverBreakdown = silverProduct && pos.purchasePrice > 0 && pos.quantity > 0
+    ? computeSilverBreakdown({
+      unitPriceTTC: pos.purchasePrice,
+      quantity: pos.quantity,
+      vatRate: silverProduct.vatRate,
+    })
+    : null;
+  const silverNotice = pos.metal === 'argent'
+    ? silverProduct?.vatRate != null
+      ? `Argent TTC : l’écart au spot peut inclure TVA (${Math.round(silverProduct.vatRate * 100)} %), prime, marge ou frais.`
+      : 'Argent : TVA/fiscalité à confirmer, écart au spot non assimilable à une prime seule.'
+    : null;
 
   return (
     <View style={[st.card, isOpen && st.cardOpen]}>
@@ -58,7 +74,7 @@ export default function PositionCard({
           <Text style={[st.badgeText, { color: C.background }]}>{cfg.symbol}</Text>
         </View>
         <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={st.cardName} numberOfLines={1}>{stripMetalFromName(pos.product)}</Text>
+          <Text style={st.cardName} numberOfLines={1}>{displayName}</Text>
           {masked ? null : gainLoss !== null ? (() => {
             const g = formatGain(gainLoss);
             const color = g.state === 'zero' ? C.textDim : g.state === 'positive' ? C.green : C.red;
@@ -167,10 +183,19 @@ export default function PositionCard({
                   <Text style={st.l2GridValue}>{pos.purchaseDate}</Text>
                 </View>
                 <View style={st.l2GridItem}>
-                  <Text style={st.l2GridLabel}>Prix d{'\u2019'}achat</Text>
+                  <Text style={st.l2GridLabel}>{pos.metal === 'argent' ? 'Prix payé TTC' : 'Prix d’achat'}</Text>
                   <Text style={st.l2GridValue}>{formatEuro(pos.purchasePrice)} {'€'}</Text>
                 </View>
               </View>
+
+              {silverNotice && (
+                <Text style={st.l2SilverNotice}>
+                  {silverNotice}
+                  {silverBreakdown?.estimatedVatImpact !== null && silverBreakdown?.estimatedVatImpact !== undefined
+                    ? ` Impact TVA estimé : ${formatEuro(silverBreakdown.estimatedVatImpact)} ${currencySymbol}.`
+                    : ''}
+                </Text>
+              )}
 
               <View style={st.l2Compare}>
                 <View style={{ flex: 1 }}>
@@ -248,6 +273,7 @@ const st = StyleSheet.create({
   l2CompareLabel: { color: C.textDim, fontSize: 10, marginBottom: 4 },
   l2CompareValue: { color: C.white, fontSize: 15, fontWeight: '700' },
   l2CompareDivider: { width: 1, backgroundColor: C.border, marginHorizontal: 12, alignSelf: 'stretch' },
+  l2SilverNotice: { color: C.textDim, fontSize: 10.5, lineHeight: 15, marginBottom: 10 },
   l2Note: { color: C.gold, fontSize: 11, fontStyle: 'italic', marginBottom: 8 },
   l2Actions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: C.divider, paddingTop: 12, marginBottom: 8 },
   l2Edit: { color: C.gold, fontSize: 12, fontWeight: '600' },

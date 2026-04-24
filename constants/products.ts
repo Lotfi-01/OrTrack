@@ -11,15 +11,18 @@ export type Product = {
 
 export const PRODUCTS: Record<MetalType, Product[]> = {
   or: [
-    { label: 'Napoléon 20F', weightG: 5.81, popular: true, category: 'piece' },
+    { label: 'Napoléon 20F', weightG: 5.81, category: 'piece' },
+    { label: 'Krugerrand 1oz', weightG: 31.10, category: 'piece' },
     { label: 'Souverain', weightG: 7.32, category: 'piece' },
-    { label: 'Krugerrand 1oz', weightG: 31.10, popular: true, category: 'piece' },
     { label: 'Maple Leaf 1oz', weightG: 31.10, category: 'piece' },
+    { label: '20F Suisse Vreneli', weightG: 5.81, category: 'piece' },
+    { label: 'American Gold Eagle 1oz', weightG: 31.10, category: 'piece' },
     { label: 'Philharmonique 1oz', weightG: 31.10, category: 'piece' },
+    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
+    { label: '50 Pesos mexicain', weightG: 37.50, category: 'piece' },
+    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
     { label: 'Buffalo Américain 1oz', weightG: 31.10, category: 'piece' },
     { label: 'Panda de Chine 30g', weightG: 30, category: 'piece' },
-    { label: 'Britannia 1oz', weightG: 31.10, category: 'piece' },
-    { label: 'Kangourou 1oz', weightG: 31.10, category: 'piece' },
     { label: 'Lingot 10g', weightG: 10, category: 'lingot' },
     { label: 'Lingot 100g', weightG: 100, category: 'lingot' },
     { label: 'Lingot 1kg', weightG: 1000, category: 'lingot' },
