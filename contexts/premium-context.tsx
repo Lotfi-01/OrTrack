@@ -1,10 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import PremiumPaywall from '@/components/premium-paywall';
 import { OrTrackColors } from '@/constants/theme';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
 import {
   initRevenueCat,
   checkPremiumStatus,
@@ -16,17 +14,12 @@ import {
 } from '@/services/revenuecat';
 import { reportError } from '@/utils/error-reporting';
 
-// v1.1: replace with import { PurchasesPackage } from 'react-native-purchases'
-type PurchasesPackage = { identifier: string; product: { priceString: string } };
+import type { PurchasesPackage } from 'react-native-purchases';
 
 // ─── Limites freemium ────────────────────────────────────────────────────────
 
 const PREMIUM_LIMITS = {
-  // Teaser assumé (v1.0) : aucun achat réel n'est disponible. Le quota
-  // positions est temporairement relevé à 5 (vs 3 cible Premium) pour rester
-  // cohérent avec la promesse "Portefeuille illimité" affichée dans le paywall
-  // tant que l'abonnement n'est pas ouvert. À ramener à 3 lors de l'activation
-  // commerciale Premium.
+  // Quotas gratuits appliqués quand l'entitlement Premium RevenueCat est inactif.
   maxPositions: 5,
   maxAlerts: 2,
   maxNewsSources: 2,
@@ -45,7 +38,6 @@ type PremiumContextType = {
   isPremium: boolean;
   isLoading: boolean;
   showPaywall: () => void;
-  activateLaunchFree: () => Promise<void>;
   canAddPosition: (currentCount: number) => boolean;
   canAddAlert: (currentCount: number) => boolean;
   isPeriodLocked: (period: string) => boolean;
@@ -87,29 +79,13 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
           RC_INIT_TIMEOUT_MS
         );
 
-        // RevenueCat est desactive en v1.0. En production, premiumStatus doit rester
-        // false tant que le SDK et la verification serveur ne sont pas branches.
+        // En dev, DEV_PREMIUM_BYPASS force Premium ; en prod, premiumStatus vient de RevenueCat.
         const effectivePremiumStatus = DEV_PREMIUM_BYPASS ? true : premiumStatus;
 
         if (mounted) {
           setIsPremium(effectivePremiumStatus);
           setOfferings(offeringsResult);
           setIsLoading(false);
-
-          // Migration du flag "Me prévenir au lancement"
-          if (effectivePremiumStatus) {
-            AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(error => {
-              reportError(error, { scope: 'premium', action: 'remove_premium_notify_after_unlock' });
-            });
-          } else {
-            const notifyFlag = await AsyncStorage.getItem(STORAGE_KEYS.premiumNotify);
-            if (notifyFlag === 'true') {
-              setShowPaywallModal(true);
-              AsyncStorage.removeItem(STORAGE_KEYS.premiumNotify).catch(error => {
-                reportError(error, { scope: 'premium', action: 'remove_premium_notify_after_paywall' });
-              });
-            }
-          }
         }
       } catch (error) {
         reportError(error, { scope: 'premium', action: 'init_premium_context' });
@@ -142,19 +118,7 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const activateLaunchFree = useCallback(async () => {
-    // v1.0 : ne déverrouille pas le premium. Écrit uniquement le flag "Me prévenir"
-    // pour canal d'acquisition. Le paywall se ferme normalement.
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.premiumNotify, 'true');
-    } catch (error) {
-      reportError(error, { scope: 'premium', action: 'store_premium_notify_interest' });
-    }
-    setShowPaywallModal(false);
-  }, []);
-
   const handlePurchase = useCallback(async (_pkg: PurchasesPackage) => {
-    // v1.1: enable when RevenueCat is active
     setIsPurchasing(true);
     try {
       const result = await purchasePackage(_pkg);
@@ -223,7 +187,6 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
     isPremium,
     isLoading,
     showPaywall,
-    activateLaunchFree,
     canAddPosition,
     canAddAlert,
     isPeriodLocked,
@@ -234,7 +197,7 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
     handlePurchase,
     handleRestore,
     retryLoadOfferings,
-  }), [isPremium, isLoading, showPaywall, activateLaunchFree, canAddPosition,
+  }), [isPremium, isLoading, showPaywall, canAddPosition,
        canAddAlert, isPeriodLocked, isSourceLocked,
        offerings, isPurchasing, handlePurchase, handleRestore, retryLoadOfferings]);
 

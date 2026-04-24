@@ -9,7 +9,6 @@ export const STORAGE_KEYS = {
   historyCachePrefix: '@ortrack:history_cache_',
   notificationToken: '@ortrack:push_token',
   installTracked: '@ortrack:install_tracked',
-  premiumNotify: '@ortrack:premium_notify',
   privacyMode: '@ortrack_privacy_mode',
 } as const;
 
@@ -28,5 +27,7 @@ export const WIPE_STORAGE_KEYS = [
   STORAGE_KEYS.priceHistory,
   STORAGE_KEYS.notificationToken,
   STORAGE_KEYS.installTracked,
-  STORAGE_KEYS.premiumNotify,
+  // Legacy pre-RevenueCat flag. Not an active STORAGE_KEYS entry.
+  // Kept only for local data wipe.
+  '@ortrack:premium_notify',
 ] as const;
