@@ -11,6 +11,7 @@ type ProductChipProps = {
   product: Product;
   active: boolean;
   compact?: boolean;
+  singleLineLabel?: boolean;
   onPress: (product: Product) => void;
 };
 
@@ -20,7 +21,7 @@ function formatWeightLabel(weightG: number): string {
   return `${weightG.toFixed(2).replace('.', ',')} g`;
 }
 
-export function ProductChip({ product, active, compact = false, onPress }: ProductChipProps) {
+export function ProductChip({ product, active, compact = false, singleLineLabel = false, onPress }: ProductChipProps) {
   return (
     <TouchableOpacity
       onPress={() => onPress(product)}
@@ -28,6 +29,7 @@ export function ProductChip({ product, active, compact = false, onPress }: Produ
       style={[
         styles.productChip,
         compact && styles.productChipCompact,
+        singleLineLabel && styles.productChipSingleLine,
         active && styles.productChipActive,
       ]}>
       {active && (
@@ -43,11 +45,13 @@ export function ProductChip({ product, active, compact = false, onPress }: Produ
         </View>
       )}
       <Text
-        numberOfLines={2}
+        numberOfLines={singleLineLabel ? 1 : 2}
         ellipsizeMode="tail"
         style={[
           styles.productChipLabel,
           compact && styles.productChipLabelCompact,
+          singleLineLabel && styles.productChipLabelSingleLine,
+          compact && singleLineLabel && styles.productChipLabelCompactSingleLine,
           active && styles.productChipLabelActive,
           active && { paddingRight: 32 },
         ]}>
@@ -80,6 +84,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     minHeight: 60,
   },
+  productChipSingleLine: {
+    paddingHorizontal: 8,
+  },
   productChipActive: {
     borderWidth: 1,
     borderColor: OrTrackColors.gold,
@@ -92,6 +99,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   productChipLabelCompact: {
+    fontSize: 10,
+  },
+  productChipLabelSingleLine: {
+    fontSize: 10.5,
+    letterSpacing: -0.15,
+  },
+  productChipLabelCompactSingleLine: {
     fontSize: 10,
   },
   productChipLabelActive: {
