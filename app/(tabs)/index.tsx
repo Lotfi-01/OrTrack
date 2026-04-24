@@ -667,8 +667,12 @@ export default function AccueilScreen() {
               >
                 <Text style={st.mktChev}>›</Text>
                 <Text style={st.mktName}>{cfg.name}</Text>
-                <Text style={st.mktPrice}>{spot !== null ? formatEuro(spot) : '—'}</Text>
-                <Text style={st.mktUnit}>{mm.unit}</Text>
+                <View style={st.mktPriceRow}>
+                  <Text style={st.mktPrice} numberOfLines={1}>
+                    {spot !== null ? formatEuro(spot) : '—'}
+                  </Text>
+                  <Text style={st.mktUnitInline} numberOfLines={1}>{mm.unit}</Text>
+                </View>
                 {ch != null && ch !== 0 ? (
                   <Text style={{ color: ch > 0 ? C.green : C.red, fontSize: 11, marginTop: 4 }}>
                     {ch > 0 ? '▲' : '▼'} {ch > 0 ? '+' : ''}{formatPct(ch, 2)}
@@ -791,8 +795,9 @@ const st = StyleSheet.create({
 
   mktCard: { width: CARD_WIDTH, marginRight: 10, backgroundColor: C.card, borderRadius: 13, borderWidth: 1, borderColor: C.border, padding: 12 },
   mktName: { color: C.textDim, fontSize: 11, fontWeight: '600' },
-  mktPrice: { color: C.white, fontSize: 15, fontWeight: '700', marginTop: 2 },
-  mktUnit: { color: C.textDim, fontSize: 11 },
+  mktPriceRow: { flexDirection: 'row', alignItems: 'baseline', flexWrap: 'nowrap', maxWidth: '100%', marginTop: 2 },
+  mktPrice: { color: C.white, fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  mktUnitInline: { color: C.textDim, fontSize: 11, fontWeight: '600', marginLeft: 4, flexShrink: 0 },
   mktChev: { position: 'absolute', top: 10, right: 10, color: C.textDim, fontSize: 12 },
   dotRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 8, gap: 4, marginBottom: 16 },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: 'rgba(201,168,76,0.18)' },
