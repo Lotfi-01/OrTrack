@@ -35,11 +35,6 @@ export default function PortfolioHero({
       {pricesReady ? (
         <>
           <Text style={st.resumeValue}>{m(`${formatEuro(summary.totalValue)} ${currencySymbol}`)}</Text>
-          {hasSilverPositions && !masked && (
-            <Text style={st.silverNotice}>
-              Argent inclus : valorisation au spot métal, écart au prix payé potentiellement lié à TVA, prime ou frais.
-            </Text>
-          )}
           {hasFilteredPositions && !masked && (() => {
             const g = formatGain(summary.gain);
             const color = g.state === 'zero' ? C.textDim : g.state === 'positive' ? C.green : C.red;
@@ -94,7 +89,6 @@ export default function PortfolioHero({
 const st = StyleSheet.create({
   heroCard: { backgroundColor: C.card, borderRadius: 18, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 14 },
   resumeValue: { fontSize: 30, fontWeight: '700', color: C.white, letterSpacing: -0.5 },
-  silverNotice: { color: C.textDim, fontSize: 11, lineHeight: 15, marginTop: 5 },
   resumeGainRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
   resumeGain: { fontSize: 12, fontWeight: '600' },
   resumeGainPct: { color: C.textMuted, fontSize: 12 },
