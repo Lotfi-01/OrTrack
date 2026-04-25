@@ -39,6 +39,7 @@ import {
   truncateName,
 } from '@/utils/ajouter-form';
 import { ProductChip } from '@/components/ajouter/ProductChip';
+import { trackEvent } from '@/services/analytics';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
 
@@ -155,6 +156,19 @@ export default function AjouterScreen() {
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const justTappedContinue = useRef(false);
 
+  // Funnel analytics: add_position_started fires once when the user first
+  // engages with the form (product pick, focus on a field). The flag resets
+  // every time the screen receives focus so it fires once per add session.
+  const hasStartedAddPositionRef = useRef(false);
+
+  const fireAddPositionStartedOnce = useCallback(() => {
+    if (hasStartedAddPositionRef.current) return;
+    hasStartedAddPositionRef.current = true;
+    void trackEvent('add_position_started', {
+      source: 'tab',
+    });
+  }, []);
+
   const [metal, setMetal] = useState<MetalType>('or');
   const [product, setProduct] = useState<SelectableProduct | null>(null);
   const [customWeight, setCustomWeight] = useState('');
@@ -182,6 +196,10 @@ export default function AjouterScreen() {
     useCallback(() => {
       savingRef.current = false;
       setSaving(false);
+      // Reset the funnel "started" flag at every re-focus so a fresh add
+      // session can fire add_position_started exactly once.
+      hasStartedAddPositionRef.current = false;
+      return () => {};
     }, [])
   );
 
@@ -492,6 +510,8 @@ export default function AjouterScreen() {
   const handleProductSelect = useCallback((p: SelectableProduct) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
 
+    fireAddPositionStartedOnce();
+
     setProduct(p);
     setCustomWeight('');
 
@@ -514,7 +534,7 @@ export default function AjouterScreen() {
     }
 
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-  }, [metal, prices]);
+  }, [metal, prices, fireAddPositionStartedOnce]);
 
   // ── "Continuer" handler ───────────────────────────────────────────────
 
@@ -660,6 +680,15 @@ export default function AjouterScreen() {
           return;
         }
         await addPosition(newPosition);
+        // Funnel analytics: only on a successful CREATION save (not edits).
+        // Properties scrubbed of any PII / financial values.
+        void trackEvent('add_position_completed', {
+          metal,
+          product_type: product!.category ?? 'unknown',
+          has_purchase_date: purchaseDate.trim().length > 0,
+          has_purchase_price: price > 0,
+          source: 'tab',
+        });
       }
 
       setCustomWeight('');
@@ -972,6 +1001,7 @@ export default function AjouterScreen() {
                           placeholderTextColor={OrTrackColors.tabIconDefault}
                           value={quantity}
                           onChangeText={setQuantity}
+                          onFocus={fireAddPositionStartedOnce}
                         />
                         <Text style={styles.inputSuffix}>pièce(s)</Text>
                       </View>
@@ -1010,6 +1040,7 @@ export default function AjouterScreen() {
                           placeholder="Ex : 1 700"
                           placeholderTextColor={OrTrackColors.tabIconDefault}
                           defaultValue={priceDisplay}
+                          onFocus={fireAddPositionStartedOnce}
                           onBlur={() => {
                             let n = priceLocalRef.current;
                             n = n.replace(/[\s\u00A0]/g, '');
@@ -1070,6 +1101,7 @@ export default function AjouterScreen() {
                         placeholderTextColor={OrTrackColors.tabIconDefault}
                         value={purchaseDate}
                         onChangeText={(t) => setPurchaseDate(autoFormatDate(t))}
+                        onFocus={fireAddPositionStartedOnce}
                         maxLength={10}
                       />
                     </View>
