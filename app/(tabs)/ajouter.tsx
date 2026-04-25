@@ -38,7 +38,7 @@ import {
   toNum,
   truncateName,
 } from '@/utils/ajouter-form';
-import { ProductChip } from '@/components/ajouter/ProductChip';
+import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { trackEvent } from '@/services/analytics';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
@@ -770,6 +770,15 @@ export default function AjouterScreen() {
     p => (p.category === 'lingot' || p.category === 'autre') && p.label === product?.label
   );
 
+  // Suffixes pré-calculés ici pour garder ProductSelector purement présentationnel
+  // (pas de transform de produit ni d'import de truncateName côté composant).
+  const piecesExpandSuffix = !showAllPieces && selectedNonPopularPiece && product
+    ? ` · ${truncateName(product.label)} ✓`
+    : '';
+  const barsExpandSuffix = !showAllBars && selectedInLingots && product
+    ? ` · ${truncateName(product.label)} ✓`
+    : '';
+
   // ─────────────────────────────────────────────────────────────────────
 
   return (
@@ -838,106 +847,27 @@ export default function AjouterScreen() {
             </Text>
           </View>
 
-          {/* ── Sélection produit (correction 3 — "CHOISISSEZ UN PRODUIT") ── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Choisissez un produit</Text>
-
-            {/* Pièces */}
-            {allCoinsForMetal.length > 0 && (
-              <>
-                <Text style={styles.popularSectionHeader}>{PRODUCT_SECTION_TITLE_BY_METAL[metal]}</Text>
-
-                {/* Search field when expanded (correction 9) */}
-                {showAllPieces && (
-                  <TextInput
-                    placeholder="Rechercher une pièce..."
-                    placeholderTextColor={OrTrackColors.textDim}
-                    value={coinSearch}
-                    onChangeText={setCoinSearch}
-                    autoFocus={false}
-                    accessibilityLabel="Rechercher une pièce"
-                    style={styles.searchInput}
-                  />
-                )}
-
-                {/* No results message */}
-                {showAllPieces && coinSearch.trim() !== '' && visiblePieces.length === 0 && (
-                  <Text style={styles.noResultText}>Aucun produit trouvé</Text>
-                )}
-
-                <View style={styles.productGrid}>
-                  {visiblePieces.map(p => (
-                    <ProductChip
-                      key={p.label}
-                      product={p}
-                      active={product?.label === p.label}
-                      compact={showAllPieces}
-                      singleLineLabel={isSilverCreationFlow && isSilverMvpProduct(p) && SILVER_SINGLE_LINE_PRODUCT_IDS.includes(p.id)}
-                      onPress={handleProductSelect}
-                    />
-                  ))}
-                </View>
-                {showExpandPiecesButton && (
-                  <TouchableOpacity
-                    onPress={toggleShowAllPieces}
-                    activeOpacity={0.7}
-                    style={styles.expandButton}>
-                    <Text numberOfLines={1} style={styles.expandButtonText}>
-                      {showAllPieces ? 'Réduire la liste' : 'Voir plus de pièces'}
-                      {!showAllPieces && selectedNonPopularPiece && product
-                        ? ` · ${truncateName(product.label)} ✓`
-                        : ''}
-                    </Text>
-                    <Ionicons
-                      name={showAllPieces ? 'chevron-up' : 'chevron-forward'}
-                      size={14}
-                      color={OrTrackColors.gold}
-                    />
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-
-            {/* Lingots */}
-            {totalLingots > 0 && (
-              <>
-                {allCoinsForMetal.length > 0 && (
-                  <>
-                    <View style={styles.lingotsSeparator} />
-                    <Text style={[styles.sectionTitle, { marginTop: 0 }]}>Lingots</Text>
-                  </>
-                )}
-                <View style={styles.productGrid}>
-                  {visibleLingots.map(p => (
-                    <ProductChip
-                      key={p.label}
-                      product={p}
-                      active={product?.label === p.label}
-                      onPress={handleProductSelect}
-                    />
-                  ))}
-                </View>
-                {totalLingots > 4 && (
-                  <TouchableOpacity
-                    onPress={toggleShowAllBars}
-                    activeOpacity={0.7}
-                    style={styles.expandButton}>
-                    <Text numberOfLines={1} style={styles.expandButtonText}>
-                      {showAllBars ? 'Réduire la liste' : 'Voir plus de lingots'}
-                      {!showAllBars && selectedInLingots && product
-                        ? ` · ${truncateName(product.label)} ✓`
-                        : ''}
-                    </Text>
-                    <Ionicons
-                      name={showAllBars ? 'chevron-up' : 'chevron-forward'}
-                      size={14}
-                      color={OrTrackColors.gold}
-                    />
-                  </TouchableOpacity>
-                )}
-              </>
-            )}
-          </View>
+          <ProductSelector
+            metal={metal}
+            selectedProduct={product}
+            coinSearch={coinSearch}
+            visiblePieces={visiblePieces}
+            visibleLingots={visibleLingots}
+            totalLingots={totalLingots}
+            hasCoinsCatalog={allCoinsForMetal.length > 0}
+            showAllPieces={showAllPieces}
+            showAllBars={showAllBars}
+            showExpandPiecesButton={showExpandPiecesButton}
+            isSilverCreationFlow={isSilverCreationFlow}
+            singleLineLabelIds={SILVER_SINGLE_LINE_PRODUCT_IDS}
+            coinsSectionTitle={PRODUCT_SECTION_TITLE_BY_METAL[metal]}
+            piecesExpandSuffix={piecesExpandSuffix}
+            barsExpandSuffix={barsExpandSuffix}
+            onSearchChange={setCoinSearch}
+            onProductSelect={handleProductSelect}
+            onToggleShowAllPieces={toggleShowAllPieces}
+            onToggleShowAllBars={toggleShowAllBars}
+          />
 
           {/* Feedback sélection sous la grille */}
           {product !== null && !isStep2Active && estimatedValue !== null && (
@@ -1304,59 +1234,6 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
 
-  // Popular section header (correction 5)
-  popularSectionHeader: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 1.5,
-    color: OrTrackColors.subtext,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-    marginTop: 4,
-  },
-
-  // Search input (correction 9)
-  searchInput: {
-    backgroundColor: OrTrackColors.card,
-    borderWidth: 1,
-    borderColor: OrTrackColors.border,
-    borderRadius: 8,
-    color: OrTrackColors.white,
-    fontSize: 15,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  noResultText: {
-    color: OrTrackColors.subtext,
-    fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-
-  // Expand buttons
-  expandButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  expandButtonText: {
-    fontSize: 13,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
-    flex: 1,
-  },
-
-  // Product chips (grid container)
-  productGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-
   // Mini-récap produit (correction 3)
   miniRecapText: {
     color: OrTrackColors.white,
@@ -1369,14 +1246,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: OrTrackColors.border,
     marginBottom: 16,
-  },
-
-  // Lingots separator (correction 4)
-  lingotsSeparator: {
-    borderTopWidth: 1,
-    borderTopColor: OrTrackColors.border,
-    marginTop: 12,
-    marginBottom: 12,
   },
 
   // Selection feedback (correction 8)
