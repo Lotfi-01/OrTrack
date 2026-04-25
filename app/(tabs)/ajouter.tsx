@@ -644,6 +644,27 @@ export default function AjouterScreen() {
     };
   }, [product, isStep2Active, canSave, effectiveEditMode, helpText, confirmed, saving]);
 
+  // ── Commit du champ Prix ──────────────────────────────────────────────
+  // Réutilise la même normalisation que l'onBlur historique du TextInput
+  // pour qu'un tap direct sur le CTA "Enregistrer" (sans dismiss clavier)
+  // ne lise pas une valeur stale dans `purchasePrice`.
+  const commitPurchasePriceInput = useCallback((): string => {
+    let n = priceLocalRef.current;
+    n = n.replace(/[\s\u00A0]+/g, '');
+    n = n.replace(/,/g, '.');
+    n = n.replace(/[^0-9.]/g, '');
+    const dot = n.indexOf('.');
+    if (dot !== -1) { n = n.slice(0, dot + 1) + n.slice(dot + 1).replace(/\./g, ''); }
+    const parts = n.split('.');
+    if (parts.length === 2 && parts[1].length > 2) { n = parts[0] + '.' + parts[1].slice(0, 2); }
+    setPurchasePrice(prev => (prev === n ? prev : n));
+    const num = parseFloat(n);
+    const formatted = !isNaN(num) && num > 0 ? formatEuro(num) : n.replace(/\./g, ',');
+    setPriceDisplay(formatted);
+    setPriceKey(k => k + 1);
+    return n;
+  }, []);
+
   // ── Sauvegarde ────────────────────────────────────────────────────────
 
   const handleSave = async () => {
@@ -651,6 +672,19 @@ export default function AjouterScreen() {
     savingRef.current = true;
     setSaving(true);
     try {
+      // Commit le prix saisi avant de construire le payload : sans cela, un
+      // tap direct sur le CTA Enregistrer (clavier ouvert, pas de blur) lit
+      // un `purchasePrice` stale (ex. valeur préremplie au choix produit).
+      const committedPriceStr = commitPurchasePriceInput();
+      const committedPrice = toNum(committedPriceStr);
+      if (!(committedPrice > 0)) {
+        // Le champ est vide ou nul après commit : abort sans persister, le
+        // formulaire reverra son `canSave` au prochain rendu.
+        savingRef.current = false;
+        setSaving(false);
+        return;
+      }
+
       const existing = effectiveEditMode ? positions.find(p => p.id === editId) : undefined;
       const selectedSilverProduct = isSilverMvpProduct(product) ? product : null;
       const productId = selectedSilverProduct?.id
@@ -662,7 +696,7 @@ export default function AjouterScreen() {
         product: product!.label,
         weightG: effectiveWeightG,
         quantity: qty,
-        purchasePrice: price,
+        purchasePrice: committedPrice,
         purchaseDate: purchaseDate.trim(),
         createdAt: new Date().toISOString(),
         note: note.trim() || undefined,
@@ -1041,21 +1075,7 @@ export default function AjouterScreen() {
                           placeholderTextColor={OrTrackColors.tabIconDefault}
                           defaultValue={priceDisplay}
                           onFocus={fireAddPositionStartedOnce}
-                          onBlur={() => {
-                            let n = priceLocalRef.current;
-                            n = n.replace(/[\s\u00A0]/g, '');
-                            n = n.replace(/,/g, '.');
-                            n = n.replace(/[^0-9.]/g, '');
-                            const dot = n.indexOf('.');
-                            if (dot !== -1) { n = n.slice(0, dot + 1) + n.slice(dot + 1).replace(/\./g, ''); }
-                            const parts = n.split('.');
-                            if (parts.length === 2 && parts[1].length > 2) { n = parts[0] + '.' + parts[1].slice(0, 2); }
-                            if (n !== purchasePrice) setPurchasePrice(n);
-                            const num = parseFloat(n);
-                            const formatted = !isNaN(num) && num > 0 ? formatEuro(num) : n.replace(/\./g, ',');
-                            setPriceDisplay(formatted);
-                            setPriceKey(k => k + 1);
-                          }}
+                          onBlur={commitPurchasePriceInput}
                           onChangeText={(text) => {
                             priceLocalRef.current = text;
                           }}
