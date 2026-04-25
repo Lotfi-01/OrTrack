@@ -38,7 +38,9 @@ import {
   toNum,
   truncateName,
 } from '@/utils/ajouter-form';
+import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
+import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
 import { trackEvent } from '@/services/analytics';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
@@ -47,7 +49,11 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const metalEntries = Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CONFIG[MetalType]][];
+// Pre-built metal options for the MetalSelector. Built once at module load
+// from METAL_CONFIG so the order matches the catalog and never changes.
+const METAL_OPTIONS: readonly MetalOption[] = (
+  Object.entries(METAL_CONFIG) as [MetalType, typeof METAL_CONFIG[MetalType]][]
+).map(([key, cfg]) => ({ key, label: cfg.name, accentColor: cfg.chipBorder }));
 
 type SelectableProduct = Product | SilverMvpProduct;
 
@@ -807,45 +813,16 @@ export default function AjouterScreen() {
             </Text>
           )}
 
-          {/* ── Sélection métal ─────────────────────────────────────── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Métal</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.metalPillsRow}>
-              {metalEntries.map(([key, cfg]) => {
-                const active = metal === key;
-                return (
-                  <TouchableOpacity
-                    key={key}
-                    onPress={() => handleMetalChange(key)}
-                    activeOpacity={0.75}
-                    style={[
-                      styles.metalPill,
-                      active
-                        ? { backgroundColor: cfg.chipBorder, borderColor: cfg.chipBorder }
-                        : { backgroundColor: OrTrackColors.card, borderColor: OrTrackColors.border },
-                    ]}>
-                    <Text style={[
-                      styles.metalPillText,
-                      active
-                        ? { color: OrTrackColors.background, fontWeight: '700' }
-                        : { color: OrTrackColors.white, fontWeight: '600' },
-                    ]}>
-                      {cfg.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-
-            <Text style={styles.spotInline}>
-              {spotEur !== null
+          <MetalSelector
+            options={METAL_OPTIONS}
+            selected={metal}
+            spotInlineLabel={
+              spotEur !== null
                 ? `Cours spot : ${formatEuro(spotEur)} ${currencySymbol}/oz`
-                : 'Cours spot : —'}
-            </Text>
-          </View>
+                : 'Cours spot : —'
+            }
+            onSelect={handleMetalChange}
+          />
 
           <ProductSelector
             metal={metal}
@@ -899,32 +876,13 @@ export default function AjouterScreen() {
 
               {/* Cours actuel du produit */}
               {spotEur !== null && effectiveWeightG > 0 && (
-                <View
-                  collapsable={false}
-                  onLayout={(e) => { spotInfoCardYRef.current = e.nativeEvent.layout.y; }}>
-                  <View style={styles.separator} />
-                  <View style={styles.spotInfoCard}>
-                    <View style={styles.spotInfoRow}>
-                      <Text style={styles.spotInfoLabel}>Cours actuel</Text>
-                      <Text style={styles.spotInfoValue}>
-                        {formatEuro(spotEur)} {currencySymbol}/oz
-                      </Text>
-                    </View>
-                    <View>
-                      <Text style={styles.spotInfoLabel}>Produit sélectionné</Text>
-                      <Text style={[styles.spotInfoValue, { marginTop: 2 }]}>
-                        {product.label} · {formatG(effectiveWeightG)}
-                      </Text>
-                    </View>
-                    <View style={styles.spotInfoRow}>
-                      <Text style={styles.spotInfoLabel}>{metal === 'argent' ? 'Valeur métal unitaire estimée' : 'Valeur unitaire estimée'}</Text>
-                      <Text style={[styles.spotInfoValue, { color: OrTrackColors.gold }]}>
-                        {formatEuro((effectiveWeightG / OZ_TO_G) * spotEur)} {currencySymbol}
-                      </Text>
-                    </View>
-
-                  </View>
-                </View>
+                <SpotInfoCard
+                  spotPriceLabel={`${formatEuro(spotEur)} ${currencySymbol}/oz`}
+                  productLineLabel={`${product.label} · ${formatG(effectiveWeightG)}`}
+                  estimatedValueTitle={metal === 'argent' ? 'Valeur métal unitaire estimée' : 'Valeur unitaire estimée'}
+                  estimatedValueLabel={`${formatEuro((effectiveWeightG / OZ_TO_G) * spotEur)} ${currencySymbol}`}
+                  onLayout={(e) => { spotInfoCardYRef.current = e.nativeEvent.layout.y; }}
+                />
               )}
 
               {/* ── Stepper étape 2 + Formulaire ── */}
@@ -1211,29 +1169,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // Metal pills
-  metalPillsRow: {
-    gap: 6,
-  },
-  metalPill: {
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    minHeight: 40,
-    borderRadius: 20,
-    borderWidth: 1.5,
-  },
-  metalPillText: {
-    fontSize: 14,
-  },
-
-  // Spot inline
-  spotInline: {
-    fontSize: 13,
-    color: OrTrackColors.subtext,
-    marginTop: 6,
-    marginBottom: 4,
-  },
-
   // Mini-récap produit (correction 3)
   miniRecapText: {
     color: OrTrackColors.white,
@@ -1256,13 +1191,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     marginBottom: 4,
-  },
-
-  // Separator
-  separator: {
-    height: 1,
-    backgroundColor: OrTrackColors.border,
-    marginBottom: 8,
   },
 
   // Inputs
@@ -1321,31 +1249,6 @@ const styles = StyleSheet.create({
   priceRefUnavailable: {
     fontSize: 13,
     color: OrTrackColors.subtext,
-  },
-
-  // Spot info card
-  spotInfoCard: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(201,168,76,0.15)',
-    padding: 14,
-    marginBottom: 24,
-    gap: 8,
-  },
-  spotInfoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  spotInfoLabel: {
-    fontSize: 12,
-    color: OrTrackColors.subtext,
-  },
-  spotInfoValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: OrTrackColors.white,
   },
 
   // Estimation card
