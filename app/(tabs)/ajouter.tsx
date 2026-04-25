@@ -38,6 +38,7 @@ import {
   toNum,
   truncateName,
 } from '@/utils/ajouter-form';
+import { DateField } from '@/components/add-position/DateField';
 import { EstimationCard } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
@@ -962,39 +963,28 @@ export default function AjouterScreen() {
                       )}
                     </View>
 
-                    <View style={styles.field}>
-                      <View style={styles.fieldLabelRow}>
-                        <Text style={[styles.fieldLabel, highlightedField === 'date' && { color: OrTrackColors.gold }]}>Date d’achat</Text>
-                        <View style={styles.dateShortcuts}>
-                          <TouchableOpacity
-                            onPress={() => {
-                              const yesterday = new Date();
-                              yesterday.setDate(yesterday.getDate() - 1);
-                              setPurchaseDate(formatDateDMY(yesterday));
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.quickFillBtn}>Hier</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            onPress={() => setPurchaseDate(formatDateDMY(new Date()))}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.quickFillBtn}>Aujourd’hui</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                      <TextInput
-                        style={styles.input}
-                        keyboardType="numeric"
-                        placeholder="JJ/MM/AAAA"
-                        placeholderTextColor={OrTrackColors.tabIconDefault}
-                        value={purchaseDate}
-                        onChangeText={(t) => setPurchaseDate(autoFormatDate(t))}
-                        onFocus={fireAddPositionStartedOnce}
-                        maxLength={10}
-                      />
-                    </View>
+                    <DateField
+                      label="Date d’achat"
+                      placeholder="JJ/MM/AAAA"
+                      isHighlighted={highlightedField === 'date'}
+                      value={purchaseDate}
+                      onChangeText={(t) => setPurchaseDate(autoFormatDate(t))}
+                      onFocus={fireAddPositionStartedOnce}
+                      shortcuts={[
+                        {
+                          label: 'Hier',
+                          onPress: () => {
+                            const yesterday = new Date();
+                            yesterday.setDate(yesterday.getDate() - 1);
+                            setPurchaseDate(formatDateDMY(yesterday));
+                          },
+                        },
+                        {
+                          label: 'Aujourd’hui',
+                          onPress: () => setPurchaseDate(formatDateDMY(new Date())),
+                        },
+                      ]}
+                    />
 
                     <View style={styles.field}>
                       <Text style={styles.fieldLabel}>Note (optionnel)</Text>
@@ -1169,10 +1159,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  dateShortcuts: {
-    flexDirection: 'row',
-    gap: 12,
   },
   quickFillBtn: {
     fontSize: 14,
