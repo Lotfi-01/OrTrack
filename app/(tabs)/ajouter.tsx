@@ -38,6 +38,7 @@ import {
   toNum,
   truncateName,
 } from '@/utils/ajouter-form';
+import { EstimationCard, type EstimationCardTone } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
@@ -1032,66 +1033,58 @@ export default function AjouterScreen() {
               )}
 
               {/* Estimation temps réel */}
-              {isStep2Active && currentValue !== null && (
-                <View style={styles.estimationCard}>
-                  <Text style={styles.estimationTitle}>Estimation actuelle</Text>
+              {isStep2Active && currentValue !== null && (() => {
+                let gainLossLabel: string | undefined;
+                let gainLossTone: EstimationCardTone = 'neutral';
+                if (gainLoss !== null) {
+                  const rounded = Math.round(gainLoss * 100) / 100;
+                  const display = rounded === 0 ? 0 : rounded;
+                  if (display === 0) {
+                    gainLossLabel = '0,00 €';
+                    gainLossTone = 'neutral';
+                  } else {
+                    gainLossLabel = `${display > 0 ? '+' : ''}${formatEuro(display)} €`;
+                    gainLossTone = display > 0 ? 'positive' : 'negative';
+                  }
+                }
+                const helperText = spotEur !== null
+                  ? `Cours spot : ${formatEuro(spotEur)} €/oz · ${formatG(effectiveWeightG)} par unité`
+                  : undefined;
+                const disclaimerText = spotEur !== null
+                  ? (metal === 'argent'
+                      ? 'Estimation basée sur le spot métal · L’écart au prix payé peut inclure TVA, prime, marge ou frais'
+                      : 'Estimation basée sur le cours spot · Hors prime revendeur')
+                  : undefined;
 
-                  <View style={styles.estimationRow}>
-                    <Text style={styles.estimationLabel}>Valeur de marché</Text>
-                    <Text style={styles.estimationValue}>{formatEuro(currentValue)} €</Text>
-                  </View>
-
-                  {gainLoss !== null && (() => {
-                    const rounded = Math.round(gainLoss * 100) / 100;
-                    const display = rounded === 0 ? 0 : rounded;
-                    return (
-                      <View style={styles.estimationRow}>
-                        <Text style={styles.estimationLabel}>Plus/moins-value</Text>
-                        <Text style={[
-                          styles.estimationGainLoss,
-                          display === 0
-                            ? { color: OrTrackColors.subtext }
-                            : display > 0 ? styles.positive : styles.negative,
-                        ]}>
-                          {display === 0
-                            ? '0,00 €'
-                            : `${display > 0 ? '+' : ''}${formatEuro(display)} €`}
-                        </Text>
-                      </View>
-                    );
-                  })()}
-
-                  {spotEur !== null && (
-                    <>
-                      <Text style={styles.estimationHint}>
-                        Cours spot : {formatEuro(spotEur)} {'\u20AC'}/oz {'\u00B7'} {formatG(effectiveWeightG)} par unité
-                      </Text>
-                      <Text style={styles.estimationDisclaimer}>
-                        {metal === 'argent'
-                          ? 'Estimation basée sur le spot métal · L’écart au prix payé peut inclure TVA, prime, marge ou frais'
-                          : 'Estimation basée sur le cours spot \u00B7 Hors prime revendeur'}
-                      </Text>
-                    </>
-                  )}
-                  {isSilverCreationFlow && silverBreakdown && (
-                    <View style={styles.silverBreakdownBlock}>
-                      <Text style={styles.estimationDisclaimer}>
-                        Prix payé TTC : {formatEuro(silverBreakdown.totalPaidTTC)} €
-                      </Text>
-                      {Number.isFinite(silverBreakdown.estimatedVatImpact) && (
+                return (
+                  <EstimationCard
+                    title="Estimation actuelle"
+                    estimatedValueLabel={`${formatEuro(currentValue)} €`}
+                    gainLossLabel={gainLossLabel}
+                    gainLossTone={gainLossTone}
+                    helperText={helperText}
+                    disclaimerText={disclaimerText}
+                  >
+                    {isSilverCreationFlow && silverBreakdown && (
+                      <View style={styles.silverBreakdownBlock}>
                         <Text style={styles.estimationDisclaimer}>
-                          TVA estimée : {formatEuro(silverBreakdown.estimatedVatImpact!)} €
+                          Prix payé TTC : {formatEuro(silverBreakdown.totalPaidTTC)} €
                         </Text>
-                      )}
-                    </View>
-                  )}
-                  {displayedSilverPremiumWarning && (
-                    <Text style={styles.silverWarning}>
-                      Prix payé différent du spot actuel. L’écart peut inclure TVA, prime, marge ou frais.
-                    </Text>
-                  )}
-                </View>
-              )}
+                        {Number.isFinite(silverBreakdown.estimatedVatImpact) && (
+                          <Text style={styles.estimationDisclaimer}>
+                            TVA estimée : {formatEuro(silverBreakdown.estimatedVatImpact!)} €
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                    {displayedSilverPremiumWarning && (
+                      <Text style={styles.silverWarning}>
+                        Prix payé différent du spot actuel. L’écart peut inclure TVA, prime, marge ou frais.
+                      </Text>
+                    )}
+                  </EstimationCard>
+                );
+              })()}
 
               {/* Spacer */}
               <View style={{ height: 110 }} />
@@ -1251,49 +1244,10 @@ const styles = StyleSheet.create({
     color: OrTrackColors.subtext,
   },
 
-  // Estimation card
-  estimationCard: {
-    backgroundColor: OrTrackColors.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#C9A84C40',
-    padding: 16,
-    marginBottom: 24,
-    gap: 10,
-  },
-  estimationTitle: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: OrTrackColors.gold,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 2,
-  },
-  estimationRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  estimationLabel: {
-    fontSize: 13,
-    color: '#B3A692',
-  },
-  estimationValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-  },
-  estimationGainLoss: {
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  positive: { color: '#4CAF50' },
-  negative: { color: '#E07070' },
-  estimationHint: {
-    fontSize: 11,
-    color: '#B3A692',
-    marginTop: 2,
-  },
+  // estimationDisclaimer kept here because the silver-breakdown children
+  // (TVA + premium warning) rendered by ajouter.tsx and passed into
+  // EstimationCard via `children` still need it. EstimationCard has its own
+  // byte-identical duplicate for the card's own disclaimer line.
   estimationDisclaimer: {
     fontSize: 10,
     color: '#B3A692',
