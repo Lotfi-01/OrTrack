@@ -38,10 +38,11 @@ import {
   toNum,
   truncateName,
 } from '@/utils/ajouter-form';
-import { EstimationCard, type EstimationCardTone } from '@/components/add-position/EstimationCard';
+import { EstimationCard } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
+import { buildEstimationDisplayModel } from '@/utils/add-position/estimation-display';
 import { trackEvent } from '@/services/analytics';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
@@ -1034,36 +1035,31 @@ export default function AjouterScreen() {
 
               {/* Estimation temps réel */}
               {isStep2Active && currentValue !== null && (() => {
-                let gainLossLabel: string | undefined;
-                let gainLossTone: EstimationCardTone = 'neutral';
-                if (gainLoss !== null) {
-                  const rounded = Math.round(gainLoss * 100) / 100;
-                  const display = rounded === 0 ? 0 : rounded;
-                  if (display === 0) {
-                    gainLossLabel = '0,00 €';
-                    gainLossTone = 'neutral';
-                  } else {
-                    gainLossLabel = `${display > 0 ? '+' : ''}${formatEuro(display)} €`;
-                    gainLossTone = display > 0 ? 'positive' : 'negative';
-                  }
-                }
-                const helperText = spotEur !== null
-                  ? `Cours spot : ${formatEuro(spotEur)} €/oz · ${formatG(effectiveWeightG)} par unité`
+                const roundedGainLossValue = gainLoss !== null
+                  ? Math.round(gainLoss * 100) / 100
+                  : null;
+                const absoluteGainLossLabel = roundedGainLossValue !== null
+                  ? formatEuro(Math.abs(roundedGainLossValue))
                   : undefined;
-                const disclaimerText = spotEur !== null
-                  ? (metal === 'argent'
-                      ? 'Estimation basée sur le spot métal · L’écart au prix payé peut inclure TVA, prime, marge ou frais'
-                      : 'Estimation basée sur le cours spot · Hors prime revendeur')
-                  : undefined;
+                const estimationModel = buildEstimationDisplayModel({
+                  estimatedValueLabel: `${formatEuro(currentValue)} €`,
+                  roundedGainLossValue,
+                  absoluteGainLossLabel,
+                  spotPriceLabel: spotEur !== null ? `${formatEuro(spotEur)} €/oz` : undefined,
+                  unitLabel: formatG(effectiveWeightG),
+                  disclaimerVariant: spotEur !== null
+                    ? (metal === 'argent' ? 'silver' : 'standard')
+                    : undefined,
+                });
 
                 return (
                   <EstimationCard
-                    title="Estimation actuelle"
-                    estimatedValueLabel={`${formatEuro(currentValue)} €`}
-                    gainLossLabel={gainLossLabel}
-                    gainLossTone={gainLossTone}
-                    helperText={helperText}
-                    disclaimerText={disclaimerText}
+                    title={estimationModel.title}
+                    estimatedValueLabel={estimationModel.estimatedValueLabel}
+                    gainLossLabel={estimationModel.gainLossLabel}
+                    gainLossTone={estimationModel.gainLossTone}
+                    helperText={estimationModel.helperText}
+                    disclaimerText={estimationModel.disclaimerText}
                   >
                     {isSilverCreationFlow && silverBreakdown && (
                       <View style={styles.silverBreakdownBlock}>
