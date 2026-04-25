@@ -13,7 +13,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   UIManager,
   View,
 } from 'react-native';
@@ -42,6 +41,7 @@ import { DateField } from '@/components/add-position/DateField';
 import { EstimationCard } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
 import { NoteField } from '@/components/add-position/NoteField';
+import { PriceField } from '@/components/add-position/PriceField';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { QuantityField } from '@/components/add-position/QuantityField';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
@@ -913,56 +913,43 @@ export default function AjouterScreen() {
                       />
                     </View>
 
-                    <View style={styles.field}>
-                      <View style={styles.fieldLabelRow}>
-                        <Text style={[styles.fieldLabel, highlightedField === 'price' && { color: OrTrackColors.gold }]}>
-                          {metal === 'argent' ? 'Prix payé TTC' : 'Prix d’achat unitaire'}
-                        </Text>
-                        {/* Correction 7 — Raccourci "Cours du jour" */}
-                        {estimatedValue !== null && estimatedValue > 0 && (
-                          <TouchableOpacity
-                            onPress={() => {
-                              // NOTE: estimatedValue is computed from spot price at load time.
-                              // If the user stays on screen for a long time, this value may be stale.
-                              // Consider refreshing on "Cours du jour" tap in a future version.
-                              const spotVal = estimatedValue!.toFixed(2);
-                              const spotFr = spotVal.replace('.', ',');
-                              setPurchasePrice(spotVal);
-                              setPriceDisplay(formatPriceDisplay(spotVal));
-                              priceLocalRef.current = spotFr;
-                              setPriceKey(k => k + 1);
-                            }}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.quickFillBtn}>{metal === 'argent' ? 'Valeur métal' : 'Cours spot'}</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                      <View style={styles.inputWrapper}>
-                        <TextInput
-                          key={`price-${priceKey}`}
-                          style={styles.input}
-                          keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
-                          placeholder="Ex : 1 700"
-                          placeholderTextColor={OrTrackColors.tabIconDefault}
-                          defaultValue={priceDisplay}
-                          onFocus={fireAddPositionStartedOnce}
-                          onBlur={commitPurchasePriceInput}
-                          onChangeText={(text) => {
-                            priceLocalRef.current = text;
-                          }}
-                        />
-                        <Text style={styles.inputSuffix}>{currencySymbol}</Text>
-                      </View>
-                      {priceAnalysis.showPriceReference && (
-                        <Text style={styles.priceRef}>
-                          {metal === 'argent' ? 'Valeur métal actuelle' : 'Cours actuel'} : {estimatedValue!.toFixed(2)} €
-                        </Text>
-                      )}
-                      {isSilverCreationFlow && silverGapCopy && (
-                        <Text style={styles.priceRef}>{silverGapCopy}</Text>
-                      )}
-                    </View>
+                    <PriceField
+                      label={metal === 'argent' ? 'Prix payé TTC' : 'Prix d’achat unitaire'}
+                      isHighlighted={highlightedField === 'price'}
+                      shortcut={
+                        estimatedValue !== null && estimatedValue > 0
+                          ? {
+                              label: metal === 'argent' ? 'Valeur métal' : 'Cours spot',
+                              onPress: () => {
+                                // NOTE: estimatedValue is computed from spot price at load time.
+                                // If the user stays on screen for a long time, this value may be stale.
+                                // Consider refreshing on "Cours du jour" tap in a future version.
+                                const spotVal = estimatedValue!.toFixed(2);
+                                const spotFr = spotVal.replace('.', ',');
+                                setPurchasePrice(spotVal);
+                                setPriceDisplay(formatPriceDisplay(spotVal));
+                                priceLocalRef.current = spotFr;
+                                setPriceKey(k => k + 1);
+                              },
+                            }
+                          : null
+                      }
+                      inputKey={`price-${priceKey}`}
+                      keyboardType={Platform.OS === 'ios' ? 'decimal-pad' : 'numeric'}
+                      defaultValue={priceDisplay}
+                      onFocus={fireAddPositionStartedOnce}
+                      onBlur={commitPurchasePriceInput}
+                      onChangeText={(text) => {
+                        priceLocalRef.current = text;
+                      }}
+                      currencySymbol={currencySymbol}
+                      priceReferenceText={
+                        priceAnalysis.showPriceReference
+                          ? `${metal === 'argent' ? 'Valeur métal actuelle' : 'Cours actuel'} : ${estimatedValue!.toFixed(2)} €`
+                          : null
+                      }
+                      silverGapCopy={isSilverCreationFlow && silverGapCopy ? silverGapCopy : null}
+                    />
 
                     <DateField
                       label="Date d’achat"
@@ -1150,16 +1137,6 @@ const styles = StyleSheet.create({
   // Inputs
   fieldGroup: { gap: 14 },
   field: { gap: 6 },
-  fieldLabelRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  quickFillBtn: {
-    fontSize: 14,
-    color: OrTrackColors.gold,
-    fontWeight: '600',
-  },
   fieldLabel: {
     fontSize: 13,
     color: OrTrackColors.label,
@@ -1189,13 +1166,6 @@ const styles = StyleSheet.create({
     color: OrTrackColors.subtext,
   },
 
-  // Price reference
-  priceRef: {
-    fontSize: 11,
-    color: OrTrackColors.subtext,
-    marginTop: 4,
-    marginLeft: 2,
-  },
   priceRefUnavailable: {
     fontSize: 13,
     color: OrTrackColors.subtext,
