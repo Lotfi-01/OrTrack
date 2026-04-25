@@ -37,6 +37,7 @@ import { usePositions } from '@/hooks/use-positions';
 import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { loadPriceHistory, type PricePoint, type HistoryPeriod } from '@/hooks/use-metal-history';
 import { usePremium } from '@/contexts/premium-context';
+import { trackEvent } from '@/services/analytics';
 
 import type { MetalType } from '@/constants/metals';
 
@@ -133,6 +134,12 @@ export default function AccueilScreen() {
       AsyncStorage.getItem(STORAGE_KEYS.privacyMode).then(v => setMasked(v === 'true')).catch(() => {});
     }, [])
   );
+
+  // ── Funnel analytics: home_viewed (once per mount) ───────────────────
+
+  useEffect(() => {
+    void trackEvent('home_viewed');
+  }, []);
 
   const toggleMask = useCallback(async () => {
     const next = !masked;

@@ -13,6 +13,7 @@ import { OrTrackColors } from '@/constants/theme';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { PremiumProvider } from '@/contexts/premium-context';
 import { trackInstall } from '@/lib/trackInstall';
+import { trackEvent } from '@/services/analytics';
 import { reportError } from '@/utils/error-reporting';
 
 // Afficher les notifications quand l'app est au premier plan
@@ -119,6 +120,11 @@ export default function RootLayout() {
       reportError(error, { scope: 'bootstrap', action: 'track_install' });
     });
   }, [ready]);
+
+  // Funnel analytics: app_opened (once per app lifecycle)
+  useEffect(() => {
+    void trackEvent('app_opened');
+  }, []);
 
   // Vérifier si la biométrie est activée et verrouiller si nécessaire
   useEffect(() => {

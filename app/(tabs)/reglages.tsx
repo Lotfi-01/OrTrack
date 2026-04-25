@@ -20,8 +20,9 @@ import * as DocumentPicker from 'expo-document-picker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OrTrackColors } from '@/constants/theme';
-import { STORAGE_KEYS, WIPE_STORAGE_KEYS } from '@/constants/storage-keys';
-import { resetPositionsCache, awaitPendingPositionWrites, usePositions } from '@/hooks/use-positions';
+import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { runLocalDataWipe } from '@/lib/local-wipe';
+import { usePositions } from '@/hooks/use-positions';
 import { Position } from '@/types/position';
 import { reportError } from '@/utils/error-reporting';
 import {
@@ -429,18 +430,10 @@ export default function ReglagesScreen() {
 
   const wipeAllUserData = async () => {
     try {
-      // 1. Drainer la queue des mutations positions en cours pour empêcher un
-      //    setItem stale de réécrire après le multiRemove.
-      await awaitPendingPositionWrites();
-
-      // 2. Nettoyage local — clés fixes et caches historiques.
-      const allKeys = await AsyncStorage.getAllKeys();
-      const dynamicKeys = allKeys.filter(key => key.startsWith(STORAGE_KEYS.historyCachePrefix));
-
-      await AsyncStorage.multiRemove([...WIPE_STORAGE_KEYS, ...dynamicKeys]);
-
-      // 3. Invalider le cache mémoire et rediriger.
-      resetPositionsCache();
+      // Single source of truth (lib/local-wipe.ts) — drains pending position
+      // writes, clears AsyncStorage + SecureStore, and resets analytics
+      // in-memory state (queue + identity cache) before redirecting.
+      await runLocalDataWipe();
       router.replace('/onboarding');
     } catch (error) {
       reportError(error, { scope: 'data-wipe', action: 'wipe_local_user_data' });

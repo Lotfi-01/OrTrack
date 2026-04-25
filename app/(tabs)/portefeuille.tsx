@@ -12,7 +12,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { router, useLocalSearchParams } from 'expo-router';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   ScrollView,
@@ -35,6 +35,7 @@ import PortfolioStatsTeaser from '@/components/portfolio/PortfolioStatsTeaser';
 import { usePremium } from '@/contexts/premium-context';
 import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { usePositions } from '@/hooks/use-positions';
+import { trackEvent } from '@/services/analytics';
 
 const C = OrTrackColors;
 
@@ -87,6 +88,12 @@ export default function PortefeuilleScreen() {
   // ── Reload on focus ──────────────────────────────────────────────────
 
   useFocusEffect(useCallback(() => { reloadPositions(); }, [reloadPositions]));
+
+  // ── Funnel analytics: portfolio_viewed (once per mount) ──────────────
+
+  useEffect(() => {
+    void trackEvent('portfolio_viewed');
+  }, []);
 
   // ── Filter from route param ──────────────────────────────────────────
   //

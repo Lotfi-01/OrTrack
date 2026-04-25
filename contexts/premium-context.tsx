@@ -12,6 +12,7 @@ import {
   initWithTimeout,
   RC_INIT_TIMEOUT_MS,
 } from '@/services/revenuecat';
+import { trackEvent } from '@/services/analytics';
 import { reportError } from '@/utils/error-reporting';
 
 import type { PurchasesPackage } from 'react-native-purchases';
@@ -119,31 +120,50 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handlePurchase = useCallback(async (_pkg: PurchasesPackage) => {
+    // Resolve the analytics `plan` label from the offerings reference identity.
+    const plan: 'monthly' | 'annual' | 'unknown' =
+      _pkg === offerings.annual
+        ? 'annual'
+        : _pkg === offerings.monthly
+          ? 'monthly'
+          : 'unknown';
+
     setIsPurchasing(true);
+    void trackEvent('purchase_started', { plan, is_premium: isPremium });
     try {
       const result = await purchasePackage(_pkg);
-      if (result.isPremium) {
+      if (result.success && result.isPremium) {
         setIsPremium(true);
         setShowPaywallModal(false);
+        void trackEvent('purchase_success', { plan });
+      } else {
+        // success=false comes back when RevenueCat reports userCancelled.
+        void trackEvent('purchase_cancelled', { plan });
       }
     } catch (error) {
       reportError(error, { scope: 'premium', action: 'purchase_package' });
+      void trackEvent('purchase_failed', { plan });
     } finally {
       setIsPurchasing(false);
     }
-  }, []);
+  }, [offerings.annual, offerings.monthly, isPremium]);
 
   const handleRestore = useCallback(async (): Promise<boolean> => {
     setIsPurchasing(true);
+    void trackEvent('restore_started');
     try {
       const restored = await restorePurchases();
       if (restored) {
         setIsPremium(true);
         setShowPaywallModal(false);
+        void trackEvent('restore_success');
+      } else {
+        void trackEvent('restore_failed');
       }
       return restored;
     } catch (error) {
       reportError(error, { scope: 'premium', action: 'restore_purchases' });
+      void trackEvent('restore_failed');
       return false;
     } finally {
       setIsPurchasing(false);

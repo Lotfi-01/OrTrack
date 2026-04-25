@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { Stack, router } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Platform,
@@ -27,6 +27,7 @@ import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
 import { usePremium } from '@/contexts/premium-context';
+import { trackEvent } from '@/services/analytics';
 
 const C = OrTrackColors;
 
@@ -59,6 +60,38 @@ function autoFormatDate(raw: string): string {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
 }
 
+// ─── Premium teaser (free users) ────────────────────────────────────────────
+
+function PremiumTeaserBlock({
+  onCtaPress,
+  firedRef,
+}: {
+  onCtaPress: () => void;
+  firedRef: { current: boolean };
+}) {
+  useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+    void trackEvent('premium_teaser_viewed');
+  }, [firedRef]);
+
+  return (
+    <View style={st.premiumTeaser}>
+      <Text style={st.premiumTeaserTitle}>Comparer les 2 régimes fiscaux</Text>
+      <Text style={st.premiumTeaserText}>
+        Débloquez le comparatif fiscal complet et le détail par position pour mieux préparer vos ventes.
+      </Text>
+      <TouchableOpacity
+        style={st.premiumTeaserCta}
+        onPress={onCtaPress}
+        activeOpacity={0.8}
+      >
+        <Text style={st.premiumTeaserCtaText}>Découvrir Premium</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ─── Écran ──────────────────────────────────────────────────────────────────
 
 export default function FiscaliteGlobaleScreen() {
@@ -79,7 +112,24 @@ export default function FiscaliteGlobaleScreen() {
     }, [reloadPositions]),
   );
 
-  const m = (text: string) => (masked ? '\u2022\u2022\u2022\u2022\u2022\u2022' : text);
+  // \u2500\u2500 Funnel analytics \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // global_simulation_opened: once per mount.
+  // premium_teaser_viewed: once per mount when teaser becomes visible for a
+  // free user. The teaser is rendered conditionally based on `!isPremium`
+  // and the presence of computed results, so we guard with a ref to ensure
+  // a single fire per mount.
+  useEffect(() => {
+    void trackEvent('global_simulation_opened');
+  }, []);
+
+  const teaserViewedFiredRef = useRef(false);
+
+  const handleTeaserCtaPress = useCallback(() => {
+    void trackEvent('premium_teaser_clicked');
+    showPaywall();
+  }, [showPaywall]);
+
+  const m = (text: string) => (masked ? '••••••' : text);
 
   // ── Calculs ─────────────────────────────────────────────────────────────
 
@@ -328,19 +378,10 @@ export default function FiscaliteGlobaleScreen() {
 
               {/* 6. COMPARAISON DES 2 RÉGIMES — Premium uniquement */}
               {!isPremium && (
-                <View style={st.premiumTeaser}>
-                  <Text style={st.premiumTeaserTitle}>Comparer les 2 régimes fiscaux</Text>
-                  <Text style={st.premiumTeaserText}>
-                    Débloquez le comparatif fiscal complet et le détail par position pour mieux préparer vos ventes.
-                  </Text>
-                  <TouchableOpacity
-                    style={st.premiumTeaserCta}
-                    onPress={showPaywall}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={st.premiumTeaserCtaText}>Découvrir Premium</Text>
-                  </TouchableOpacity>
-                </View>
+                <PremiumTeaserBlock
+                  onCtaPress={handleTeaserCtaPress}
+                  firedRef={teaserViewedFiredRef}
+                />
               )}
               {isPremium && (
               <View style={st.section}>

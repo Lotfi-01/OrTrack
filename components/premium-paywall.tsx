@@ -6,6 +6,7 @@ import Svg, { Path } from 'react-native-svg';
 import { CrownIcon } from '@/components/crown-icon';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
+import { trackEvent } from '@/services/analytics';
 
 // ─── Constantes ──────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
   const [restoreMessage, setRestoreMessage] = useState<string | null>(null);
 
   const actionInProgressRef = useRef(false);
+  const paywallViewedFiredRef = useRef(false);
 
   // Stagger groups
   const animA = useStaggerAnim(0);
@@ -124,6 +126,22 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
     }
   }, [hasAnnual, hasMonthly, selectedPlan]);
 
+  // Funnel analytics: paywall_viewed fires once per mount when the paywall is
+  // visibly the non-success state. If the user is already premium we render
+  // the success view above and never fire.
+  useEffect(() => {
+    if (paywallViewedFiredRef.current) return;
+    paywallViewedFiredRef.current = true;
+    void trackEvent('paywall_viewed', {
+      has_monthly: hasMonthly,
+      has_annual: hasAnnual,
+    });
+    // Intentionally fire on first mount only. Subsequent changes to
+    // hasMonthly/hasAnnual after offerings load are treated as the same
+    // paywall view session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (isPremium) {
     return (
       <View style={s.premiumDoneContainer}>
@@ -139,6 +157,11 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
   const handleSelectPlan = (plan: 'annual' | 'monthly') => {
     setRestoreMessage(null);
     setSelectedPlan(plan);
+    void trackEvent('paywall_plan_selected', {
+      plan,
+      has_monthly: hasMonthly,
+      has_annual: hasAnnual,
+    });
   };
 
   const handlePurchasePress = async () => {
