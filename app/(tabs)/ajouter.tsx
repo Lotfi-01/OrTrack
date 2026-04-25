@@ -41,6 +41,7 @@ import {
 import { EstimationCard } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
+import { QuantityField } from '@/components/add-position/QuantityField';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
 import { buildEstimationDisplayModel } from '@/utils/add-position/estimation-display';
 import { usePriceField } from '@/hooks/add-position/usePriceField';
@@ -903,18 +904,11 @@ export default function AjouterScreen() {
 
                     <View style={styles.field}>
                       <Text style={[styles.fieldLabel, highlightedField === 'quantity' && { color: OrTrackColors.gold }]}>Quantité</Text>
-                      <View style={styles.inputWrapper}>
-                        <TextInput
-                          style={styles.input}
-                          keyboardType="decimal-pad"
-                          placeholder="Quantité"
-                          placeholderTextColor={OrTrackColors.tabIconDefault}
-                          value={quantity}
-                          onChangeText={setQuantity}
-                          onFocus={fireAddPositionStartedOnce}
-                        />
-                        <Text style={styles.inputSuffix}>pièce(s)</Text>
-                      </View>
+                      <QuantityField
+                        value={quantity}
+                        onChangeText={setQuantity}
+                        onFocus={fireAddPositionStartedOnce}
+                      />
                     </View>
 
                     <View style={styles.field}>
