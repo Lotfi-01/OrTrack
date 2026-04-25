@@ -43,6 +43,7 @@ import { MetalSelector, type MetalOption } from '@/components/add-position/Metal
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
 import { buildEstimationDisplayModel } from '@/utils/add-position/estimation-display';
+import { normalizePurchasePriceInput } from '@/utils/add-position/price-input';
 import { trackEvent } from '@/services/analytics';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
@@ -657,20 +658,11 @@ export default function AjouterScreen() {
   // pour qu'un tap direct sur le CTA "Enregistrer" (sans dismiss clavier)
   // ne lise pas une valeur stale dans `purchasePrice`.
   const commitPurchasePriceInput = useCallback((): string => {
-    let n = priceLocalRef.current;
-    n = n.replace(/[\s\u00A0]+/g, '');
-    n = n.replace(/,/g, '.');
-    n = n.replace(/[^0-9.]/g, '');
-    const dot = n.indexOf('.');
-    if (dot !== -1) { n = n.slice(0, dot + 1) + n.slice(dot + 1).replace(/\./g, ''); }
-    const parts = n.split('.');
-    if (parts.length === 2 && parts[1].length > 2) { n = parts[0] + '.' + parts[1].slice(0, 2); }
-    setPurchasePrice(prev => (prev === n ? prev : n));
-    const num = parseFloat(n);
-    const formatted = !isNaN(num) && num > 0 ? formatEuro(num) : n.replace(/\./g, ',');
-    setPriceDisplay(formatted);
+    const result = normalizePurchasePriceInput(priceLocalRef.current, formatEuro);
+    setPurchasePrice(prev => (prev === result.normalized ? prev : result.normalized));
+    setPriceDisplay(result.displayValue);
     setPriceKey(k => k + 1);
-    return n;
+    return result.normalized;
   }, []);
 
   // ── Sauvegarde ────────────────────────────────────────────────────────
