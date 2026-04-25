@@ -43,7 +43,7 @@ import { MetalSelector, type MetalOption } from '@/components/add-position/Metal
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
 import { buildEstimationDisplayModel } from '@/utils/add-position/estimation-display';
-import { normalizePurchasePriceInput } from '@/utils/add-position/price-input';
+import { usePriceField } from '@/hooks/add-position/usePriceField';
 import { trackEvent } from '@/services/analytics';
 
 // ─── LayoutAnimation Android ──────────────────────────────────────────────────
@@ -182,7 +182,16 @@ export default function AjouterScreen() {
   const [product, setProduct] = useState<SelectableProduct | null>(null);
   const [customWeight, setCustomWeight] = useState('');
   const [quantity, setQuantity] = useState('1');
-  const [purchasePrice, setPurchasePrice] = useState('');
+  const {
+    purchasePrice,
+    setPurchasePrice,
+    priceDisplay,
+    setPriceDisplay,
+    priceKey,
+    setPriceKey,
+    priceLocalRef,
+    commitPurchasePriceInput,
+  } = usePriceField(formatEuro);
   const [purchaseDate, setPurchaseDate] = useState('');
   const [note, setNote] = useState('');
   const [showAllPieces, setShowAllPieces] = useState(false);
@@ -192,9 +201,6 @@ export default function AjouterScreen() {
   const [confirmed, setConfirmed] = useState(false);
   const [isStep2Active, setIsStep2Active] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
-  const priceLocalRef = useRef(purchasePrice);
-  const [priceKey, setPriceKey] = useState(0);
-  const [priceDisplay, setPriceDisplay] = useState('');
 
   const dateRef = useRef(purchaseDate);
   dateRef.current = purchaseDate;
@@ -652,18 +658,6 @@ export default function AjouterScreen() {
       action: 'save' as const,
     };
   }, [product, isStep2Active, canSave, effectiveEditMode, helpText, confirmed, saving]);
-
-  // ── Commit du champ Prix ──────────────────────────────────────────────
-  // Réutilise la même normalisation que l'onBlur historique du TextInput
-  // pour qu'un tap direct sur le CTA "Enregistrer" (sans dismiss clavier)
-  // ne lise pas une valeur stale dans `purchasePrice`.
-  const commitPurchasePriceInput = useCallback((): string => {
-    const result = normalizePurchasePriceInput(priceLocalRef.current, formatEuro);
-    setPurchasePrice(prev => (prev === result.normalized ? prev : result.normalized));
-    setPriceDisplay(result.displayValue);
-    setPriceKey(k => k + 1);
-    return result.normalized;
-  }, []);
 
   // ── Sauvegarde ────────────────────────────────────────────────────────
 
