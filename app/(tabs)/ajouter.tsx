@@ -41,6 +41,7 @@ import {
 import { DateField } from '@/components/add-position/DateField';
 import { EstimationCard } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
+import { NoteField } from '@/components/add-position/NoteField';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { QuantityField } from '@/components/add-position/QuantityField';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
@@ -986,18 +987,12 @@ export default function AjouterScreen() {
                       ]}
                     />
 
-                    <View style={styles.field}>
-                      <Text style={styles.fieldLabel}>Note (optionnel)</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Ajoutez un contexte si utile"
-                        multiline={false}
-                        placeholderTextColor={OrTrackColors.tabIconDefault}
-                        value={note}
-                        onChangeText={setNote}
-                        maxLength={120}
-                      />
-                    </View>
+                    <NoteField
+                      label="Note (optionnel)"
+                      placeholder="Ajoutez un contexte si utile"
+                      value={note}
+                      onChangeText={setNote}
+                    />
 
                   </View>
                 </View>
