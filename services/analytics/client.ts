@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Application from 'expo-application';
 import * as Crypto from 'expo-crypto';
 import { Platform } from 'react-native';
 
+import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { reportError } from '@/utils/error-reporting';
 
 import {
@@ -170,6 +172,76 @@ export function resetAnalyticsQueue(): void {
   flushInFlight = false;
 }
 
+// ─── Opt-in consent gate ─────────────────────────────────────────────────────
+// Strict opt-in: no event leaves the device until the user has explicitly
+// consented via the Settings toggle. Applies to ALL events including
+// `app_opened` and `session_start` — no exception.
+
+const SESSION_INACTIVITY_THRESHOLD_MS = 30 * 60 * 1000;
+
+async function isAnalyticsConsentGranted(): Promise<boolean> {
+  try {
+    const value = await AsyncStorage.getItem(STORAGE_KEYS.analyticsConsent);
+    return value === 'true';
+  } catch {
+    return false;
+  }
+}
+
+// Module-level re-entrant guard. Prevents a double `session_start` when the
+// initial mount call and the AppState 'active' transition fire near-simultaneously
+// at cold start. The guard is reset in finally so every code path (success,
+// early consent return, AsyncStorage error) clears it.
+let isSessionStartInFlight = false;
+
+export async function notifyAppForegrounded(): Promise<void> {
+  if (isSessionStartInFlight) return;
+  isSessionStartInFlight = true;
+
+  try {
+    if (!(await isAnalyticsConsentGranted())) return;
+
+    const lastSessionStartedAtRaw = await AsyncStorage.getItem(
+      STORAGE_KEYS.analyticsLastSessionStartedAt,
+    );
+    const now = Date.now();
+    const lastSessionStartedAt = lastSessionStartedAtRaw
+      ? Number(lastSessionStartedAtRaw)
+      : null;
+
+    const shouldStart =
+      !lastSessionStartedAt ||
+      !Number.isFinite(lastSessionStartedAt) ||
+      now - lastSessionStartedAt > SESSION_INACTIVITY_THRESHOLD_MS;
+
+    if (!shouldStart) return;
+
+    const sessionCountRaw = await AsyncStorage.getItem(
+      STORAGE_KEYS.analyticsSessionCount,
+    );
+    const newSessionCount = (Number(sessionCountRaw) || 0) + 1;
+
+    await AsyncStorage
+      .setItem(STORAGE_KEYS.analyticsSessionCount, String(newSessionCount))
+      .catch(() => undefined);
+
+    await trackEvent('session_start', {
+      sessionCount: newSessionCount,
+      timeSinceLastSessionMin: lastSessionStartedAt
+        ? Math.round((now - lastSessionStartedAt) / 60000)
+        : null,
+    });
+
+    await AsyncStorage
+      .setItem(STORAGE_KEYS.analyticsLastSessionStartedAt, String(now))
+      .catch(() => undefined);
+  } catch (error) {
+    reportError(error, { scope: 'analytics', action: 'notify_app_foregrounded' });
+  } finally {
+    isSessionStartInFlight = false;
+  }
+}
+
 // ─── Public API ──────────────────────────────────────────────────────────────
 
 export async function trackEvent(
@@ -177,6 +249,11 @@ export async function trackEvent(
   properties?: AnalyticsProperties,
 ): Promise<void> {
   try {
+    // Opt-in gate FIRST. No enqueue, no network, no side effect when consent
+    // is not granted. Note: trackEvent never writes to
+    // `analyticsLastSessionStartedAt` — that key is owned exclusively by
+    // notifyAppForegrounded() so the 30-minute heuristic stays reliable.
+    if (!(await isAnalyticsConsentGranted())) return;
     if (!isKnownEventName(eventName)) return;
     if (!ANALYTICS_NETWORK_ENABLED) return;
     if (isAnalyticsIdentityDisabled()) return;

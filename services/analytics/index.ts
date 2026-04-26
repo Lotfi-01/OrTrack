@@ -3,7 +3,7 @@ export {
   type AnalyticsEventName,
   type AnalyticsProperties,
 } from './events';
-export { trackEvent, resetAnalyticsQueue } from './client';
+export { trackEvent, resetAnalyticsQueue, notifyAppForegrounded } from './client';
 export {
   resetAnalyticsIdentityCache,
   ANALYTICS_DEVICE_SECURE_STORE_KEY,

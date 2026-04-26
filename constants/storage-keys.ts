@@ -18,6 +18,9 @@ export const STORAGE_KEYS = {
   // by a consistent name.
   analyticsDeviceId: '@ortrack:analytics_device_id',
   analyticsInstallId: '@ortrack:analytics_install_id',
+  analyticsConsent: '@ortrack:analytics_consent',
+  analyticsLastSessionStartedAt: '@ortrack:analytics_last_session_started_at',
+  analyticsSessionCount: '@ortrack:analytics_session_count',
 } as const;
 
 // Physical SecureStore key actually used by `services/analytics/identity.ts`.
@@ -42,6 +45,9 @@ export const WIPE_STORAGE_KEYS = [
   STORAGE_KEYS.notificationToken,
   STORAGE_KEYS.installTracked,
   STORAGE_KEYS.analyticsInstallId,
+  STORAGE_KEYS.analyticsConsent,
+  STORAGE_KEYS.analyticsLastSessionStartedAt,
+  STORAGE_KEYS.analyticsSessionCount,
   // Legacy pre-RevenueCat flag. Not an active STORAGE_KEYS entry.
   // Kept only for local data wipe.
   '@ortrack:premium_notify',

@@ -110,7 +110,7 @@ function formatChartDate(dateStr: string, period?: string, shortRange?: boolean)
 export default function AccueilScreen() {
   const { positions, loading: positionsLoading, reloadPositions } = usePositions();
   const { prices, loading: spotLoading, refreshing, lastUpdated, refresh, currencySymbol, error: spotError } = useSharedSpotPrices();
-  const { isPeriodLocked, showPaywall } = usePremium();
+  const { isPeriodLocked, showPaywall, isPremium } = usePremium();
 
   const [masked, setMasked] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<HistoryPeriod>('1A');
@@ -413,6 +413,11 @@ export default function AccueilScreen() {
             style={[st.ctaFiscal, (!hasPositions || !pricesReady) && { opacity: 0.5 }]}
             onPress={() => {
               if (!hasPositions || !pricesReady) return;
+              void trackEvent('tap_global_simulation', {
+                source: 'home',
+                isPremium,
+                positionsCount: positions.length,
+              });
               // L'accès à Simulation globale est ouvert free + premium. Le gating
               // Premium est localisé dans l'écran sur les blocs avancés.
               router.push('/fiscalite-globale');
@@ -511,6 +516,12 @@ export default function AccueilScreen() {
                 style={[st.pill, selectedPeriod === p && st.pillAct, isPeriodLocked(p) && st.periodLocked]}
                 onPress={() => {
                   if (isPeriodLocked(p)) {
+                    void trackEvent('premium_teaser_clicked', {
+                      source: 'home',
+                      teaserLocation: 'home_chart_period_locked',
+                      isPremium,
+                      period: p,
+                    });
                     showPaywall();
                     return;
                   }

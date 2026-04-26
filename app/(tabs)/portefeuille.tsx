@@ -260,6 +260,12 @@ export default function PortefeuilleScreen() {
             <PortfolioStatsTeaser
               onPress={() => {
                 if (!isPremium) {
+                  void trackEvent('premium_teaser_clicked', {
+                    source: 'portfolio',
+                    teaserLocation: 'portfolio_stats_teaser',
+                    isPremium,
+                    positionsCount: positions.length,
+                  });
                   showPaywall();
                   return;
                 }
@@ -335,6 +341,12 @@ export default function PortefeuilleScreen() {
               }}
               onSimulateSale={() => {
                 if (!isPremium) {
+                  void trackEvent('premium_teaser_clicked', {
+                    source: 'portfolio',
+                    teaserLocation: 'portfolio_simulate_sale_locked',
+                    isPremium,
+                    positionsCount: positions.length,
+                  });
                   showPaywall();
                   return;
                 }

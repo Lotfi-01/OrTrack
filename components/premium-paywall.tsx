@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useCallback, useRef, useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Animated, StyleSheet } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path } from 'react-native-svg';
@@ -72,6 +72,11 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
 
   const actionInProgressRef = useRef(false);
   const paywallViewedFiredRef = useRef(false);
+  // Cas A : modal monté/démonté à chaque ouverture (paywall_viewed est tiré
+  // au mount avec deps []). On capture le timestamp d'ouverture pour calculer
+  // timeOnPaywallMs au dismiss.
+  const mountedAtRef = useRef(Date.now());
+  const dismissedFiredRef = useRef(false);
 
   // Stagger groups
   const animA = useStaggerAnim(0);
@@ -141,6 +146,21 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
     // paywall view session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Wrapper du onClose pour tirer paywall_dismissed avec timeOnPaywallMs.
+  // Limitation : source / teaserLocation non disponibles ici (showPaywall()
+  // n'accepte pas de paramètres dans le contexte Premium ; modifier le
+  // contexte est hors périmètre Patch 2). Ne fire qu'une seule fois par
+  // dismiss (guard dismissedFiredRef) — protection contre re-render.
+  const handleDismiss = useCallback(() => {
+    if (!dismissedFiredRef.current) {
+      dismissedFiredRef.current = true;
+      void trackEvent('paywall_dismissed', {
+        timeOnPaywallMs: Date.now() - mountedAtRef.current,
+      });
+    }
+    onClose();
+  }, [onClose]);
 
   if (isPremium) {
     return (
@@ -227,7 +247,7 @@ export default function PremiumPaywall({ onClose }: { onClose: () => void }) {
       {/* 1. Bouton fermer */}
       <TouchableOpacity
         style={[s.closeButton, isPurchasing && s.closeButtonDisabled]}
-        onPress={isPurchasing ? undefined : onClose}
+        onPress={isPurchasing ? undefined : handleDismiss}
         disabled={isPurchasing}
         accessibilityLabel="Fermer"
         accessibilityRole="button"

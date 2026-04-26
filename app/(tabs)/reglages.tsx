@@ -17,12 +17,18 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as LocalAuthentication from 'expo-local-authentication';
 import * as DocumentPicker from 'expo-document-picker';
+import * as SecureStore from 'expo-secure-store';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { OrTrackColors } from '@/constants/theme';
-import { STORAGE_KEYS } from '@/constants/storage-keys';
+import { ANALYTICS_DEVICE_SECURE_STORE_KEY, STORAGE_KEYS } from '@/constants/storage-keys';
 import { runLocalDataWipe } from '@/lib/local-wipe';
 import { usePositions } from '@/hooks/use-positions';
+import {
+  notifyAppForegrounded,
+  resetAnalyticsIdentityCache,
+  resetAnalyticsQueue,
+} from '@/services/analytics';
 import { Position } from '@/types/position';
 import { reportError } from '@/utils/error-reporting';
 import {
@@ -171,6 +177,7 @@ export default function ReglagesScreen() {
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricAvailable, setBiometricAvailable] = useState(false);
+  const [analyticsConsent, setAnalyticsConsent] = useState(false);
   const { replaceAllPositions } = usePositions();
 
   // ── Chargement initial ────────────────────────────────────────────────────
@@ -213,6 +220,60 @@ export default function ReglagesScreen() {
       }
     }
     loadBiometric();
+  }, []);
+
+  // ── Lecture du consentement analytics au mount ────────────────────────────
+  useEffect(() => {
+    AsyncStorage.getItem(STORAGE_KEYS.analyticsConsent)
+      .then(v => setAnalyticsConsent(v === 'true'))
+      .catch(() => setAnalyticsConsent(false));
+  }, []);
+
+  // Toggle consentement : state UI ne bascule que si l'écriture AsyncStorage
+  // réussit (sinon UI ON sans persistance → tracking incohérent au mount suivant).
+  const handleAnalyticsConsentChange = useCallback(async (val: boolean) => {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.analyticsConsent,
+        val ? 'true' : 'false',
+      );
+      setAnalyticsConsent(val);
+      if (val) void notifyAppForegrounded();
+    } catch (error) {
+      reportError(error, { scope: 'settings', action: 'persist_analytics_consent' });
+    }
+  }, []);
+
+  // Reset de l'identifiant analytics (RGPD droit à l'oubli technique).
+  // Ne touche PAS au consentement — l'utilisateur veut juste un nouvel ID.
+  const handleResetAnalyticsId = useCallback(() => {
+    Alert.alert(
+      "Réinitialiser l'identifiant analytics ?",
+      'Un nouvel identifiant anonyme sera créé.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Réinitialiser',
+          style: 'destructive',
+          onPress: async () => {
+            await SecureStore
+              .deleteItemAsync(ANALYTICS_DEVICE_SECURE_STORE_KEY)
+              .catch(() => undefined);
+            await AsyncStorage
+              .removeItem(STORAGE_KEYS.analyticsInstallId)
+              .catch(() => undefined);
+            await AsyncStorage
+              .removeItem(STORAGE_KEYS.analyticsLastSessionStartedAt)
+              .catch(() => undefined);
+            await AsyncStorage
+              .removeItem(STORAGE_KEYS.analyticsSessionCount)
+              .catch(() => undefined);
+            resetAnalyticsIdentityCache();
+            resetAnalyticsQueue();
+          },
+        },
+      ],
+    );
   }, []);
 
   // ── Mise à jour + sauvegarde instantanée des préférences ──────────────────
@@ -562,6 +623,17 @@ export default function ReglagesScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* ── CONFIDENTIALITÉ ────────────────────────────────────────── */}
+          <SectionTitle title="Confidentialité" />
+          <View style={styles.card}>
+            <ToggleRow
+              label="Aider à améliorer OrTrack"
+              sublabel="Données d'usage anonymes. Aucune donnée financière personnelle n'est envoyée."
+              value={analyticsConsent}
+              onChange={handleAnalyticsConsentChange}
+            />
+          </View>
+
           {/* ── DONNÉES ────────────────────────────────────────────────── */}
           <SectionTitle title="Données" />
           <View style={styles.card}>
@@ -586,6 +658,14 @@ export default function ReglagesScreen() {
               label="Importer des données (JSON)"
               iconName="download-outline"
               onPress={handleImportData}
+            />
+
+            <ItemSeparator />
+
+            <ActionRow
+              label="Réinitialiser l'identifiant analytics"
+              iconName="refresh-outline"
+              onPress={handleResetAnalyticsId}
             />
 
             <ItemSeparator />
