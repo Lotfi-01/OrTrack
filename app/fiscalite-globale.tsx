@@ -8,11 +8,11 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { METAL_CONFIG, getSpot } from '@/constants/metals';
@@ -20,7 +20,7 @@ import { TAX } from '@/constants/tax';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, stripMetalFromName } from '@/utils/format';
-import { TaxResult, parseDate, todayStr, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
+import { TaxResult, parseDate, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
 import { PARTIAL_ESTIMATE_NOTICE, REGIME_EQUALITY_THRESHOLD, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import { computePositionCost, computePositionValue } from '@/utils/position-calc';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
@@ -51,13 +51,57 @@ type PositionResult = {
   bestRegime: 'forfaitaire' | 'plusvalues' | null;
 };
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers (locaux, ≤ 10 lignes chacun) ───────────────────────────────────
 
-function autoFormatDate(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 8);
-  if (digits.length <= 2) return digits;
-  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+const MAX_SIMULATION_YEARS = 30;
+const FULL_PV_ABATEMENT_YEARS_FR = 22;
+
+function getTodayLocalDate(): Date {
+  const n = new Date();
+  return new Date(n.getFullYear(), n.getMonth(), n.getDate(), 12, 0, 0, 0);
+}
+
+function normalizeToNoonLocal(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0);
+}
+
+function toLocalDateKey(date: Date): string {
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}-${m}-${d}`;
+}
+
+function formatDisplayDate(date: Date): string {
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${d}/${m}/${date.getFullYear()}`;
+}
+
+function addYearsSafe(date: Date, years: number): Date {
+  const y = date.getFullYear() + years;
+  const mo = date.getMonth();
+  const d = date.getDate();
+  const cand = new Date(y, mo, d, 12, 0, 0, 0);
+  if (cand.getMonth() !== mo) return new Date(y, mo + 1, 0, 12, 0, 0, 0);
+  return cand;
+}
+
+function isValidLocalDate(date: unknown): date is Date {
+  return date instanceof Date && !isNaN(date.getTime());
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return toLocalDateKey(a) === toLocalDateKey(b);
+}
+
+function clampSimulationDate(date: Date): Date {
+  if (!isValidLocalDate(date)) return getTodayLocalDate();
+  const today = getTodayLocalDate();
+  const max = addYearsSafe(today, MAX_SIMULATION_YEARS);
+  const k = toLocalDateKey(date);
+  if (k < toLocalDateKey(today)) return today;
+  if (k > toLocalDateKey(max)) return max;
+  return normalizeToNoonLocal(date);
 }
 
 // ─── Premium teaser (free users) ────────────────────────────────────────────
@@ -98,7 +142,9 @@ export default function FiscaliteGlobaleScreen() {
   const { prices } = useSpotPrices();
   const { positions, reloadPositions } = usePositions();
   const { isPremium, showPaywall } = usePremium();
-  const [saleDate, setSaleDate] = useState(todayStr());
+  const [simulatedFiscalDate, setSimulatedFiscalDate] = useState<Date>(() => getTodayLocalDate());
+  const [iosPickerVisible, setIosPickerVisible] = useState(false);
+  const isPickerOpenRef = useRef(false);
   const [disclaimerExpanded, setDisclaimerExpanded] = useState(false);
   const [detailExpanded, setDetailExpanded] = useState(false);
   const [masked, setMasked] = useState(false);
@@ -133,12 +179,7 @@ export default function FiscaliteGlobaleScreen() {
 
   // ── Calculs ─────────────────────────────────────────────────────────────
 
-  const saleDateParsed = useMemo(() => parseDate(saleDate), [saleDate]);
-  const saleDateValid = saleDateParsed !== null;
-
   const { computed, excluded, exclusionReason, hasZeroPurchaseExcluded } = useMemo(() => {
-    if (!saleDateValid) return { computed: [] as PositionResult[], excluded: [] as Position[], exclusionReason: null as string | null, hasZeroPurchaseExcluded: false };
-
     const comp: PositionResult[] = [];
     const excl: Position[] = [];
     let spotMissing = 0;
@@ -162,7 +203,7 @@ export default function FiscaliteGlobaleScreen() {
       const purchaseDateParsed = parseDate(pos.purchaseDate);
       if (purchaseDateParsed === null) { excl.push(pos); dateMissing++; continue; }
 
-      if (saleDateParsed!.getTime() < purchaseDateParsed.getTime()) {
+      if (simulatedFiscalDate.getTime() < purchaseDateParsed.getTime()) {
         excl.push(pos);
         dateFuture++;
         continue;
@@ -170,7 +211,7 @@ export default function FiscaliteGlobaleScreen() {
 
       const salePrice = sv;
       const costPrice = computePositionCost(pos);
-      const years = calcYearsHeld(purchaseDateParsed, saleDateParsed!);
+      const years = calcYearsHeld(purchaseDateParsed, simulatedFiscalDate);
       const tax = computeTax(salePrice, costPrice, years);
       const taxDelta = Math.abs(tax.plusValuesTax - tax.forfaitaire);
       const bestRegime = taxDelta < REGIME_EQUALITY_THRESHOLD ? null : tax.plusValuesTax < tax.forfaitaire ? ('plusvalues' as const) : ('forfaitaire' as const);
@@ -184,7 +225,7 @@ export default function FiscaliteGlobaleScreen() {
       const n = excl.length;
       const plural = n > 1;
       if (dateFuture > 0 && spotMissing === 0 && dateMissing === 0 && dataInvalid === 0) {
-        reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} \u2014 date de cession antérieure à la date d\u2019achat`;
+        reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} \u2014 date fiscale simulée antérieure à la date d\u2019achat`;
       } else if (spotMissing > 0 && dateFuture === 0 && dateMissing === 0 && dataInvalid === 0) {
         reason = `Cours indisponibles pour ${n} position${plural ? 's' : ''}`;
       } else if (dateMissing > 0 && spotMissing === 0 && dateFuture === 0 && dataInvalid === 0) {
@@ -199,7 +240,63 @@ export default function FiscaliteGlobaleScreen() {
     }
 
     return { computed: comp, excluded: excl, exclusionReason: reason, hasZeroPurchaseExcluded: zeroPurchasePrice > 0 };
-  }, [positions, prices, saleDateValid, saleDateParsed]);
+  }, [positions, prices, simulatedFiscalDate]);
+
+  // Horizon 22 ans (France-only confirmé via constants/tax) ──────────────────
+  const horizonInfo = useMemo<{ disabled: true } | { disabled: false; target: Date }>(() => {
+    const dates: Date[] = [];
+    const todayKey = toLocalDateKey(getTodayLocalDate());
+    for (const pos of positions) {
+      if (!isGainFiscalEligiblePosition(pos)) continue;
+      if (!Number.isFinite(pos.quantity) || pos.quantity <= 0) continue;
+      const d = parseDate(pos.purchaseDate);
+      if (!d) continue;
+      if (toLocalDateKey(d) > todayKey) continue;
+      dates.push(d);
+    }
+    if (dates.length === 0) return { disabled: true };
+    const mostRecent = dates.reduce((m, d) => (d.getTime() > m.getTime() ? d : m), dates[0]);
+    const horizon = addYearsSafe(normalizeToNoonLocal(mostRecent), FULL_PV_ABATEMENT_YEARS_FR);
+    return { disabled: false, target: clampSimulationDate(horizon) };
+  }, [positions]);
+
+  // DatePicker (impératif Android, inline iOS) ────────────────────────────────
+  const openDatePicker = useCallback(() => {
+    if (isPickerOpenRef.current) return;
+    if (Platform.OS === 'ios') {
+      isPickerOpenRef.current = true;
+      setIosPickerVisible(true);
+      return;
+    }
+    const today = getTodayLocalDate();
+    const maxDate = addYearsSafe(today, MAX_SIMULATION_YEARS);
+    isPickerOpenRef.current = true;
+    try {
+      DateTimePickerAndroid.open({
+        value: simulatedFiscalDate,
+        mode: 'date',
+        minimumDate: today,
+        maximumDate: maxDate,
+        onChange: (event, date) => {
+          isPickerOpenRef.current = false;
+          if (event.type === 'dismissed' || !date) return;
+          if (!isValidLocalDate(date)) {
+            if (typeof __DEV__ !== 'undefined' && __DEV__) console.warn('[simulatedFiscalDate] invalid date input');
+            return;
+          }
+          setSimulatedFiscalDate(clampSimulationDate(normalizeToNoonLocal(date)));
+        },
+      });
+    } catch {
+      isPickerOpenRef.current = false;
+      if (typeof __DEV__ !== 'undefined' && __DEV__) console.warn('[DatePicker] open failed');
+    }
+  }, [simulatedFiscalDate]);
+
+  const closeIosPicker = useCallback(() => {
+    setIosPickerVisible(false);
+    isPickerOpenRef.current = false;
+  }, []);
 
   // Agrégats
   const totalSalePrice = computed.reduce((s, r) => s + r.salePrice, 0);
@@ -250,47 +347,105 @@ export default function FiscaliteGlobaleScreen() {
             </View>
           )}
 
-          {/* ── DATE DE CESSION (toujours visible si positions existent) ── */}
+          {/* ── DATE FISCALE SIMULÉE (toujours visible si positions existent) ── */}
           {positions.length > 0 && (
             <View style={st.section}>
-              <Text style={st.sectionLabel}>DATE DE CESSION</Text>
-              <TouchableOpacity style={st.dateRow} activeOpacity={0.8}>
-                <TextInput
-                  style={st.dateInput}
-                  value={saleDate}
-                  onChangeText={v => setSaleDate(autoFormatDate(v))}
-                  keyboardType="number-pad"
-                  maxLength={10}
-                  placeholder="JJ/MM/AAAA"
-                  placeholderTextColor={C.subtext}
-                  selectionColor={C.gold}
-                />
+              <Text style={st.sectionLabel}>DATE FISCALE SIMULÉE</Text>
+              <TouchableOpacity
+                style={st.dateRow}
+                activeOpacity={0.8}
+                onPress={openDatePicker}
+                accessibilityRole="button"
+                accessibilityLabel="Modifier la date fiscale simulée"
+                accessibilityHint="Ouvre un calendrier pour choisir une date fiscale simulée"
+              >
+                <Text style={st.dateValue}>{formatDisplayDate(simulatedFiscalDate)}</Text>
                 <Ionicons name="calendar-outline" size={18} color={C.gold} />
               </TouchableOpacity>
-              {!saleDateValid ? (
-                <Text style={st.dateError}>Date de cession invalide</Text>
-              ) : isPremium ? (
+              {isPremium ? (
                 <Text style={st.inputHint}>
-                  La date de cession détermine l{'\u2019'}abattement du régime plus-values (5 % par an dès la 3e année).
+                  La date fiscale simulée détermine l{'\u2019'}abattement du régime plus-values (5 % par an dès la 3e année).
                 </Text>
               ) : (
                 <Text style={st.inputHint}>
-                  Date à laquelle vous estimez vendre vos positions.
+                  Le cours utilisé reste le cours du jour. Seule la fiscalité change.
                 </Text>
+              )}
+              {(() => {
+                const today = getTodayLocalDate();
+                const oneYear = addYearsSafe(today, 1);
+                const isTodaySelected = isSameLocalDay(simulatedFiscalDate, today);
+                const isOneYearSelected = isSameLocalDay(simulatedFiscalDate, oneYear);
+                const isHorizonDisabled = horizonInfo.disabled;
+                const isHorizonSelected = !isHorizonDisabled && isSameLocalDay(simulatedFiscalDate, horizonInfo.target);
+                return (
+                  <>
+                    <View style={st.chipsRow}>
+                      <TouchableOpacity
+                        style={[st.chip, isTodaySelected && st.chipActive]}
+                        activeOpacity={0.8}
+                        onPress={() => setSimulatedFiscalDate(getTodayLocalDate())}
+                        accessibilityRole="button"
+                        accessibilityLabel="Simuler la fiscalité aujourd'hui"
+                        accessibilityState={{ selected: isTodaySelected }}
+                      >
+                        <Text style={[st.chipText, isTodaySelected && st.chipTextActive]}>{'Aujourd’hui'}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[st.chip, isOneYearSelected && st.chipActive]}
+                        activeOpacity={0.8}
+                        onPress={() => setSimulatedFiscalDate(addYearsSafe(getTodayLocalDate(), 1))}
+                        accessibilityRole="button"
+                        accessibilityLabel="Simuler la fiscalité dans un an"
+                        accessibilityState={{ selected: isOneYearSelected }}
+                      >
+                        <Text style={[st.chipText, isOneYearSelected && st.chipTextActive]}>Dans 1 an</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[st.chip, isHorizonSelected && st.chipActive, isHorizonDisabled && st.chipDisabled]}
+                        activeOpacity={0.8}
+                        disabled={isHorizonDisabled}
+                        onPress={() => { if (!horizonInfo.disabled) setSimulatedFiscalDate(horizonInfo.target); }}
+                        accessibilityRole="button"
+                        accessibilityLabel={"Simuler l'horizon où toutes vos positions auront 22 ans"}
+                        accessibilityState={{ disabled: isHorizonDisabled, selected: isHorizonSelected }}
+                      >
+                        <Text style={[st.chipText, isHorizonSelected && st.chipTextActive]}>Horizon 22 ans</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={st.horizonHint}>{'Selon les dates d’achat renseignées.'}</Text>
+                  </>
+                );
+              })()}
+              {Platform.OS === 'ios' && iosPickerVisible && (
+                <View style={st.iosPickerWrap}>
+                  <DateTimePicker
+                    value={simulatedFiscalDate}
+                    mode="date"
+                    display="inline"
+                    minimumDate={getTodayLocalDate()}
+                    maximumDate={addYearsSafe(getTodayLocalDate(), MAX_SIMULATION_YEARS)}
+                    themeVariant="dark"
+                    locale="fr-FR"
+                    onChange={(event, date) => {
+                      if (event.type === 'dismissed') { closeIosPicker(); return; }
+                      if (!date || !isValidLocalDate(date)) {
+                        if (typeof __DEV__ !== 'undefined' && __DEV__) console.warn('[simulatedFiscalDate] invalid date input');
+                        return;
+                      }
+                      setSimulatedFiscalDate(clampSimulationDate(normalizeToNoonLocal(date)));
+                    }}
+                  />
+                  <TouchableOpacity style={st.iosPickerDone} onPress={closeIosPicker} activeOpacity={0.8}>
+                    <Text style={st.iosPickerDoneText}>Fermer</Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
           )}
 
-          {/* ── CAS 2 : Date invalide → bloquer le reste ── */}
-          {positions.length > 0 && !saleDateValid && (
-            <View style={st.warningCard}>
-              <Text style={st.warningTitle}>Date invalide</Text>
-              <Text style={st.warningText}>Saisissez une date de cession valide pour lancer la simulation.</Text>
-            </View>
-          )}
-
-          {/* ── CAS 3 : Toutes positions exclues ── */}
-          {positions.length > 0 && saleDateValid && computed.length === 0 && excluded.length > 0 && (
+          {/* ── CAS : Toutes positions exclues ── */}
+          {positions.length > 0 && computed.length === 0 && excluded.length > 0 && (
             <View style={st.warningCard}>
               <Text style={st.warningTitle}>Simulation impossible</Text>
               <Text style={st.warningText}>{exclusionReason}</Text>
@@ -319,17 +474,24 @@ export default function FiscaliteGlobaleScreen() {
               {/* 3. HERO — Montant récupérable estimé */}
               <View style={st.heroCard}>
                 <Text style={st.heroLabel}>MONTANT RÉCUPÉRABLE ESTIMÉ</Text>
-                <Text style={st.heroValue}>{m(`${formatEuro(isPremium ? heroNet : netForfaitaire)} \u20AC`)}</Text>
+                <Text style={st.heroValue}>{m(`${formatEuro(heroNet)} \u20AC`)}</Text>
                 {masked ? (
                   <Text style={st.heroSub}>Résultat masqué en mode confidentialité</Text>
-                ) : !isPremium ? (
-                  <Text style={st.heroSub}>Régime forfaitaire au {saleDate}</Text>
                 ) : isEquality ? (
-                  <Text style={st.heroSub}>Les deux régimes donnent un net équivalent à cette date.</Text>
+                  <>
+                    <Text style={st.heroSub}>Les deux régimes donnent un net équivalent à cette date.</Text>
+                    <Text style={st.heroPriceNote}>Avec les cours actuels</Text>
+                  </>
+                ) : !isPremium ? (
+                  <>
+                    <Text style={st.heroSub}>Régime {bestRegimeName} au {formatDisplayDate(simulatedFiscalDate)}</Text>
+                    <Text style={st.heroPriceNote}>Avec les cours actuels</Text>
+                  </>
                 ) : (
                   <>
                     <Text style={st.heroDelta}>+{formatEuro(delta)} {'\u20AC'} avec le {bestRegimeName}</Text>
-                    <Text style={st.heroDate}>au {saleDate}</Text>
+                    <Text style={st.heroDate}>au {formatDisplayDate(simulatedFiscalDate)}</Text>
+                    <Text style={st.heroPriceNote}>Avec les cours actuels</Text>
                   </>
                 )}
               </View>
@@ -354,25 +516,59 @@ export default function FiscaliteGlobaleScreen() {
                     {m(`${grossGain >= 0 ? '+' : ''}${formatEuro(grossGain)} \u20AC`)}
                   </Text>
                 </View>
+                <View style={st.anchorDivider} />
+                <View style={st.anchorRow}>
+                  <Text style={st.anchorLabel}>Fiscalité estimée</Text>
+                  <Text style={[st.anchorValue, { color: (bestGlobalRegime === 'plusvalues' ? totalPlusValuesTax : totalForfaitaire) > 0 ? C.red : C.white }]}>
+                    {m(`${(bestGlobalRegime === 'plusvalues' ? totalPlusValuesTax : totalForfaitaire) > 0 ? '-' : ''}${formatEuro(bestGlobalRegime === 'plusvalues' ? totalPlusValuesTax : totalForfaitaire)} €`)}
+                  </Text>
+                </View>
+                {isPremium && !masked && bestGlobalRegime === 'plusvalues' && uniqueAbatement !== null && (
+                  <>
+                    <View style={st.anchorDivider} />
+                    <View style={st.anchorRow}>
+                      <Text style={st.anchorLabel}>Abattement appliqué</Text>
+                      <Text style={st.anchorValue}>{m(`${uniqueAbatement} %`)}</Text>
+                    </View>
+                  </>
+                )}
               </View>
 
-              {/* 5. POURQUOI CE RÉSULTAT ? — texte comparatif réservé au premium */}
+              {/* 5. POURQUOI CE RÉSULTAT ? — aligné sur le régime retenu du hero */}
               <View style={st.explainCard}>
                 <Text style={st.explainTitle}>Pourquoi ce résultat ?</Text>
-                {isPremium ? (
+                {masked ? (
+                  <Text style={st.explainText}>Détails masqués en mode confidentialité.</Text>
+                ) : isEquality ? (
                   <Text style={st.explainText}>
-                    Le forfaitaire taxe le prix de vente total.{'\n'}
-                    Le régime plus-values taxe la plus-value après abattement.{'\n'}
-                    La date de cession influence l{'\u2019'}abattement appliqué.
+                    Les deux régimes donnent un net équivalent à cette date.{'\n'}
+                    Le régime forfaitaire est appliqué par défaut.
+                  </Text>
+                ) : bestGlobalRegime === 'plusvalues' && totalPlusValuesTax > 0 ? (
+                  <>
+                    <Text style={st.explainText}>
+                      Le régime des plus-values taxe la plus-value estimée après abattement.{'\n'}
+                      La durée de détention réduit la fiscalité appliquée à cette date.
+                    </Text>
+                    {uniqueAbatement === null && (
+                      <Text style={st.explainText}>Plusieurs abattements selon les durées de détention.</Text>
+                    )}
+                  </>
+                ) : bestGlobalRegime === 'plusvalues' && totalPlusValuesTax === 0 ? (
+                  <Text style={st.explainText}>
+                    À cette date, la fiscalité estimée au régime des plus-values est de 0,00 €.{'\n'}
+                    La durée de détention permet d{'’'}atteindre ce résultat selon les données renseignées.
+                  </Text>
+                ) : bestGlobalRegime === 'forfaitaire' ? (
+                  <Text style={st.explainText}>
+                    Le régime forfaitaire taxe le prix de vente total à un taux unique.{'\n'}
+                    À cette date, ce régime donne le net estimé retenu par la simulation.
                   </Text>
                 ) : (
                   <Text style={st.explainText}>
-                    Le régime forfaitaire taxe votre prix de vente total à un taux unique.{'\n'}
-                    Cette estimation applique ce régime à l{'\u2019'}ensemble de vos positions éligibles.
+                    Cette estimation dépend des données renseignées et du régime fiscal applicable.{'\n'}
+                    Complétez les informations d{'’'}achat pour affiner le résultat.
                   </Text>
-                )}
-                {isPremium && uniqueAbatement !== null && (
-                  <Text style={st.explainAbatement}>Abattement pris en compte : {uniqueAbatement} %</Text>
                 )}
               </View>
 
@@ -526,11 +722,24 @@ const st = StyleSheet.create({
   sectionLabel: { fontSize: 11, fontWeight: '700', color: C.gold, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12 },
 
   // Date input
-  dateRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, gap: 10 },
-  dateInput: { flex: 1, fontSize: 16, color: C.white, padding: 0 },
+  dateRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#1C1A17', borderWidth: 1, borderColor: '#2A2620', borderRadius: 10, paddingHorizontal: 14, paddingVertical: 12, gap: 10, minHeight: 44 },
+  dateValue: { flex: 1, fontSize: 16, color: '#F5F0E8' },
   inputHint: { fontSize: 11, color: C.tabIconDefault, marginTop: 5, fontStyle: 'italic' },
-  dateError: { fontSize: 12, color: C.red, marginTop: 5, fontWeight: '600' },
   partialNotice: { fontSize: 11, color: C.textDim, textAlign: 'center', marginBottom: 12, fontStyle: 'italic' },
+
+  // Chips raccourcis
+  chipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
+  chip: { paddingHorizontal: 14, paddingVertical: 10, minHeight: 44, justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: C.border, backgroundColor: C.card },
+  chipActive: { borderColor: C.gold, backgroundColor: 'rgba(201,168,76,0.12)' },
+  chipDisabled: { opacity: 0.4 },
+  chipText: { fontSize: 12, fontWeight: '600', color: C.subtext },
+  chipTextActive: { color: C.gold },
+  horizonHint: { fontSize: 10, color: C.subtext, fontStyle: 'italic', marginTop: 6 },
+
+  // iOS picker inline
+  iosPickerWrap: { backgroundColor: C.card, borderRadius: 10, borderWidth: 1, borderColor: C.border, padding: 8, marginTop: 12 },
+  iosPickerDone: { alignSelf: 'flex-end', paddingHorizontal: 12, paddingVertical: 8, marginTop: 4 },
+  iosPickerDoneText: { color: C.gold, fontSize: 13, fontWeight: '600' },
 
   // Hero
   heroCard: { backgroundColor: C.card, borderRadius: 16, borderWidth: 1, borderColor: 'rgba(201,168,76,0.25)', padding: 20, marginBottom: 16, alignItems: 'center' },
@@ -539,6 +748,7 @@ const st = StyleSheet.create({
   heroSub: { fontSize: 12, color: C.textDim, textAlign: 'center', lineHeight: 18 },
   heroDelta: { fontSize: 13, fontWeight: '600', color: C.gold, textAlign: 'center' },
   heroDate: { fontSize: 11, color: C.textDim, textAlign: 'center', marginTop: 2 },
+  heroPriceNote: { fontSize: 11, color: '#7A7060', textAlign: 'center', marginTop: 6, fontStyle: 'italic' },
 
   // Anchor
   anchorCard: { backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 16, marginBottom: 20 },
