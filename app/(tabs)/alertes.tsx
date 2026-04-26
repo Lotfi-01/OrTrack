@@ -47,7 +47,13 @@ import {
   refreshCurrentPushToken,
   type NotificationPermissionStatus,
 } from '@/services/notifications'
+import { trackEvent } from '@/services/analytics'
 import { reportError } from '@/utils/error-reporting'
+
+// Module-level guard: 1 view_alerts par fenêtre de 30 min, aligné sur la
+// sémantique de session_start (Patch 1). Évite le spam à chaque focus tab.
+let lastViewAlertsTrackedAt = 0
+const VIEW_ALERTS_MIN_INTERVAL_MS = 30 * 60 * 1000
 
 const METALS: MetalType[] = ['or', 'argent', 'platine', 'palladium']
 
@@ -72,7 +78,7 @@ export default function AlertesScreen() {
   const [editingAlertId, setEditingAlertId] = useState<string | null>(null)
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermissionStatus | null>(null)
   const { pricesEur: alertPricesEur } = useSpotPrices()
-  const { canAddAlert, showPaywall, isPremium, limits } = usePremium()
+  const { canAddAlert, showPaywall, isPremium, isLoading: premiumLoading, limits } = usePremium()
   const didAutoOpen = useRef(false)
 
   // Préremplissage depuis param Accueil (metal = symbole ISO ex: 'XAU')
@@ -110,6 +116,15 @@ export default function AlertesScreen() {
     }
     init()
   }, [])
+
+  // Funnel analytics: view_alerts (1 par fenêtre de 30 min, attend isPremium chargé)
+  useEffect(() => {
+    if (premiumLoading) return
+    const now = Date.now()
+    if (now - lastViewAlertsTrackedAt < VIEW_ALERTS_MIN_INTERVAL_MS) return
+    lastViewAlertsTrackedAt = now
+    void trackEvent('view_alerts', { source: 'alerts', isPremium })
+  }, [premiumLoading, isPremium])
 
   async function loadAlerts(scope: LegacyNotificationTokenAlertScope) {
     setAlertsLoading(true)

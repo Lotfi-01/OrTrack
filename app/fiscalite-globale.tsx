@@ -104,6 +104,55 @@ function clampSimulationDate(date: Date): Date {
   return normalizeToNoonLocal(date);
 }
 
+// GARDE-FOU : la logique d'orchestration de cette fonction (filtres d'exclusion,
+// agrégation, comparaison contre REGIME_EQUALITY_THRESHOLD) doit rester strictement
+// alignée avec le useMemo principal de ce fichier (calcul de computed[] / netForfaitaire / netPlusValues).
+// Toute modification des règles d'exclusion ou de la logique d'agrégation dans le useMemo principal
+// doit être reproduite ici. Le moteur fiscal lui-même (computeTax) reste l'unique source de calcul.
+// Type `prices` dérivé via Parameters<typeof getSpot> pour éviter d'importer SpotPrices.
+function computeBestRegimeForDate(
+  positions: Position[],
+  prices: Parameters<typeof getSpot>[1],
+  date: Date,
+): 'equality' | 'plusvalues' | 'forfaitaire' | 'unknown' {
+  let totalSale = 0;
+  let totalForfaitaire = 0;
+  let totalPlusValuesTax = 0;
+  let computedCount = 0;
+
+  for (const pos of positions) {
+    if (!isGainFiscalEligiblePosition(pos)) continue;
+
+    const spot = getSpot(pos.metal, prices);
+    const salePrice = computePositionValue(pos, spot);
+    if (salePrice === null) continue;
+
+    const purchaseDate = parseDate(pos.purchaseDate);
+    if (purchaseDate === null) continue;
+    if (date.getTime() < purchaseDate.getTime()) continue;
+
+    const costPrice = computePositionCost(pos);
+    const years = calcYearsHeld(purchaseDate, date);
+    const tax = computeTax(salePrice, costPrice, years);
+
+    totalSale += salePrice;
+    totalForfaitaire += tax.forfaitaire;
+    totalPlusValuesTax += tax.plusValuesTax;
+    computedCount += 1;
+  }
+
+  if (computedCount === 0) return 'unknown';
+
+  const netForfaitaire = totalSale - totalForfaitaire;
+  const netPlusValues = totalSale - totalPlusValuesTax;
+
+  if (Math.abs(netPlusValues - netForfaitaire) < REGIME_EQUALITY_THRESHOLD) {
+    return 'equality';
+  }
+
+  return netPlusValues > netForfaitaire ? 'plusvalues' : 'forfaitaire';
+}
+
 // ─── Premium teaser (free users) ────────────────────────────────────────────
 
 function PremiumTeaserBlock({
@@ -260,6 +309,14 @@ export default function FiscaliteGlobaleScreen() {
     return { disabled: false, target: clampSimulationDate(horizon) };
   }, [positions]);
 
+  // Ref-based tracker pour use_simulated_fiscal_date : permet aux callbacks
+  // déclarés avant les agrégats (openDatePicker) de lire les valeurs à jour
+  // sans inscrire bestGlobalRegime/isEquality/isPremium dans leurs deps
+  // (variables déclarées plus bas dans le composant).
+  const fireUseSimulatedFiscalDateRef = useRef<
+    (preset: 'today' | 'one_year' | 'horizon_22' | 'custom', targetDate: Date) => void
+  >(() => {});
+
   // DatePicker (impératif Android, inline iOS) ────────────────────────────────
   const openDatePicker = useCallback(() => {
     if (isPickerOpenRef.current) return;
@@ -284,7 +341,9 @@ export default function FiscaliteGlobaleScreen() {
             if (typeof __DEV__ !== 'undefined' && __DEV__) console.warn('[simulatedFiscalDate] invalid date input');
             return;
           }
-          setSimulatedFiscalDate(clampSimulationDate(normalizeToNoonLocal(date)));
+          const targetDate = clampSimulationDate(normalizeToNoonLocal(date));
+          setSimulatedFiscalDate(targetDate);
+          fireUseSimulatedFiscalDateRef.current('custom', targetDate);
         },
       });
     } catch {
@@ -311,6 +370,19 @@ export default function FiscaliteGlobaleScreen() {
   const bestGlobalRegime = isEquality ? null : netPlusValues > netForfaitaire ? 'plusvalues' : 'forfaitaire';
   const heroNet = bestGlobalRegime === 'plusvalues' ? netPlusValues : netForfaitaire;
   const bestRegimeName = bestGlobalRegime === 'plusvalues' ? 'plus-values' : 'forfaitaire';
+
+  // Mise à jour à chaque rendu : la ref expose la fonction de tracking aux
+  // callbacks (openDatePicker, picker iOS onChange, chips). bestRegime est
+  // calculé contre la targetDate passée par l'appelant (date au moment du tap),
+  // pas contre simulatedFiscalDate (qui n'a pas encore propagé via React state).
+  fireUseSimulatedFiscalDateRef.current = (preset, targetDate) => {
+    void trackEvent('use_simulated_fiscal_date', {
+      preset,
+      isPremium,
+      positionsCount: positions.length,
+      bestRegime: computeBestRegimeForDate(positions, prices, targetDate),
+    });
+  };
 
   // Abattement global unique (pour le bloc explicatif)
   const uniqueAbatement = useMemo(() => {
@@ -384,7 +456,11 @@ export default function FiscaliteGlobaleScreen() {
                       <TouchableOpacity
                         style={[st.chip, isTodaySelected && st.chipActive]}
                         activeOpacity={0.8}
-                        onPress={() => setSimulatedFiscalDate(getTodayLocalDate())}
+                        onPress={() => {
+                          const targetDate = getTodayLocalDate();
+                          setSimulatedFiscalDate(targetDate);
+                          fireUseSimulatedFiscalDateRef.current('today', targetDate);
+                        }}
                         accessibilityRole="button"
                         accessibilityLabel="Simuler la fiscalité aujourd'hui"
                         accessibilityState={{ selected: isTodaySelected }}
@@ -394,7 +470,11 @@ export default function FiscaliteGlobaleScreen() {
                       <TouchableOpacity
                         style={[st.chip, isOneYearSelected && st.chipActive]}
                         activeOpacity={0.8}
-                        onPress={() => setSimulatedFiscalDate(addYearsSafe(getTodayLocalDate(), 1))}
+                        onPress={() => {
+                          const targetDate = addYearsSafe(getTodayLocalDate(), 1);
+                          setSimulatedFiscalDate(targetDate);
+                          fireUseSimulatedFiscalDateRef.current('one_year', targetDate);
+                        }}
                         accessibilityRole="button"
                         accessibilityLabel="Simuler la fiscalité dans un an"
                         accessibilityState={{ selected: isOneYearSelected }}
@@ -405,7 +485,12 @@ export default function FiscaliteGlobaleScreen() {
                         style={[st.chip, isHorizonSelected && st.chipActive, isHorizonDisabled && st.chipDisabled]}
                         activeOpacity={0.8}
                         disabled={isHorizonDisabled}
-                        onPress={() => { if (!horizonInfo.disabled) setSimulatedFiscalDate(horizonInfo.target); }}
+                        onPress={() => {
+                          if (!horizonInfo.disabled) {
+                            setSimulatedFiscalDate(horizonInfo.target);
+                            fireUseSimulatedFiscalDateRef.current('horizon_22', horizonInfo.target);
+                          }
+                        }}
                         accessibilityRole="button"
                         accessibilityLabel={"Simuler l'horizon où toutes vos positions auront 22 ans"}
                         accessibilityState={{ disabled: isHorizonDisabled, selected: isHorizonSelected }}
@@ -433,7 +518,9 @@ export default function FiscaliteGlobaleScreen() {
                         if (typeof __DEV__ !== 'undefined' && __DEV__) console.warn('[simulatedFiscalDate] invalid date input');
                         return;
                       }
-                      setSimulatedFiscalDate(clampSimulationDate(normalizeToNoonLocal(date)));
+                      const targetDate = clampSimulationDate(normalizeToNoonLocal(date));
+                      setSimulatedFiscalDate(targetDate);
+                      fireUseSimulatedFiscalDateRef.current('custom', targetDate);
                     }}
                   />
                   <TouchableOpacity style={st.iosPickerDone} onPress={closeIosPicker} activeOpacity={0.8}>
