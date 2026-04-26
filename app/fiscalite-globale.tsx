@@ -680,9 +680,8 @@ export default function FiscaliteGlobaleScreen() {
               <Text style={st.reassurance}>Calcul basé sur les règles fiscales françaises en vigueur</Text>
 
               <View style={st.disclaimerBlock}>
-                <Text style={st.disclaimerShort}>
-                  Estimation indicative — ne constitue pas un conseil fiscal.
-                </Text>
+                <Text style={st.disclaimerShort}>Estimation indicative</Text>
+                <Text style={st.disclaimerShort}>Ne constitue pas un conseil fiscal</Text>
                 <TouchableOpacity onPress={() => setDisclaimerExpanded(!disclaimerExpanded)} activeOpacity={0.7}>
                   <Text style={disclaimerExpanded ? st.disclaimerToggleClose : st.disclaimerToggle}>
                     {disclaimerExpanded ? 'Masquer' : 'Mentions fiscales'}
