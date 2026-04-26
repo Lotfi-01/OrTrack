@@ -5,7 +5,7 @@ import * as Notifications from 'expo-notifications';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { AppState, Platform, View } from 'react-native';
 import 'react-native-reanimated';
 
 import BiometricLock from '@/components/BiometricLock';
@@ -13,7 +13,7 @@ import { OrTrackColors } from '@/constants/theme';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { PremiumProvider } from '@/contexts/premium-context';
 import { trackInstall } from '@/lib/trackInstall';
-import { trackEvent } from '@/services/analytics';
+import { notifyAppForegrounded, trackEvent } from '@/services/analytics';
 import { reportError } from '@/utils/error-reporting';
 
 // Afficher les notifications quand l'app est au premier plan
@@ -124,6 +124,19 @@ export default function RootLayout() {
   // Funnel analytics: app_opened (once per app lifecycle)
   useEffect(() => {
     void trackEvent('app_opened');
+  }, []);
+
+  // Funnel analytics: session_start at cold start + on every foreground return.
+  // The notifyAppForegrounded() helper applies the 30-minute inactivity
+  // heuristic and a re-entrant guard to avoid duplicate session_start events.
+  // The mount call is required because React Native does not always emit an
+  // AppState 'change → active' transition at launch.
+  useEffect(() => {
+    void notifyAppForegrounded();
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') void notifyAppForegrounded();
+    });
+    return () => sub.remove();
   }, []);
 
   // Vérifier si la biométrie est activée et verrouiller si nécessaire
