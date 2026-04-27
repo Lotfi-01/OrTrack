@@ -43,6 +43,7 @@ import { EstimationCard } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
 import { NoteField } from '@/components/add-position/NoteField';
 import { PriceField } from '@/components/add-position/PriceField';
+import { ProductRecapLine } from '@/components/add-position/ProductRecapLine';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { QuantityField } from '@/components/add-position/QuantityField';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
@@ -896,12 +897,10 @@ export default function AjouterScreen() {
                   </Text>
                   <Text style={styles.sectionTitle}>Détails de l’achat</Text>
                   {product && (
-                    <View>
-                      <Text style={styles.miniRecapText}>
-                        {product.label} · {product.weightG !== null ? formatG(product.weightG) : formatG(toNum(customWeight))}
-                      </Text>
-                      <View style={styles.miniRecapSeparator} />
-                    </View>
+                    <ProductRecapLine
+                      label={product.label}
+                      weightLabel={product.weightG !== null ? formatG(product.weightG) : formatG(toNum(customWeight))}
+                    />
                   )}
                   <View style={styles.fieldGroup}>
 
@@ -1095,20 +1094,6 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 1.2,
     marginBottom: 12,
-  },
-
-  // Mini-récap produit (correction 3)
-  miniRecapText: {
-    color: OrTrackColors.white,
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 4,
-    marginBottom: 12,
-  },
-  miniRecapSeparator: {
-    borderBottomWidth: 1,
-    borderBottomColor: OrTrackColors.border,
-    marginBottom: 16,
   },
 
   // Selection feedback (correction 8)
