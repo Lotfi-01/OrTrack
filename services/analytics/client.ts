@@ -42,6 +42,26 @@ const ANALYTICS_NETWORK_ENABLED =
 
 const APP_VERSION = (Application.nativeApplicationVersion ?? '').slice(0, 32);
 
+// Module-level metadata: computed once at import, attached to every event
+// payload via sanitizeAnalyticsProperties. Lets the analytics warehouse
+// distinguish Play Store prod vs preview vs dev local builds.
+const APP_METADATA = {
+  appVersion: Application.nativeApplicationVersion ?? 'unknown',
+  buildNumber: Application.nativeBuildVersion ?? 'unknown',
+  platform: Platform.OS,
+  environment:
+    process.env.EXPO_PUBLIC_APP_ENV ??
+    (__DEV__ ? 'development' : 'unknown'),
+} as const;
+
+if (APP_METADATA.appVersion === 'unknown' || APP_METADATA.buildNumber === 'unknown') {
+  console.warn('[Analytics] App metadata incomplete:', APP_METADATA);
+}
+
+if (APP_METADATA.environment === 'unknown') {
+  console.warn('[Analytics] EXPO_PUBLIC_APP_ENV missing, build environment unidentified');
+}
+
 type QueuedEvent = {
   client_event_id: string;
   schema_version: number;
@@ -265,7 +285,10 @@ export async function trackEvent(
       return;
     }
 
-    const sanitized = sanitizeAnalyticsProperties(properties);
+    const sanitized = sanitizeAnalyticsProperties({
+      ...(properties ?? {}),
+      ...APP_METADATA,
+    });
 
     const event: QueuedEvent = {
       client_event_id: Crypto.randomUUID(),
