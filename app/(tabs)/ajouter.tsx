@@ -37,6 +37,7 @@ import {
   toNum,
   truncateName,
 } from '@/utils/ajouter-form';
+import { AddPositionHeader } from '@/components/add-position/AddPositionHeader';
 import { DateField } from '@/components/add-position/DateField';
 import { EstimationCard } from '@/components/add-position/EstimationCard';
 import { MetalSelector, type MetalOption } from '@/components/add-position/MetalSelector';
@@ -790,14 +791,14 @@ export default function AjouterScreen() {
           showsVerticalScrollIndicator={false}>
 
           {/* ── Titre + sous-titre (corrections 1, 4) ─────────────────── */}
-          <Text style={styles.headerTitle}>
-            {effectiveEditMode ? 'Modifier la position' : 'Ajouter une position'}
-          </Text>
-          <Text style={styles.headerSubtitle}>
-            {effectiveEditMode
-              ? 'Modifiez les détails de votre position'
-              : 'Choisissez votre produit, renseignez l’achat'}
-          </Text>
+          <AddPositionHeader
+            title={effectiveEditMode ? 'Modifier la position' : 'Ajouter une position'}
+            subtitle={
+              effectiveEditMode
+                ? 'Modifiez les détails de votre position'
+                : 'Choisissez votre produit, renseignez l’achat'
+            }
+          />
           {!effectiveEditMode && !isStep2Active && (
             <Text style={styles.progressIndicator}>
               Étape 1 · Choisissez votre produit
@@ -1083,20 +1084,6 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 20,
-  },
-
-  // Header
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: OrTrackColors.white,
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    color: OrTrackColors.subtext,
-    fontSize: 14,
-    marginTop: 4,
-    marginBottom: 8,
   },
 
   // Sections
