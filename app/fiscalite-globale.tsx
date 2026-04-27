@@ -220,9 +220,14 @@ export default function FiscaliteGlobaleScreen() {
   const teaserViewedFiredRef = useRef(false);
 
   const handleTeaserCtaPress = useCallback(() => {
-    void trackEvent('premium_teaser_clicked');
+    void trackEvent('premium_teaser_clicked', {
+      source: 'global_simulation',
+      teaserLocation: 'simulation_premium_teaser',
+      isPremium,
+      positionsCount: positions.length,
+    });
     showPaywall();
-  }, [showPaywall]);
+  }, [showPaywall, isPremium, positions.length]);
 
   const m = (text: string) => (masked ? '••••••' : text);
 
