@@ -286,7 +286,7 @@ export default function ReglagesScreen() {
       await AsyncStorage.setItem(STORAGE_KEYS.settings, JSON.stringify(next));
       if (patch.currency && patch.currency !== settings.currency) {
         await AsyncStorage.removeItem(STORAGE_KEYS.spotCache);
-        const periods = ['1M', '3M', '1A', '5A', '10A', '20A'];
+        const periods = ['1S', '1M', '3M', '1A', '5A', '10A', '20A'];
         const currencies = ['EUR', 'USD', 'CHF'];
         const metals = ['gold', 'silver', 'platinum', 'palladium'];
         const histCacheKeys = [
