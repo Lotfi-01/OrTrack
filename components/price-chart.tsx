@@ -208,7 +208,7 @@ export function PriceChart({ metal, currency = 'EUR', compact = false, height, o
     }
 
     return { linePath: lineD, areaPath: areaD, xTicks: xTickArr, yTicks: yTickArr, yMin: yMinVal, yMax: yMaxVal, xMin: xMinVal, xMax: xMaxVal };
-  }, [chartData, plotW, plotH, compact]);
+  }, [chartData, plotW, plotH]);
 
   const scaleX = (v: number) => PADDING.left + ((v - xMin) / (xMax - xMin || 1)) * plotW;
   const scaleY = (v: number) => PADDING.top + plotH - ((v - yMin) / (yMax - yMin || 1)) * plotH;

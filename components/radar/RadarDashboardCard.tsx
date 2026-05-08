@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 
 import { OrTrackColors } from '@/constants/theme';
 import { formatPct, MOIS_FR } from '@/utils/format';
-import { RadarProduct, RadarSignal, RADAR_PRODUCT_LABELS } from '@/utils/radar/types';
+import { RadarProduct, RadarSignal } from '@/utils/radar/types';
 import { RADAR_EVENTS } from '@/utils/radar/radar-analytics';
 import { selectDashboardProducts } from '@/utils/radar/radar-selectors';
 import { useRadarProducts, downsample } from '@/hooks/use-radar-products';

@@ -522,7 +522,6 @@ export default function AlertesScreen() {
                       )
 
                       const gap = alert.target_price - currentPrice
-                      const gapPct = (gap / currentPrice) * 100
                       const proximityRaw = isAbove
                         ? currentPrice / alert.target_price
                         : alert.target_price / currentPrice
