@@ -155,8 +155,16 @@ export default function AjouterScreen() {
     activeEditId === editId &&
     activeEditId !== staleEditId;
   const { prices, currencySymbol, refresh } = useSharedSpotPrices();
-  const { canAddPosition, showPaywall } = usePremium();
+  const { isPremium, isLoading: premiumLoading, canAddPosition, showPaywall, limits } = usePremium();
   const { positions, reloadPositions, addPosition, updatePosition } = usePositions();
+
+  const maxFreePositions = limits.maxPositions;
+  const remainingFreePositions = maxFreePositions - positions.length;
+  const shouldShowFreeQuotaHint =
+    !premiumLoading &&
+    !isPremium &&
+    !effectiveEditMode &&
+    remainingFreePositions === 1;
 
   useFocusEffect(
     useCallback(() => {
@@ -808,6 +816,9 @@ export default function AjouterScreen() {
                 : 'Choisissez votre produit, renseignez l’achat'
             }
           />
+          {shouldShowFreeQuotaHint && (
+            <Text style={styles.quotaHint}>Il vous reste 1 position gratuite</Text>
+          )}
           {!effectiveEditMode && !isStep2Active && (
             <Text style={styles.progressIndicator}>
               Étape 1 · Choisissez votre produit
@@ -876,7 +887,7 @@ export default function AjouterScreen() {
               )}
 
               {/* Cours actuel du produit */}
-              {spotEur !== null && effectiveWeightG > 0 && (
+              {!isStep2Active && spotEur !== null && effectiveWeightG > 0 && (
                 <SpotInfoCard
                   spotPriceLabel={`${formatEuro(spotEur)} ${currencySymbol}/oz`}
                   productLineLabel={`${product.label} · ${formatG(effectiveWeightG)}`}
@@ -1201,5 +1212,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: OrTrackColors.subtext,
     marginBottom: 12,
+  },
+  quotaHint: {
+    fontSize: 12,
+    color: OrTrackColors.subtext,
+    marginBottom: 8,
   },
 });
