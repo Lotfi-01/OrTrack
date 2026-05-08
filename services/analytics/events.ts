@@ -7,6 +7,7 @@ export type AnalyticsEventName =
   | 'add_position_started'
   | 'add_position_completed'
   | 'global_simulation_opened'
+  | 'individual_simulation_opened'
   | 'tap_global_simulation'
   | 'use_simulated_fiscal_date'
   | 'view_alerts'
@@ -32,6 +33,7 @@ export const ANALYTICS_EVENT_NAMES: readonly AnalyticsEventName[] = [
   'add_position_started',
   'add_position_completed',
   'global_simulation_opened',
+  'individual_simulation_opened',
   'tap_global_simulation',
   'use_simulated_fiscal_date',
   'view_alerts',

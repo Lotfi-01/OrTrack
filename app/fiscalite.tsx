@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -28,6 +28,7 @@ import { computePositionCost, computePositionValue } from '@/utils/position-calc
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { usePositions } from '@/hooks/use-positions';
 import { usePremium } from '@/contexts/premium-context';
+import { trackEvent } from '@/services/analytics';
 
 const C = OrTrackColors;
 
@@ -84,6 +85,27 @@ export default function FiscaliteScreen() {
     () => positions.find(p => p.id === selectedId) ?? null,
     [positions, selectedId],
   );
+
+  // Funnel analytics: individual_simulation_opened fires once per focus session
+  // once the position has been resolved. Re-armed at every blur so a return
+  // to the screen fires a fresh event. The position id is used only locally
+  // as a guard key — it is never sent in the payload.
+  const isFocused = useIsFocused();
+  const trackedIndividualSimulationFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isFocused) {
+      trackedIndividualSimulationFocusRef.current = null;
+      return;
+    }
+    if (!selectedPos) return;
+    const trackingKey = selectedPos.id;
+    if (trackedIndividualSimulationFocusRef.current === trackingKey) return;
+    trackedIndividualSimulationFocusRef.current = trackingKey;
+    void trackEvent('individual_simulation_opened', {
+      source: 'portfolio',
+      metal: selectedPos.metal,
+    });
+  }, [isFocused, selectedPos]);
 
   useEffect(() => {
     if (!selectedPos) return;
