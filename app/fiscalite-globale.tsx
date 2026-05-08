@@ -169,16 +169,16 @@ function PremiumTeaserBlock({
 
   return (
     <View style={st.premiumTeaser}>
-      <Text style={st.premiumTeaserTitle}>Comparer les 2 régimes fiscaux</Text>
+      <Text style={st.premiumTeaserTitle}>Détail par position</Text>
       <Text style={st.premiumTeaserText}>
-        Débloquez le comparatif fiscal complet et le détail par position pour mieux préparer vos ventes.
+        Voyez position par position comment le net estimé est composé.
       </Text>
       <TouchableOpacity
         style={st.premiumTeaserCta}
         onPress={onCtaPress}
         activeOpacity={0.8}
       >
-        <Text style={st.premiumTeaserCtaText}>Découvrir Premium</Text>
+        <Text style={st.premiumTeaserCtaText}>Débloquer le détail par position</Text>
       </TouchableOpacity>
     </View>
   );
@@ -221,7 +221,7 @@ export default function FiscaliteGlobaleScreen() {
   const handleTeaserCtaPress = useCallback(() => {
     void trackEvent('premium_teaser_clicked', {
       source: 'global_simulation',
-      teaserLocation: 'simulation_premium_teaser',
+      teaserLocation: 'details_by_position',
       isPremium,
       positionsCount: positions.length,
     });
@@ -562,27 +562,27 @@ export default function FiscaliteGlobaleScreen() {
                 </Text>
               )}
 
-              {/* 3. HERO — Montant récupérable estimé */}
+              {/* 3. HERO — Net vendeur estimé */}
               <View style={st.heroCard}>
-                <Text style={st.heroLabel}>MONTANT RÉCUPÉRABLE ESTIMÉ</Text>
+                <Text style={st.heroLabel}>Net vendeur estimé</Text>
                 <Text style={st.heroValue}>{m(`${formatEuro(heroNet)} \u20AC`)}</Text>
                 {masked ? (
                   <Text style={st.heroSub}>Résultat masqué en mode confidentialité</Text>
                 ) : isEquality ? (
                   <>
                     <Text style={st.heroSub}>Les deux régimes donnent un net équivalent à cette date.</Text>
-                    <Text style={st.heroPriceNote}>Avec les cours actuels</Text>
+                    <Text style={st.heroPriceNote}>Au {formatDisplayDate(simulatedFiscalDate)} {'·'} Cours figés au prix du jour</Text>
                   </>
                 ) : !isPremium ? (
                   <>
-                    <Text style={st.heroSub}>Régime {bestRegimeName} au {formatDisplayDate(simulatedFiscalDate)}</Text>
-                    <Text style={st.heroPriceNote}>Avec les cours actuels</Text>
+                    <Text style={st.heroSub}>Régime le plus favorable à cette date : {bestRegimeName}</Text>
+                    <Text style={st.heroPriceNote}>Au {formatDisplayDate(simulatedFiscalDate)} {'·'} Cours figés au prix du jour</Text>
                   </>
                 ) : (
                   <>
-                    <Text style={st.heroDelta}>+{formatEuro(delta)} {'\u20AC'} avec le {bestRegimeName}</Text>
-                    <Text style={st.heroDate}>au {formatDisplayDate(simulatedFiscalDate)}</Text>
-                    <Text style={st.heroPriceNote}>Avec les cours actuels</Text>
+                    <Text style={st.heroSub}>R\u00E9gime le plus favorable \u00E0 cette date : {bestRegimeName}</Text>
+                    <Text style={st.heroDelta}>{'\u00C9'}cart : +{formatEuro(delta)} {'\u20AC'} net</Text>
+                    <Text style={st.heroPriceNote}>Au {formatDisplayDate(simulatedFiscalDate)} {'·'} Cours figés au prix du jour</Text>
                   </>
                 )}
               </View>
@@ -680,7 +680,7 @@ export default function FiscaliteGlobaleScreen() {
                     <Text style={st.regimeColLabel}>Net encaissé</Text>
                     <Text style={st.regimeColTax}>Taxe ({TAX.labels.forfaitaire}) : {m(`${formatEuro(totalForfaitaire)} \u20AC`)}</Text>
                     {!isEquality && bestGlobalRegime === 'forfaitaire' && (
-                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Le plus avantageux</Text></View>
+                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Régime le plus favorable à cette date</Text></View>
                     )}
                   </View>
                   <View style={[st.regimeCol, !isEquality && bestGlobalRegime === 'plusvalues' && st.regimeColBest]}>
@@ -689,7 +689,7 @@ export default function FiscaliteGlobaleScreen() {
                     <Text style={st.regimeColLabel}>Net encaissé</Text>
                     <Text style={st.regimeColTax}>Taxe ({TAX.labels.plusValue}) : {m(`${formatEuro(totalPlusValuesTax)} \u20AC`)}</Text>
                     {!isEquality && bestGlobalRegime === 'plusvalues' && (
-                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Le plus avantageux</Text></View>
+                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Régime le plus favorable à cette date</Text></View>
                     )}
                   </View>
                 </View>
@@ -736,7 +736,7 @@ export default function FiscaliteGlobaleScreen() {
                                 Taxe forfaitaire : {m(`${formatEuro(r.tax.forfaitaire)} \u20AC`)}
                               </Text>
                               {r.bestRegime === 'forfaitaire' && (
-                                <View style={st.miniBadge}><Text style={st.miniBadgeText}>Le moins taxé</Text></View>
+                                <View style={st.miniBadge}><Text style={st.miniBadgeText}>Taxe estimée la plus faible</Text></View>
                               )}
                             </View>
                             <View style={st.taxLineRow}>
@@ -750,7 +750,7 @@ export default function FiscaliteGlobaleScreen() {
                               </Text>
                               {r.bestRegime === 'plusvalues' && (
                                 <View style={st.miniBadge}>
-                                  <Text style={st.miniBadgeText}>{r.tax.isExempt ? 'Exonéré' : 'Le moins taxé'}</Text>
+                                  <Text style={st.miniBadgeText}>{r.tax.isExempt ? 'Exonéré' : 'Taxe estimée la plus faible'}</Text>
                                 </View>
                               )}
                             </View>
