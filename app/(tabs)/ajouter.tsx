@@ -1,10 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  InteractionManager,
   KeyboardAvoidingView,
   LayoutAnimation,
   Platform,
@@ -13,6 +11,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TouchableOpacity,
   UIManager,
   View,
 } from 'react-native';
@@ -46,7 +45,6 @@ import { PriceField } from '@/components/add-position/PriceField';
 import { ProductRecapLine } from '@/components/add-position/ProductRecapLine';
 import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { QuantityField } from '@/components/add-position/QuantityField';
-import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
 import { buildEstimationDisplayModel } from '@/utils/add-position/estimation-display';
 import { buildPositionInput } from '@/utils/add-position/build-position-input';
 import { getVisibleCoinsForMetal } from '@/utils/add-position/visible-coins';
@@ -176,9 +174,12 @@ export default function AjouterScreen() {
 
   const scrollRef = useRef<ScrollView>(null);
 
-  const spotInfoCardYRef = useRef<number>(0);
+  // Y absolu (relatif au contenu du ScrollView) du bloc "Détails de l'achat".
+  // Mesuré au montage de la section via onLayout, pour scroller dessus après
+  // sélection produit afin de rendre la date d'achat visible sans scroll manuel.
+  const detailsYRef = useRef<number>(0);
+
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const justTappedContinue = useRef(false);
 
   // Funnel analytics: add_position_started fires once when the user first
   // engages with the form (product pick, focus on a field). The flag resets
@@ -216,11 +217,22 @@ export default function AjouterScreen() {
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [isStep2Active, setIsStep2Active] = useState(false);
   const [coinSearch, setCoinSearch] = useState('');
 
   const dateRef = useRef(purchaseDate);
   dateRef.current = purchaseDate;
+
+  // Constantes dérivées du flow express V1 :
+  // - showProductPicker : grille produit visible tant qu'aucun produit n'est choisi.
+  //   Reste indépendant du mode édition pour ne pas créer d'écran vide après un
+  //   changement de métal en édition (handleMetalChange remet `product` à null).
+  // - showPurchaseDetails : bloc détails affiché dès qu'un produit est sélectionné.
+  // - showChangeProductAction : bouton "Changer" visible en création comme en
+  //   édition, sauf pendant `saving` ou `confirmed` (UI verrouillée).
+  const productSelected = product !== null;
+  const showProductPicker = !productSelected;
+  const showPurchaseDetails = productSelected;
+  const showChangeProductAction = productSelected && !saving && !confirmed;
 
   // ── Focus effect : réarme le guard de sauvegarde à chaque retour d'écran
   // (le composant ne se démonte pas entre navigations Expo Router tabs)
@@ -303,7 +315,6 @@ export default function AjouterScreen() {
           setShowAllPieces(false);
           setShowAllBars(false);
           setConfirmed(false);
-          setIsStep2Active(false);
           setCoinSearch('');
           return;
         }
@@ -334,7 +345,6 @@ export default function AjouterScreen() {
         setShowAllPieces(false);
         setShowAllBars(false);
         setConfirmed(false);
-        setIsStep2Active(true);
         setCoinSearch('');
       } else {
         setMetal('or');
@@ -347,7 +357,6 @@ export default function AjouterScreen() {
         setShowAllPieces(false);
         setShowAllBars(false);
         setConfirmed(false);
-        setIsStep2Active(false);
         setCoinSearch('');
 
         // Ne pas ouvrir le paywall pendant un save en cours : quand une création
@@ -380,7 +389,6 @@ export default function AjouterScreen() {
     resetPriceField();
     setShowAllPieces(false);
     setShowAllBars(false);
-    setIsStep2Active(false);
     setCoinSearch('');
   }, [resetPriceField]);
 
@@ -550,15 +558,40 @@ export default function AjouterScreen() {
     }
 
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    // Attend la fin du LayoutAnimation easeInEaseOut (~250ms) puis scroll
+    // sur le bloc détails. Cible : le haut de la section, légèrement en
+    // retrait, pour que titre + recap + quantité + prix + date tiennent
+    // au-dessus du sticky CTA sur écran mobile standard.
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(detailsYRef.current - 16, 0),
+        animated: true,
+      });
+    }, 320);
   }, [metal, prices, fireAddPositionStartedOnce, resetPriceField, presetPrice]);
 
-  // ── "Continuer" handler ───────────────────────────────────────────────
+  // ── "Changer de produit" handler ──────────────────────────────────────
+  // Réouvre la grille produit en création. Reset uniquement les champs liés
+  // au produit (label, poids, prix prérempli) ; conserve quantity, date et
+  // note saisies par l'utilisateur (CTA Lot C2).
 
-  const handleContinue = useCallback(() => {
-    setIsStep2Active(true);
+  const handleChangeProduct = useCallback(() => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setProduct(null);
+    setCustomWeight('');
+    resetPriceField();
+    setShowAllPieces(false);
+    setShowAllBars(false);
     setCoinSearch('');
-    justTappedContinue.current = true;
-  }, []);
+
+    // Ramène l'utilisateur vers le sélecteur métal + grille produit. Un léger
+    // délai laisse le reset prendre effet avant le scroll, et annule le timer
+    // posé éventuellement par handleProductSelect (sélection précédente).
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: 0, animated: true });
+    }, 80);
+  }, [resetPriceField]);
 
   // ── Validation ────────────────────────────────────────────────────────
 
@@ -593,14 +626,13 @@ export default function AjouterScreen() {
   // ── Highlighted field ─────────────────────────────────────────────────
 
   const highlightedField = useMemo(() => {
-    if (!isStep2Active || canSave) return null;
-    if (product === null) return null;
+    if (!productSelected || canSave) return null;
     if (!(effectiveWeightG > 0)) return 'weight';
     if (!(qty > 0)) return 'quantity';
     if (!(price > 0)) return 'price';
     if (!isDateValid) return 'date';
     return null;
-  }, [isStep2Active, canSave, product, effectiveWeightG, qty, price, isDateValid]);
+  }, [productSelected, canSave, effectiveWeightG, qty, price, isDateValid]);
 
   // ── CTA config centralisé ─────────────────────────────────────────────
 
@@ -623,23 +655,13 @@ export default function AjouterScreen() {
         action: 'none' as const,
       };
     }
-    if (!product && !isStep2Active) {
+    if (!product) {
       return {
         text: 'Choisissez un produit',
         disabled: true,
         bgColor: '#2A2620',
         textColor: '#7A7060',
         action: 'none' as const,
-      };
-    }
-    if (product && !isStep2Active) {
-      return {
-        text: `Continuer avec ${truncateName(product.label)}`,
-        disabled: false,
-        bgColor: '#C9A84C',
-        textColor: '#12110F',
-        showChevron: true,
-        action: 'scrollToStep2' as const,
       };
     }
     if (!canSave) {
@@ -658,7 +680,7 @@ export default function AjouterScreen() {
       textColor: '#12110F',
       action: 'save' as const,
     };
-  }, [product, isStep2Active, canSave, effectiveEditMode, helpText, confirmed, saving]);
+  }, [product, canSave, effectiveEditMode, helpText, confirmed, saving]);
 
   // ── Sauvegarde ────────────────────────────────────────────────────────
 
@@ -768,12 +790,10 @@ export default function AjouterScreen() {
   // ── CTA handler ───────────────────────────────────────────────────────
 
   const handleCtaPress = useCallback(() => {
-    if (ctaConfig.action === 'scrollToStep2') {
-      handleContinue();
-    } else if (ctaConfig.action === 'save') {
+    if (ctaConfig.action === 'save') {
       handleSave();
     }
-  }, [ctaConfig.action, handleContinue, handleSave]);
+  }, [ctaConfig.action, handleSave]);
 
   // ── Indicateurs pour boutons expand ────────────────────────────────────
 
@@ -819,12 +839,6 @@ export default function AjouterScreen() {
           {shouldShowFreeQuotaHint && (
             <Text style={styles.quotaHint}>Il vous reste 1 position gratuite</Text>
           )}
-          {!effectiveEditMode && !isStep2Active && (
-            <Text style={styles.progressIndicator}>
-              Étape 1 · Choisissez votre produit
-            </Text>
-          )}
-
           <MetalSelector
             options={METAL_OPTIONS}
             selected={metal}
@@ -836,37 +850,32 @@ export default function AjouterScreen() {
             onSelect={handleMetalChange}
           />
 
-          <ProductSelector
-            metal={metal}
-            selectedProduct={product}
-            coinSearch={coinSearch}
-            visiblePieces={visiblePieces}
-            visibleLingots={visibleLingots}
-            totalLingots={totalLingots}
-            hasCoinsCatalog={allCoinsForMetal.length > 0}
-            showAllPieces={showAllPieces}
-            showAllBars={showAllBars}
-            showExpandPiecesButton={showExpandPiecesButton}
-            isSilverCreationFlow={isSilverCreationFlow}
-            singleLineLabelIds={SILVER_SINGLE_LINE_PRODUCT_IDS}
-            coinsSectionTitle={PRODUCT_SECTION_TITLE_BY_METAL[metal]}
-            piecesExpandSuffix={piecesExpandSuffix}
-            barsExpandSuffix={barsExpandSuffix}
-            onSearchChange={setCoinSearch}
-            onProductSelect={handleProductSelect}
-            onToggleShowAllPieces={toggleShowAllPieces}
-            onToggleShowAllBars={toggleShowAllBars}
-          />
-
-          {/* Feedback sélection sous la grille */}
-          {product !== null && !isStep2Active && estimatedValue !== null && (
-            <Text style={styles.selectionFeedback}>
-              {'✓ '}{product.label} · {product.weightG !== null ? formatG(product.weightG) : formatG(toNum(customWeight))} · ~{formatEuro(estimatedValue)} €
-            </Text>
+          {showProductPicker && (
+            <ProductSelector
+              metal={metal}
+              selectedProduct={product}
+              coinSearch={coinSearch}
+              visiblePieces={visiblePieces}
+              visibleLingots={visibleLingots}
+              totalLingots={totalLingots}
+              hasCoinsCatalog={allCoinsForMetal.length > 0}
+              showAllPieces={showAllPieces}
+              showAllBars={showAllBars}
+              showExpandPiecesButton={showExpandPiecesButton}
+              isSilverCreationFlow={isSilverCreationFlow}
+              singleLineLabelIds={SILVER_SINGLE_LINE_PRODUCT_IDS}
+              coinsSectionTitle={PRODUCT_SECTION_TITLE_BY_METAL[metal]}
+              piecesExpandSuffix={piecesExpandSuffix}
+              barsExpandSuffix={barsExpandSuffix}
+              onSearchChange={setCoinSearch}
+              onProductSelect={handleProductSelect}
+              onToggleShowAllPieces={toggleShowAllPieces}
+              onToggleShowAllBars={toggleShowAllBars}
+            />
           )}
 
-          {/* ── Contenu étape 2 (conditionnel sur product) ─────────── */}
-          {product !== null && (
+          {/* ── Détails de l'achat (visibles dès produit sélectionné) ─ */}
+          {showPurchaseDetails && product !== null && (
             <>
               {/* Poids personnalisé (Autre) */}
               {product.weightG === null && (
@@ -886,42 +895,32 @@ export default function AjouterScreen() {
                 </View>
               )}
 
-              {/* Cours actuel du produit */}
-              {!isStep2Active && spotEur !== null && effectiveWeightG > 0 && (
-                <SpotInfoCard
-                  spotPriceLabel={`${formatEuro(spotEur)} ${currencySymbol}/oz`}
-                  productLineLabel={`${product.label} · ${formatG(effectiveWeightG)}`}
-                  estimatedValueTitle={metal === 'argent' ? 'Valeur métal unitaire estimée' : 'Valeur unitaire estimée'}
-                  estimatedValueLabel={`${formatEuro((effectiveWeightG / OZ_TO_G) * spotEur)} ${currencySymbol}`}
-                  onLayout={(e) => { spotInfoCardYRef.current = e.nativeEvent.layout.y; }}
+              <View
+                style={styles.section}
+                onLayout={(e) => {
+                  detailsYRef.current = e.nativeEvent.layout.y;
+                }}
+              >
+                <Text style={styles.sectionTitle}>Détails de l’achat</Text>
+                {showChangeProductAction && (
+                  <View style={styles.changeRow}>
+                    <TouchableOpacity
+                      style={styles.changeButton}
+                      onPress={handleChangeProduct}
+                      activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel="Changer de produit"
+                      accessibilityHint="Réaffiche la grille de sélection"
+                    >
+                      <Text style={styles.changeText}>Changer</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+                <ProductRecapLine
+                  label={product.label}
+                  weightLabel={product.weightG !== null ? formatG(product.weightG) : formatG(toNum(customWeight))}
                 />
-              )}
-
-              {/* ── Stepper étape 2 + Formulaire ── */}
-              {isStep2Active && (
-                <View
-                  style={styles.section}
-                  onLayout={(e) => {
-                    if (justTappedContinue.current) {
-                      const y = e.nativeEvent.layout.y;
-                      InteractionManager.runAfterInteractions(() => {
-                        scrollRef.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
-                      });
-                      justTappedContinue.current = false;
-                    }
-                  }}
-                >
-                  <Text style={styles.progressIndicator}>
-                    Étape 2 · Détails de l’achat
-                  </Text>
-                  <Text style={styles.sectionTitle}>Détails de l’achat</Text>
-                  {product && (
-                    <ProductRecapLine
-                      label={product.label}
-                      weightLabel={product.weightG !== null ? formatG(product.weightG) : formatG(toNum(customWeight))}
-                    />
-                  )}
-                  <View style={styles.fieldGroup}>
+                <View style={styles.fieldGroup}>
 
                     <View style={styles.field}>
                       <Text style={[styles.fieldLabel, highlightedField === 'quantity' && { color: OrTrackColors.gold }]}>Quantité</Text>
@@ -997,10 +996,9 @@ export default function AjouterScreen() {
 
                   </View>
                 </View>
-              )}
 
               {/* Estimation temps réel */}
-              {isStep2Active && currentValue !== null && (() => {
+              {currentValue !== null && (() => {
                 const roundedGainLossValue = gainLoss !== null
                   ? Math.round(gainLoss * 100) / 100
                   : null;
@@ -1071,12 +1069,9 @@ export default function AjouterScreen() {
               <Text numberOfLines={1} style={[styles.ctaText, { color: ctaConfig.textColor }]}>
                 {ctaConfig.text}
               </Text>
-              {ctaConfig.showChevron && (
-                <Ionicons name="chevron-forward" size={18} color={ctaConfig.textColor} />
-              )}
             </View>
           </Pressable>
-          {isStep2Active && !effectiveEditMode && (
+          {productSelected && !effectiveEditMode && (
             <Text style={styles.ctaReassurance}>Modifiable à tout moment</Text>
           )}
         </View>
@@ -1110,14 +1105,19 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // Selection feedback (correction 8)
-  selectionFeedback: {
-    color: 'rgba(245, 240, 232, 0.6)',
+  // Action "Changer de produit" affichée au-dessus du recap
+  changeRow: {
+    alignItems: 'flex-end',
+    marginBottom: 8,
+  },
+  changeButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  changeText: {
     fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'center',
-    marginTop: 8,
-    marginBottom: 4,
+    fontWeight: '600',
+    color: OrTrackColors.gold,
   },
 
   // Inputs
