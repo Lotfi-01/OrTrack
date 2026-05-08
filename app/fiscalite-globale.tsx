@@ -580,8 +580,8 @@ export default function FiscaliteGlobaleScreen() {
                   </>
                 ) : (
                   <>
-                    <Text style={st.heroSub}>R\u00E9gime le plus favorable \u00E0 cette date : {bestRegimeName}</Text>
-                    <Text style={st.heroDelta}>{'\u00C9'}cart : +{formatEuro(delta)} {'\u20AC'} net</Text>
+                    <Text style={st.heroSub}>Régime le plus favorable à cette date : {bestRegimeName}</Text>
+                    <Text style={st.heroDelta}>Écart : +{formatEuro(delta)} {'\u20AC'} net</Text>
                     <Text style={st.heroPriceNote}>Au {formatDisplayDate(simulatedFiscalDate)} {'·'} Cours figés au prix du jour</Text>
                   </>
                 )}
@@ -677,7 +677,7 @@ export default function FiscaliteGlobaleScreen() {
                   <View style={[st.regimeCol, !isEquality && bestGlobalRegime === 'forfaitaire' && st.regimeColBest]}>
                     <Text style={st.regimeColTitle}>Forfaitaire</Text>
                     <Text style={st.regimeColNet}>{m(`${formatEuro(netForfaitaire)} \u20AC`)}</Text>
-                    <Text style={st.regimeColLabel}>Net encaissé</Text>
+                    <Text style={st.regimeColLabel}>Net estimé</Text>
                     <Text style={st.regimeColTax}>Taxe ({TAX.labels.forfaitaire}) : {m(`${formatEuro(totalForfaitaire)} \u20AC`)}</Text>
                     {!isEquality && bestGlobalRegime === 'forfaitaire' && (
                       <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Régime le plus favorable à cette date</Text></View>
@@ -686,7 +686,7 @@ export default function FiscaliteGlobaleScreen() {
                   <View style={[st.regimeCol, !isEquality && bestGlobalRegime === 'plusvalues' && st.regimeColBest]}>
                     <Text style={st.regimeColTitle}>Plus-values</Text>
                     <Text style={st.regimeColNet}>{m(`${formatEuro(netPlusValues)} \u20AC`)}</Text>
-                    <Text style={st.regimeColLabel}>Net encaissé</Text>
+                    <Text style={st.regimeColLabel}>Net estimé</Text>
                     <Text style={st.regimeColTax}>Taxe ({TAX.labels.plusValue}) : {m(`${formatEuro(totalPlusValuesTax)} \u20AC`)}</Text>
                     {!isEquality && bestGlobalRegime === 'plusvalues' && (
                       <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Régime le plus favorable à cette date</Text></View>
@@ -711,10 +711,14 @@ export default function FiscaliteGlobaleScreen() {
               </TouchableOpacity>
               {detailExpanded && (
                 <View style={st.section}>
-                  <Text style={st.sectionLabel}>DÉTAIL PAR POSITION ({computed.length})</Text>
+                  <Text style={st.sectionLabel}>DÉTAIL FISCAL PAR POSITION ({computed.length})</Text>
                   <View style={st.card}>
                     {computed.map((r, i) => {
                       const cfg = METAL_CONFIG[r.pos.metal];
+                      const ecartNet = Math.abs(r.tax.forfaitaire - r.tax.plusValuesTax);
+                      const isEqualityPos = r.bestRegime === null;
+                      const abatementPct = Math.round(r.tax.abatement * 100);
+                      const bestRegimeLabel = r.bestRegime === 'forfaitaire' ? 'forfaitaire' : 'plus-values';
                       return (
                         <View key={r.pos.id}>
                           {i > 0 && <View style={st.separator} />}
@@ -723,41 +727,40 @@ export default function FiscaliteGlobaleScreen() {
                               <Text style={[st.badgeText, { color: cfg.chipText }]}>{cfg.symbol}</Text>
                             </View>
                             <Text style={st.posProduct} numberOfLines={1}>{stripMetalFromName(r.pos.product)}</Text>
-                            <Text style={st.posDuration}>Détention : {r.years} an{r.years > 1 ? 's' : ''}</Text>
                           </View>
-                          <View style={{ marginTop: 4 }}>
-                            <View style={st.taxLineRow}>
-                              <Text
-                                style={[
-                                  st.taxLabel,
-                                  { color: r.bestRegime === 'forfaitaire' ? C.gold : C.subtext, fontWeight: r.bestRegime === 'forfaitaire' ? '700' : '400' },
-                                ]}
-                              >
-                                Taxe forfaitaire : {m(`${formatEuro(r.tax.forfaitaire)} \u20AC`)}
-                              </Text>
-                              {r.bestRegime === 'forfaitaire' && (
-                                <View style={st.miniBadge}><Text style={st.miniBadgeText}>Taxe estimée la plus faible</Text></View>
-                              )}
-                            </View>
-                            <View style={st.taxLineRow}>
-                              <Text
-                                style={[
-                                  st.taxLabel,
-                                  { color: r.bestRegime === 'plusvalues' ? C.gold : C.subtext, fontWeight: r.bestRegime === 'plusvalues' ? '700' : '400', marginTop: 2 },
-                                ]}
-                              >
-                                Taxe plus-values : {m(`${formatEuro(r.tax.plusValuesTax)} \u20AC`)}
-                              </Text>
-                              {r.bestRegime === 'plusvalues' && (
-                                <View style={st.miniBadge}>
-                                  <Text style={st.miniBadgeText}>{r.tax.isExempt ? 'Exonéré' : 'Taxe estimée la plus faible'}</Text>
-                                </View>
-                              )}
-                            </View>
-                            {r.bestRegime === null && (
-                              <Text style={{ color: C.subtext, fontSize: 10, marginTop: 4, fontStyle: 'italic' }}>Régimes équivalents pour cette position</Text>
-                            )}
+                          <Text style={st.posSubline}>
+                            {cfg.name} {'·'} {r.years} an{r.years > 1 ? 's' : ''} de détention
+                          </Text>
+                          <View style={st.detailRow}>
+                            <Text style={st.detailLabel}>Taxe forfaitaire estimée</Text>
+                            <Text style={st.detailValue}>{m(`${formatEuro(r.tax.forfaitaire)} €`)}</Text>
                           </View>
+                          <View style={st.detailRow}>
+                            <Text style={st.detailLabel}>Taxe plus-values estimée</Text>
+                            <Text style={st.detailValue}>{m(`${formatEuro(r.tax.plusValuesTax)} €`)}</Text>
+                          </View>
+                          {isEqualityPos ? (
+                            <View style={st.regimeBlock}>
+                              <Text style={st.regimeText}>Régimes équivalents à cette date</Text>
+                              <Text style={st.ecartText}>Écart inférieur à 1 €</Text>
+                            </View>
+                          ) : (
+                            <>
+                              <View style={st.detailRow}>
+                                <Text style={st.detailLabel}>Écart net estimé</Text>
+                                <Text style={st.detailValue}>+{m(`${formatEuro(ecartNet)} €`)}</Text>
+                              </View>
+                              <View style={st.detailRow}>
+                                <Text style={st.detailLabel}>Régime fiscal</Text>
+                                <Text style={st.detailValue}>{bestRegimeLabel}</Text>
+                              </View>
+                            </>
+                          )}
+                          {r.tax.isExempt ? (
+                            <Text style={st.abatementText}>Exonéré après 22 ans</Text>
+                          ) : abatementPct > 0 ? (
+                            <Text style={st.abatementText}>Abattement appliqué : {abatementPct} %</Text>
+                          ) : null}
                         </View>
                       );
                     })}
@@ -874,6 +877,16 @@ const st = StyleSheet.create({
   badgeText: { fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   posProduct: { fontSize: 14, fontWeight: '600', color: C.white, flex: 1 },
   posDuration: { fontSize: 11, color: C.subtext },
+  posSubline: { fontSize: 11, color: C.subtext, marginTop: 4, marginBottom: 10 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 4 },
+  detailLabel: { fontSize: 12, color: C.subtext, flexShrink: 1, marginRight: 8 },
+  detailValue: { fontSize: 13, fontWeight: '600', color: C.white, textAlign: 'right' },
+  taxBlock: { gap: 4, marginBottom: 8 },
+  taxLine: { fontSize: 12, color: C.subtext },
+  regimeBlock: { gap: 2, marginBottom: 6 },
+  regimeText: { fontSize: 12, color: C.white, fontWeight: '600' },
+  ecartText: { fontSize: 11, color: C.textDim, fontStyle: 'italic' },
+  abatementText: { fontSize: 11, color: C.gold, fontWeight: '600', marginTop: 2 },
   taxLineRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   taxLabel: { fontSize: 12 },
   miniBadge: { backgroundColor: '#1F1B0A', borderWidth: 1, borderColor: C.gold, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },

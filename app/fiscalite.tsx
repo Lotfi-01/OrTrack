@@ -231,18 +231,19 @@ export default function FiscaliteScreen() {
             </View>
           )}
 
-          {/* ── 3. HERO — Montant récupérable estimé ── */}
+          {/* ── 3. HERO — Net vendeur estimé ── */}
           {canShow && heroNet !== null && (
             <View style={st.heroCard}>
-              <Text style={st.heroLabel}>MONTANT RÉCUPÉRABLE ESTIMÉ</Text>
+              <Text style={st.heroLabel}>Net vendeur estimé</Text>
               <Text style={st.heroValue}>{m(`${formatEuro(heroNet)} \u20AC`)}</Text>
               {masked ? (
                 <Text style={st.heroSub}>Résultat masqué en mode confidentialité</Text>
               ) : isEquality ? (
-                <Text style={st.heroSub}>Les deux régimes donnent un net équivalent à cette date.</Text>
+                <Text style={st.heroSub}>Régimes équivalents à cette date</Text>
               ) : (
                 <>
-                  <Text style={st.heroDelta}>+{formatEuro(taxDelta)} {'\u20AC'} avec le {bestRegimeName}</Text>
+                  <Text style={st.heroSub}>Régime fiscal : {bestRegimeName}</Text>
+                  <Text style={st.heroDelta}>Écart : +{formatEuro(taxDelta)} {'\u20AC'} net</Text>
                   <Text style={st.heroDate}>au {saleDate}</Text>
                 </>
               )}
@@ -356,20 +357,20 @@ export default function FiscaliteScreen() {
                 <View style={[st.regimeCol, !isEquality && bestRegime === 'forfaitaire' && st.regimeColBest]}>
                   <Text style={st.regimeColTitle}>Forfaitaire</Text>
                   <Text style={st.regimeColNet}>{m(`${formatEuro(netForfaitaire)} \u20AC`)}</Text>
-                  <Text style={st.regimeColLabel}>Net encaissé</Text>
+                  <Text style={st.regimeColLabel}>Net estimé</Text>
                   <Text style={st.regimeColTax}>Taxe ({TAX.labels.forfaitaire}) : {m(`${formatEuro(taxResult.forfaitaire)} \u20AC`)}</Text>
                   {!isEquality && bestRegime === 'forfaitaire' && (
-                    <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Le plus avantageux</Text></View>
+                    <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Net estimé supérieur</Text></View>
                   )}
                 </View>
                 <View style={[st.regimeCol, !isEquality && bestRegime === 'plusvalues' && st.regimeColBest]}>
                   <Text style={st.regimeColTitle}>Plus-values</Text>
                   <Text style={st.regimeColNet}>{m(`${formatEuro(netPlusValues)} \u20AC`)}</Text>
-                  <Text style={st.regimeColLabel}>Net encaissé</Text>
+                  <Text style={st.regimeColLabel}>Net estimé</Text>
                   <Text style={st.regimeColTax}>Taxe ({TAX.labels.plusValue}) : {m(`${formatEuro(taxResult.plusValuesTax)} \u20AC`)}</Text>
                   {!isEquality && bestRegime === 'plusvalues' && (
                     <View style={st.leastTaxedBadge}>
-                      <Text style={st.leastTaxedText}>{taxResult.isExempt ? 'Exonéré' : 'Le plus avantageux'}</Text>
+                      <Text style={st.leastTaxedText}>{taxResult.isExempt ? 'Exonéré' : 'Net estimé supérieur'}</Text>
                     </View>
                   )}
                 </View>
