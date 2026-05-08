@@ -196,6 +196,8 @@ export default function AjouterScreen() {
     setPriceKey,
     priceLocalRef,
     commitPurchasePriceInput,
+    resetPriceField,
+    presetPrice,
   } = usePriceField(formatEuro);
   const [purchaseDate, setPurchaseDate] = useState('');
   const [note, setNote] = useState('');
@@ -285,7 +287,7 @@ export default function AjouterScreen() {
           setProduct(null);
           setCustomWeight('');
           setQuantity('1');
-          setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
+          resetPriceField();
           setPurchaseDate('');
           setNote('');
           setShowAllPieces(false);
@@ -316,6 +318,7 @@ export default function AjouterScreen() {
           ? existing.purchasePrice.toFixed(2)
           : String(existing.purchasePrice).replace(/[\s\u00A0]/g, '').replace(/,/g, '.');
         setPurchasePrice(epv); setPriceDisplay(formatPriceDisplay(epv)); setPriceKey(k => k + 1);
+        priceLocalRef.current = epv.replace('.', ',');
         setPurchaseDate(existing.purchaseDate);
         setNote(existing.note ?? '');
         setShowAllPieces(false);
@@ -328,7 +331,7 @@ export default function AjouterScreen() {
         setProduct(null);
         setCustomWeight('');
         setQuantity('1');
-        setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
+        resetPriceField();
         setPurchaseDate('');
         setNote('');
         setShowAllPieces(false);
@@ -347,7 +350,7 @@ export default function AjouterScreen() {
           showPaywall();
         }
       }
-    }, [editId, staleEditId, positions, canAddPosition, showPaywall, setPurchasePrice, setPriceDisplay, setPriceKey])
+    }, [editId, staleEditId, positions, canAddPosition, showPaywall, setPurchasePrice, setPriceDisplay, setPriceKey, resetPriceField, priceLocalRef])
   );
 
   // Cleanup timeout
@@ -364,12 +367,12 @@ export default function AjouterScreen() {
     setMetal(m);
     setProduct(null);
     setCustomWeight('');
-    setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
+    resetPriceField();
     setShowAllPieces(false);
     setShowAllBars(false);
     setIsStep2Active(false);
     setCoinSearch('');
-  }, [setPurchasePrice, setPriceDisplay, setPriceKey]);
+  }, [resetPriceField]);
 
   // ── Calculs temps réel ────────────────────────────────────────────────
 
@@ -541,13 +544,12 @@ export default function AjouterScreen() {
     if (spot !== null && w > 0) {
       const unitVal = (w / OZ_TO_G) * spot;
       if (unitVal > 0 && !isNaN(unitVal)) {
-        const pv = unitVal.toFixed(2);
-        setPurchasePrice(pv); setPriceDisplay(formatPriceDisplay(pv)); setPriceKey(k => k + 1);
+        presetPrice(unitVal);
       } else {
-        setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
+        resetPriceField();
       }
     } else {
-      setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
+      resetPriceField();
     }
 
     if (!dateRef.current) {
@@ -555,7 +557,7 @@ export default function AjouterScreen() {
     }
 
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-  }, [metal, prices, fireAddPositionStartedOnce, setPurchasePrice, setPriceDisplay, setPriceKey]);
+  }, [metal, prices, fireAddPositionStartedOnce, resetPriceField, presetPrice]);
 
   // ── "Continuer" handler ───────────────────────────────────────────────
 
@@ -727,7 +729,7 @@ export default function AjouterScreen() {
 
       setCustomWeight('');
       setQuantity('1');
-      setPurchasePrice(''); setPriceDisplay(''); setPriceKey(k => k + 1);
+      resetPriceField();
       setPurchaseDate('');
       setNote('');
       setShowAllPieces(false);
@@ -767,9 +769,7 @@ export default function AjouterScreen() {
     showPaywall,
     addPosition,
     price,
-    setPurchasePrice,
-    setPriceDisplay,
-    setPriceKey,
+    resetPriceField,
   ]);
 
   // ── CTA handler ───────────────────────────────────────────────────────
@@ -947,12 +947,7 @@ export default function AjouterScreen() {
                                 // NOTE: estimatedValue is computed from spot price at load time.
                                 // If the user stays on screen for a long time, this value may be stale.
                                 // Consider refreshing on "Cours du jour" tap in a future version.
-                                const spotVal = estimatedValue!.toFixed(2);
-                                const spotFr = spotVal.replace('.', ',');
-                                setPurchasePrice(spotVal);
-                                setPriceDisplay(formatPriceDisplay(spotVal));
-                                priceLocalRef.current = spotFr;
-                                setPriceKey(k => k + 1);
+                                presetPrice(estimatedValue!);
                               },
                             }
                           : null

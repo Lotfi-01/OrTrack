@@ -12,6 +12,8 @@ export type UsePriceFieldResult = {
   setPriceKey: Dispatch<SetStateAction<number>>;
   priceLocalRef: MutableRefObject<string>;
   commitPurchasePriceInput: () => string;
+  resetPriceField: () => void;
+  presetPrice: (value: number) => void;
 };
 
 export function usePriceField(
@@ -33,6 +35,21 @@ export function usePriceField(
     return result.normalized;
   }, [formatPositiveValue]);
 
+  const resetPriceField = useCallback(() => {
+    setPurchasePrice('');
+    setPriceDisplay('');
+    priceLocalRef.current = '';
+    setPriceKey(k => k + 1);
+  }, []);
+
+  const presetPrice = useCallback((value: number) => {
+    const normalized = value.toFixed(2);
+    setPurchasePrice(normalized);
+    setPriceDisplay(value > 0 ? formatPositiveValue(value) : normalized.replace('.', ','));
+    priceLocalRef.current = normalized.replace('.', ',');
+    setPriceKey(k => k + 1);
+  }, [formatPositiveValue]);
+
   return {
     purchasePrice,
     setPurchasePrice,
@@ -42,5 +59,7 @@ export function usePriceField(
     setPriceKey,
     priceLocalRef,
     commitPurchasePriceInput,
+    resetPriceField,
+    presetPrice,
   };
 }
