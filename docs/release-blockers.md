@@ -138,11 +138,13 @@ Critère de sortie :
 
 ### Vérifier les events v1.0
 
-Statut : résolu côté code, déploiement Supabase requis.
+Statut : résolu.
 
 Résolu côté code : source analytics centralisée, payloads sobres, events funnel v1.0 alignés sur les noms réels du code.
 
-Action restante : déployer `supabase/functions/track-event` pour activer `onboarding_completed` côté production.
+Résolu : Edge Function `track-event` déployée en production, funnel v1.0 actif côté Supabase.
+
+Déploiement confirmé : `track-event` ACTIVE, version 4, 2026-05-08 10:47 UTC.
 
 Source unique : `services/analytics/` (réexport `trackEvent` via `services/analytics/index.ts`).
 
