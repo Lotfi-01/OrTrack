@@ -16,6 +16,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router } from 'expo-router'
 import { OrTrackColors } from '@/constants/theme'
 import { STORAGE_KEYS } from '@/constants/storage-keys'
+import { trackEvent } from '@/services/analytics'
 
 const { width } = Dimensions.get('window')
 
@@ -65,6 +66,7 @@ const SLIDES: Slide[] = [
 
 async function completeOnboarding() {
   await AsyncStorage.setItem(STORAGE_KEYS.onboardingComplete, 'true')
+  void trackEvent('onboarding_completed', { source: 'onboarding' })
   router.replace('/(tabs)')
 }
 

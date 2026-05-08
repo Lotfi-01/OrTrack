@@ -37,7 +37,6 @@ const C = OrTrackColors;
 //   - simulation_global_opened   → à l'ouverture de l'écran (mount ou focus)
 //   - premium_teaser_seen        → premier render du teaser pour un free user
 //   - premium_teaser_clicked     → clic CTA "Découvrir Premium" du teaser
-//   - paywall_opened_from_simulation → juste avant l'appel à showPaywall()
 // Pas de noop local : ne pas ajouter de stub avant que l'infrastructure existe.
 
 // ─── Types ──────────────────────────────────────────────────────────────────

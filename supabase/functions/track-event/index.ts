@@ -8,6 +8,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
 const ALLOWED_EVENT_NAMES = new Set<string>([
   'app_opened',
   'session_start',
+  'onboarding_completed',
   'home_viewed',
   'portfolio_viewed',
   'add_position_started',

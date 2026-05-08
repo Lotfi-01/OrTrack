@@ -1,6 +1,7 @@
 export type AnalyticsEventName =
   | 'app_opened'
   | 'session_start'
+  | 'onboarding_completed'
   | 'home_viewed'
   | 'portfolio_viewed'
   | 'add_position_started'
@@ -25,6 +26,7 @@ export type AnalyticsEventName =
 export const ANALYTICS_EVENT_NAMES: readonly AnalyticsEventName[] = [
   'app_opened',
   'session_start',
+  'onboarding_completed',
   'home_viewed',
   'portfolio_viewed',
   'add_position_started',

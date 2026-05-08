@@ -138,11 +138,15 @@ Critère de sortie :
 
 ### Vérifier les events v1.0
 
-Statut : à vérifier.
+Statut : résolu côté code, déploiement Supabase requis.
 
-Source unique attendue : `utils/analytics.ts`.
+Résolu côté code : source analytics centralisée, payloads sobres, events funnel v1.0 alignés sur les noms réels du code.
 
-Tous les events produit doivent passer par les helpers de ce fichier.
+Action restante : déployer `supabase/functions/track-event` pour activer `onboarding_completed` côté production.
+
+Source unique : `services/analytics/` (réexport `trackEvent` via `services/analytics/index.ts`).
+
+Tous les events produit doivent passer par les helpers de ce module.
 
 Interdits :
 
@@ -150,17 +154,24 @@ Interdits :
 - payload contenant des données personnelles inutiles
 - création de table event ad hoc sans spec analytics
 
-Si `utils/analytics.ts` n’existe pas, le créer avant d’ajouter de nouveaux events.
-
-Events prioritaires :
+Events funnel v1.0 (liste officielle, alignée sur les noms réels du code) :
 
 - `session_start`
 - `onboarding_completed`
 - `add_position_started`
-- `add_position_saved`
+- `add_position_completed`
 - `global_simulation_opened`
-- `paywall_opened`
-- `premium_intent_submitted`
+- `paywall_viewed`
+- `paywall_plan_selected`
+- `purchase_started`
+
+Correspondances décidées vs spec initiale :
+
+- `add_position_completed` remplace `add_position_saved`
+- `paywall_viewed` remplace `paywall_opened`
+- `paywall_plan_selected` = intention premium forte
+- `purchase_started` = intention d'achat
+- `paywall_plan_selected` + `purchase_started` couvrent l'ancien besoin `premium_intent_submitted`
 
 Critère de sortie :
 
