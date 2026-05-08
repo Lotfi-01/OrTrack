@@ -14,6 +14,7 @@ const ALLOWED_EVENT_NAMES = new Set<string>([
   'add_position_started',
   'add_position_completed',
   'global_simulation_opened',
+  'individual_simulation_opened',
   'tap_global_simulation',
   'use_simulated_fiscal_date',
   'view_alerts',
