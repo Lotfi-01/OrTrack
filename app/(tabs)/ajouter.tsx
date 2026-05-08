@@ -347,13 +347,14 @@ export default function AjouterScreen() {
           showPaywall();
         }
       }
-    }, [editId, staleEditId, positions, canAddPosition, showPaywall])
+    }, [editId, staleEditId, positions, canAddPosition, showPaywall, setPurchasePrice, setPriceDisplay, setPriceKey])
   );
 
   // Cleanup timeout
   useEffect(() => {
+    const timeoutId = scrollTimeoutRef.current;
     return () => {
-      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
+      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []);
 
@@ -368,7 +369,7 @@ export default function AjouterScreen() {
     setShowAllBars(false);
     setIsStep2Active(false);
     setCoinSearch('');
-  }, []);
+  }, [setPurchasePrice, setPriceDisplay, setPriceKey]);
 
   // ── Calculs temps réel ────────────────────────────────────────────────
 
@@ -554,7 +555,7 @@ export default function AjouterScreen() {
     }
 
     if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
-  }, [metal, prices, fireAddPositionStartedOnce]);
+  }, [metal, prices, fireAddPositionStartedOnce, setPurchasePrice, setPriceDisplay, setPriceKey]);
 
   // ── "Continuer" handler ───────────────────────────────────────────────
 
@@ -666,7 +667,7 @@ export default function AjouterScreen() {
 
   // ── Sauvegarde ────────────────────────────────────────────────────────
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     if (!canSave || saving || savingRef.current) return;
     savingRef.current = true;
     setSaving(true);
@@ -747,7 +748,29 @@ export default function AjouterScreen() {
       setSaving(false);
       Alert.alert('Erreur', error instanceof Error ? error.message : 'Impossible de sauvegarder la position.');
     }
-  };
+  }, [
+    canSave,
+    saving,
+    commitPurchasePriceInput,
+    effectiveEditMode,
+    positions,
+    editId,
+    product,
+    metal,
+    effectiveWeightG,
+    qty,
+    purchaseDate,
+    note,
+    estimatedValue,
+    updatePosition,
+    canAddPosition,
+    showPaywall,
+    addPosition,
+    price,
+    setPurchasePrice,
+    setPriceDisplay,
+    setPriceKey,
+  ]);
 
   // ── CTA handler ───────────────────────────────────────────────────────
 
