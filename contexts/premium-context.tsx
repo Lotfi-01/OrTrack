@@ -27,12 +27,6 @@ const PREMIUM_LIMITS = {
   freePeriods: ['1S', '1M', '3M', '1A'] as const,
 };
 
-// Hard dev-only guard. Any production build evaluates this to false regardless
-// of environment variables: __DEV__ is statically replaced by the bundler.
-const DEV_PREMIUM_BYPASS = __DEV__
-  ? process.env.EXPO_PUBLIC_DEV_PREMIUM_BYPASS === 'true'
-  : false;
-
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type PremiumContextType = {
@@ -58,13 +52,11 @@ const PremiumContext = createContext<PremiumContextType | null>(null);
 // ─── Provider ────────────────────────────────────────────────────────────────
 
 function PremiumProvider({ children }: { children: React.ReactNode }) {
-  const [isPremium, setIsPremium] = useState(DEV_PREMIUM_BYPASS);
+  const [isPremium, setIsPremium] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [showPaywallModal, setShowPaywallModal] = useState(false);
   const [offerings, setOfferings] = useState<{ monthly: PurchasesPackage | null; annual: PurchasesPackage | null }>({ monthly: null, annual: null });
   const [isPurchasing, setIsPurchasing] = useState(false);
-  // v1.1: uncomment when RevenueCat is enabled
-  // const purchaseInProgress = useRef(false);
 
   // ── Initialisation RevenueCat ────────────────────────────────────────────
 
@@ -80,18 +72,15 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
           RC_INIT_TIMEOUT_MS
         );
 
-        // En dev, DEV_PREMIUM_BYPASS force Premium ; en prod, premiumStatus vient de RevenueCat.
-        const effectivePremiumStatus = DEV_PREMIUM_BYPASS ? true : premiumStatus;
-
         if (mounted) {
-          setIsPremium(effectivePremiumStatus);
+          setIsPremium(premiumStatus);
           setOfferings(offeringsResult);
           setIsLoading(false);
         }
       } catch (error) {
         reportError(error, { scope: 'premium', action: 'init_premium_context' });
         if (mounted) {
-          setIsPremium(DEV_PREMIUM_BYPASS);
+          setIsPremium(false);
           setIsLoading(false);
         }
       }
@@ -100,15 +89,6 @@ function PremiumProvider({ children }: { children: React.ReactNode }) {
     init();
     return () => { mounted = false; };
   }, []);
-
-  // v1.1: uncomment when RevenueCat is enabled
-  // useEffect(() => {
-  //   if (!sdkReady) return;
-  //   const unsubscribe = addPurchaseListener((premium) => {
-  //     setIsPremium(premium);
-  //   });
-  //   return unsubscribe;
-  // }, [sdkReady]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
 

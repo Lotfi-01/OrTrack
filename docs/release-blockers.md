@@ -68,7 +68,13 @@ Critère de sortie :
 
 ### Retirer les bypass premium temporaires
 
-Statut : à faire.
+Statut : résolu.
+
+Résolu par suppression des bypass et restauration du verrouillage via RevenueCat.
+
+Bypass retiré : `DEV_PREMIUM_BYPASS` dans `contexts/premium-context.tsx`.
+Source unique de l'état Premium : `usePremium().isPremium` alimenté par `checkPremiumStatus()` (entitlement `premium` côté RevenueCat).
+`_isPeriodLocked` : absent du code, rien à renommer.
 
 Fichiers connus :
 
