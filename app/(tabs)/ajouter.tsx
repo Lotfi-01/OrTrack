@@ -48,6 +48,7 @@ import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { QuantityField } from '@/components/add-position/QuantityField';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
 import { buildEstimationDisplayModel } from '@/utils/add-position/estimation-display';
+import { buildPositionInput } from '@/utils/add-position/build-position-input';
 import { getVisibleCoinsForMetal } from '@/utils/add-position/visible-coins';
 import { usePriceField } from '@/hooks/add-position/usePriceField';
 import { trackEvent } from '@/services/analytics';
@@ -676,19 +677,19 @@ export default function AjouterScreen() {
       const productId = selectedSilverProduct?.id
         ?? (existing?.productId && existing.product === product!.label ? existing.productId : undefined);
 
-      const newPosition: Position = {
+      const newPosition: Position = buildPositionInput({
         id: effectiveEditMode ? editId! : Date.now().toString(36) + Math.random().toString(36).slice(2),
         metal,
-        product: product!.label,
+        product: product!,
         weightG: effectiveWeightG,
         quantity: qty,
         purchasePrice: committedPrice,
-        purchaseDate: purchaseDate.trim(),
+        purchaseDate,
+        note,
         createdAt: new Date().toISOString(),
-        note: note.trim() || undefined,
-        spotAtPurchase: estimatedValue ?? undefined,
+        spotAtPurchase: estimatedValue,
         productId,
-      };
+      });
 
       if (effectiveEditMode) {
         await updatePosition({ ...newPosition, id: editId!, createdAt: existing?.createdAt ?? newPosition.createdAt });
