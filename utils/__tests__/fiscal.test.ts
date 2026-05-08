@@ -56,15 +56,15 @@ describe('computeSellerNetPlusValues', () => {
   });
 
   test('taxe le gain avec abattement 0% (1 an)', () => {
-    // Gain = 6000 - 5000 = 1000, abattement 0%, taxe = 1000 * 0.376 = 376
+    // Gain = 6000 - 5000 = 1000, abattement 0%, taxe = 1000 * 0.362 = 362
     const result = computeSellerNetPlusValues(6000, 5000, 1);
-    expect(result).toBeCloseTo(6000 - 376);
+    expect(result).toBeCloseTo(6000 - 362);
   });
 
   test('taxe le gain avec abattement 15% (5 ans)', () => {
-    // Gain = 6000 - 5000 = 1000, abattement 15%, taxable = 1000 * 0.85 = 850, taxe = 850 * 0.376 = 319.6
+    // Gain = 6000 - 5000 = 1000, abattement 15%, taxable = 1000 * 0.85 = 850, taxe = 850 * 0.362 = 307.7
     const result = computeSellerNetPlusValues(6000, 5000, 5);
-    expect(result).toBeCloseTo(6000 - 319.6);
+    expect(result).toBeCloseTo(6000 - 307.7);
   });
 });
 
@@ -95,22 +95,22 @@ describe('computeRegimeComparison', () => {
   test('forfaitaire meilleur sur petit gain court terme', () => {
     // Achat 5000, valeur 6000, 1 an
     // Forfaitaire: 6000 * 0.885 = 5310
-    // PV: gain 1000, abattement 0%, taxe 376 → net 5624
+    // PV: gain 1000, abattement 0%, taxe 362 → net 5638
     const result = computeRegimeComparison(6000, 5000, 1);
     expect(result.bestRegime).toBe('plusvalues');
     expect(result.sellerNetForfaitaire).toBeCloseTo(5310);
-    expect(result.sellerNetPlusValues).toBeCloseTo(5624);
-    expect(result.delta).toBeCloseTo(314);
+    expect(result.sellerNetPlusValues).toBeCloseTo(5638);
+    expect(result.delta).toBeCloseTo(328);
   });
 
   test('forfaitaire meilleur sur très gros gain', () => {
     // Achat 5000, valeur 15000, 1 an
     // Forfaitaire: 15000 * 0.885 = 13275
-    // PV: gain 10000, abattement 0%, taxe 3760 → net 11240
+    // PV: gain 10000, abattement 0%, taxe 3620 → net 11380
     const result = computeRegimeComparison(15000, 5000, 1);
     expect(result.bestRegime).toBe('forfaitaire');
     expect(result.sellerNetForfaitaire).toBeCloseTo(13275);
-    expect(result.sellerNetPlusValues).toBeCloseTo(11240);
+    expect(result.sellerNetPlusValues).toBeCloseTo(11380);
   });
 
   test('delta est toujours positif', () => {

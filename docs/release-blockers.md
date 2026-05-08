@@ -108,7 +108,9 @@ Critère de sortie :
 
 ### Confirmer cohérence fiscalité globale
 
-Statut : à vérifier.
+Statut : résolu.
+
+Résolu : taux plus-value France aligné à 36,2% (19% IR + 17,2% prélèvements sociaux), tests fiscaux OK.
 
 Invariant :
 

@@ -99,7 +99,7 @@ describe('computeTax', () => {
     expect(result.plusValue).toBe(5000);
     expect(result.abatement).toBe(0);
     expect(result.taxablePV).toBe(5000);
-    expect(result.plusValuesTax).toBeCloseTo(5000 * 0.376, 2);
+    expect(result.plusValuesTax).toBeCloseTo(5000 * 0.362, 2);
   });
 
   it("applique 5% d'abattement par an à partir de la 3e année", () => {
