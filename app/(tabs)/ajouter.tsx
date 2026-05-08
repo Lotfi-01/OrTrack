@@ -20,7 +20,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { type MetalType, METAL_CONFIG, getSpot, OZ_TO_G } from '@/constants/metals';
 import { PRODUCTS, type Product } from '@/constants/products';
-import { SILVER_MVP_PRODUCTS, getSilverMvpProductById, type SilverMvpProduct } from '@/constants/silver-products';
+import { getSilverMvpProductById, type SilverMvpProduct } from '@/constants/silver-products';
 import { formatEuro, formatG } from '@/utils/format';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
@@ -48,6 +48,7 @@ import { ProductSelector } from '@/components/add-position/ProductSelector';
 import { QuantityField } from '@/components/add-position/QuantityField';
 import { SpotInfoCard } from '@/components/add-position/SpotInfoCard';
 import { buildEstimationDisplayModel } from '@/utils/add-position/estimation-display';
+import { getVisibleCoinsForMetal } from '@/utils/add-position/visible-coins';
 import { usePriceField } from '@/hooks/add-position/usePriceField';
 import { trackEvent } from '@/services/analytics';
 
@@ -448,33 +449,16 @@ export default function AjouterScreen() {
 
   // ── Grille pièces — scission en 2 useMemo (correction 8) ─────────────
 
-  const allCoinsForMetal = useMemo(() => {
-    if (metal === 'argent' && !effectiveEditMode) {
-      return SILVER_MVP_PRODUCTS.map(product => ({
-        ...product,
-        popular: SILVER_POPULAR_BADGE_PRODUCT_IDS.includes(product.id),
-      }));
-    }
-    const coins = PRODUCTS[metal].filter(p => p.category === 'piece');
-    if (metal !== 'or') {
-      // Autres métaux : comportement historique (tri popular-first).
-      return [...coins].sort((a, b) => (b.popular ? 1 : 0) - (a.popular ? 1 : 0));
-    }
-    // Or : ordre prioritaire explicite + override du champ `popular` par la
-    // whitelist locale POPULAR_GOLD_COINS_ON_ADD. Les pièces hors priorité
-    // (s'il en existe au catalogue) sont rendues après, dans leur ordre brut.
-    const prepared: Product[] = [];
-    for (const priorityLabel of GOLD_PRIORITY_ORDER) {
-      const p = coins.find(c => c.label === priorityLabel);
-      if (p) prepared.push({ ...p, popular: POPULAR_GOLD_COINS_ON_ADD.includes(priorityLabel) });
-    }
-    for (const p of coins) {
-      if (!GOLD_PRIORITY_ORDER.includes(p.label)) {
-        prepared.push({ ...p, popular: false });
-      }
-    }
-    return prepared;
-  }, [metal, effectiveEditMode]);
+  const allCoinsForMetal = useMemo(
+    () => getVisibleCoinsForMetal({
+      metal,
+      effectiveEditMode,
+      goldPriorityOrder: GOLD_PRIORITY_ORDER,
+      popularGoldCoinsOnAdd: POPULAR_GOLD_COINS_ON_ADD,
+      silverPopularBadgeProductIds: SILVER_POPULAR_BADGE_PRODUCT_IDS,
+    }),
+    [metal, effectiveEditMode],
+  );
 
   const visiblePieces = useMemo(() => {
     let coins = allCoinsForMetal;
