@@ -642,6 +642,22 @@ export default function AccueilScreen() {
         </TouchableOpacity>
         )}
 
+        {/* ── 4c. RADAR PRIME — entrée sobre vers /radar (RP1.3b) ── */}
+        <TouchableOpacity
+          style={st.radarEntryCard}
+          activeOpacity={0.7}
+          onPress={() => router.push('/radar' as any)}
+          accessibilityRole="button"
+          accessibilityLabel="Ouvrir Radar Prime"
+        >
+          <Ionicons name="radio-outline" size={18} color={C.gold} />
+          <View style={st.radarEntryText}>
+            <Text style={st.radarEntryTitle}>Radar Prime</Text>
+            <Text style={st.radarEntrySubtitle}>Suivre les primes observées</Text>
+          </View>
+          <Text style={st.chev}>{'›'}</Text>
+        </TouchableOpacity>
+
         {/* ── 5. ALERTES ─────────────────────────────────── */}
         <TouchableOpacity style={st.alertCard} onPress={() => router.replace({ pathname: '/(tabs)/alertes' as any, params: { metal: selectedMetal.symbol } })} activeOpacity={0.7}>
           <Ionicons name="notifications-outline" size={20} color={C.gold} />
@@ -807,6 +823,11 @@ const st = StyleSheet.create({
   radarTeaserSkeletonBadge: { width: 74, height: 18, borderRadius: 6, backgroundColor: 'rgba(201,168,76,0.18)' },
   radarTeaserSkeletonBadgeMuted: { width: 58, height: 18, borderRadius: 6, backgroundColor: C.border, opacity: 0.45 },
   radarTeaserInline: { color: C.textMuted, fontSize: 11, textAlign: 'center', marginTop: 10 },
+
+  radarEntryCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.card, borderRadius: 12, borderWidth: 1, borderColor: C.border, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 12 },
+  radarEntryText: { flex: 1, minWidth: 0 },
+  radarEntryTitle: { color: C.white, fontSize: 14, fontWeight: '600' },
+  radarEntrySubtitle: { color: C.textDim, fontSize: 11, marginTop: 2 },
 
   alertCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14, marginBottom: 16 },
   alertText: { color: C.white, fontSize: 13, fontWeight: '600', flex: 1, marginLeft: 10 },
