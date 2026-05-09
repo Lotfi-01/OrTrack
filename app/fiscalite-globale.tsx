@@ -20,9 +20,9 @@ import { TAX } from '@/constants/tax';
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { formatEuro, stripMetalFromName } from '@/utils/format';
-import { TaxResult, parseDate, calcYearsHeld, computeTax } from '@/utils/tax-helpers';
-import { PARTIAL_ESTIMATE_NOTICE, REGIME_EQUALITY_THRESHOLD, isGainFiscalEligiblePosition } from '@/utils/fiscal';
-import { computePositionCost, computePositionValue } from '@/utils/position-calc';
+import { TaxResult, parseDate } from '@/utils/tax-helpers';
+import { PARTIAL_ESTIMATE_NOTICE, isGainFiscalEligiblePosition } from '@/utils/fiscal';
+import { computeGlobalFiscalScenario } from '@/utils/fiscal-scenarios';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
@@ -103,53 +103,18 @@ function clampSimulationDate(date: Date): Date {
   return normalizeToNoonLocal(date);
 }
 
-// GARDE-FOU : la logique d'orchestration de cette fonction (filtres d'exclusion,
-// agrégation, comparaison contre REGIME_EQUALITY_THRESHOLD) doit rester strictement
-// alignée avec le useMemo principal de ce fichier (calcul de computed[] / netForfaitaire / netPlusValues).
-// Toute modification des règles d'exclusion ou de la logique d'agrégation dans le useMemo principal
-// doit être reproduite ici. Le moteur fiscal lui-même (computeTax) reste l'unique source de calcul.
-// Type `prices` dérivé via Parameters<typeof getSpot> pour éviter d'importer SpotPrices.
+// Adapter analytics : conserve la signature historique
+// ('equality' | 'plusvalues' | 'forfaitaire' | 'unknown') utilisée par le payload
+// `use_simulated_fiscal_date`. Délègue au moteur fiscal pur (S4.2/S4.3) et mappe
+// les valeurs : 'equal' → 'equality', eligibleCount=0 → 'unknown'.
 function computeBestRegimeForDate(
   positions: Position[],
   prices: Parameters<typeof getSpot>[1],
   date: Date,
 ): 'equality' | 'plusvalues' | 'forfaitaire' | 'unknown' {
-  let totalSale = 0;
-  let totalForfaitaire = 0;
-  let totalPlusValuesTax = 0;
-  let computedCount = 0;
-
-  for (const pos of positions) {
-    if (!isGainFiscalEligiblePosition(pos)) continue;
-
-    const spot = getSpot(pos.metal, prices);
-    const salePrice = computePositionValue(pos, spot);
-    if (salePrice === null) continue;
-
-    const purchaseDate = parseDate(pos.purchaseDate);
-    if (purchaseDate === null) continue;
-    if (date.getTime() < purchaseDate.getTime()) continue;
-
-    const costPrice = computePositionCost(pos);
-    const years = calcYearsHeld(purchaseDate, date);
-    const tax = computeTax(salePrice, costPrice, years);
-
-    totalSale += salePrice;
-    totalForfaitaire += tax.forfaitaire;
-    totalPlusValuesTax += tax.plusValuesTax;
-    computedCount += 1;
-  }
-
-  if (computedCount === 0) return 'unknown';
-
-  const netForfaitaire = totalSale - totalForfaitaire;
-  const netPlusValues = totalSale - totalPlusValuesTax;
-
-  if (Math.abs(netPlusValues - netForfaitaire) < REGIME_EQUALITY_THRESHOLD) {
-    return 'equality';
-  }
-
-  return netPlusValues > netForfaitaire ? 'plusvalues' : 'forfaitaire';
+  const scenario = computeGlobalFiscalScenario({ positions, prices, simulatedDate: date });
+  if (scenario.eligiblePositionsCount === 0) return 'unknown';
+  return scenario.bestRegime === 'equal' ? 'equality' : scenario.bestRegime;
 }
 
 // ─── Premium teaser (free users) ────────────────────────────────────────────
@@ -232,68 +197,87 @@ export default function FiscaliteGlobaleScreen() {
 
   // ── Calculs ─────────────────────────────────────────────────────────────
 
+  // S4.3 — Délègue au moteur fiscal pur computeGlobalFiscalScenario.
+  // Reproduit ensuite le format UI historique (computed[] avec pos+tax,
+  // excluded[] de Position, exclusionReason composé via les compteurs
+  // dataInvalid/spotMissing/dateMissing/dateFuture/zeroPurchasePrice).
+  const fiscalScenario = useMemo(
+    () => computeGlobalFiscalScenario({ positions, prices, simulatedDate: simulatedFiscalDate }),
+    [positions, prices, simulatedFiscalDate],
+  );
+
   const { computed, excluded, exclusionReason, hasZeroPurchaseExcluded } = useMemo(() => {
+    const positionsById = new Map(positions.map(p => [p.id, p]));
+
     const comp: PositionResult[] = [];
+    for (const r of fiscalScenario.computed) {
+      const pos = positionsById.get(r.positionId);
+      if (!pos) continue;
+      const plusValue = r.salePrice - r.costPrice;
+      const taxablePV = Math.max(0, plusValue) * (1 - r.abatement);
+      const tax: TaxResult = {
+        forfaitaire: r.forfaitaireTax,
+        plusValuesTax: r.plusValuesTax,
+        abatement: r.abatement,
+        isExempt: r.isExempt,
+        years: r.years,
+        plusValue,
+        taxablePV,
+      };
+      const bestRegime: 'forfaitaire' | 'plusvalues' | null =
+        r.bestRegime === 'equal' ? null : r.bestRegime;
+      comp.push({ pos, salePrice: r.salePrice, costPrice: r.costPrice, years: r.years, tax, bestRegime });
+    }
+
     const excl: Position[] = [];
     let spotMissing = 0;
     let dateMissing = 0;
     let dateFuture = 0;
     let dataInvalid = 0;
     let zeroPurchasePrice = 0;
-
-    for (const pos of positions) {
-      if (!isGainFiscalEligiblePosition(pos)) {
-        excl.push(pos);
-        dataInvalid++;
-        if (pos.purchasePrice === 0) zeroPurchasePrice++;
-        continue;
+    for (const e of fiscalScenario.excluded) {
+      const pos = positionsById.get(e.positionId);
+      if (!pos) continue;
+      excl.push(pos);
+      switch (e.reason) {
+        case 'invalid_purchase_price':
+          dataInvalid++;
+          if (pos.purchasePrice === 0) zeroPurchasePrice++;
+          break;
+        case 'missing_spot_price':
+          spotMissing++;
+          break;
+        case 'invalid_purchase_date':
+          dateMissing++;
+          break;
+        case 'simulated_date_before_purchase':
+          dateFuture++;
+          break;
       }
-
-      const spot = getSpot(pos.metal, prices);
-      const sv = computePositionValue(pos, spot);
-      if (sv === null) { excl.push(pos); spotMissing++; continue; }
-
-      const purchaseDateParsed = parseDate(pos.purchaseDate);
-      if (purchaseDateParsed === null) { excl.push(pos); dateMissing++; continue; }
-
-      if (simulatedFiscalDate.getTime() < purchaseDateParsed.getTime()) {
-        excl.push(pos);
-        dateFuture++;
-        continue;
-      }
-
-      const salePrice = sv;
-      const costPrice = computePositionCost(pos);
-      const years = calcYearsHeld(purchaseDateParsed, simulatedFiscalDate);
-      const tax = computeTax(salePrice, costPrice, years);
-      const taxDelta = Math.abs(tax.plusValuesTax - tax.forfaitaire);
-      const bestRegime = taxDelta < REGIME_EQUALITY_THRESHOLD ? null : tax.plusValuesTax < tax.forfaitaire ? ('plusvalues' as const) : ('forfaitaire' as const);
-
-      comp.push({ pos, salePrice, costPrice, years, tax, bestRegime });
     }
 
-    // Message d'exclusion adapté au motif
+    // Message d'exclusion adapté au motif (logique inchangée vs pré-S4.3).
     let reason: string | null = null;
     if (excl.length > 0) {
       const n = excl.length;
       const plural = n > 1;
       if (dateFuture > 0 && spotMissing === 0 && dateMissing === 0 && dataInvalid === 0) {
-        reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} \u2014 date fiscale simulée antérieure à la date d\u2019achat`;
+        reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} — date fiscale simulée antérieure à la date d’achat`;
       } else if (spotMissing > 0 && dateFuture === 0 && dateMissing === 0 && dataInvalid === 0) {
         reason = `Cours indisponibles pour ${n} position${plural ? 's' : ''}`;
       } else if (dateMissing > 0 && spotMissing === 0 && dateFuture === 0 && dataInvalid === 0) {
-        reason = `${n} position${plural ? 's' : ''} avec date d\u2019achat invalide`;
+        reason = `${n} position${plural ? 's' : ''} avec date d’achat invalide`;
       } else if (zeroPurchasePrice > 0 && zeroPurchasePrice === dataInvalid && spotMissing === 0 && dateFuture === 0 && dateMissing === 0) {
         reason = PARTIAL_ESTIMATE_NOTICE;
       } else if (dataInvalid > 0 && spotMissing === 0 && dateFuture === 0 && dateMissing === 0) {
-        reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} \u2014 données incomplètes`;
+        reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} — données incomplètes`;
       } else {
         reason = `${n} position${plural ? 's' : ''} exclue${plural ? 's' : ''} de la simulation`;
       }
     }
 
     return { computed: comp, excluded: excl, exclusionReason: reason, hasZeroPurchaseExcluded: zeroPurchasePrice > 0 };
-  }, [positions, prices, simulatedFiscalDate]);
+  }, [positions, fiscalScenario]);
 
   // Horizon 22 ans (France-only confirmé via constants/tax) ──────────────────
   const horizonInfo = useMemo<{ disabled: true } | { disabled: false; target: Date }>(() => {
@@ -361,18 +345,20 @@ export default function FiscaliteGlobaleScreen() {
     isPickerOpenRef.current = false;
   }, []);
 
-  // Agrégats
-  const totalSalePrice = computed.reduce((s, r) => s + r.salePrice, 0);
+  // S4.3 — Agrégats dérivés du moteur fiscal pur. totalCostPrice reste local
+  // car non exposé par computeGlobalFiscalScenario (utilisé seulement ici).
+  const totalSalePrice = fiscalScenario.totalSalePrice;
   const totalCostPrice = computed.reduce((s, r) => s + r.costPrice, 0);
   const grossGain = totalSalePrice - totalCostPrice;
-  const totalForfaitaire = computed.reduce((s, r) => s + r.tax.forfaitaire, 0);
-  const totalPlusValuesTax = computed.reduce((s, r) => s + r.tax.plusValuesTax, 0);
-  const netForfaitaire = totalSalePrice - totalForfaitaire;
-  const netPlusValues = totalSalePrice - totalPlusValuesTax;
-  const delta = Math.abs(netPlusValues - netForfaitaire);
-  const isEquality = delta < REGIME_EQUALITY_THRESHOLD;
-  const bestGlobalRegime = isEquality ? null : netPlusValues > netForfaitaire ? 'plusvalues' : 'forfaitaire';
-  const heroNet = bestGlobalRegime === 'plusvalues' ? netPlusValues : netForfaitaire;
+  const totalForfaitaire = fiscalScenario.totalForfaitaireTax;
+  const totalPlusValuesTax = fiscalScenario.totalPlusValuesTax;
+  const netForfaitaire = fiscalScenario.netForfaitaire;
+  const netPlusValues = fiscalScenario.netPlusValues;
+  const delta = fiscalScenario.delta;
+  const isEquality = fiscalScenario.bestRegime === 'equal';
+  const bestGlobalRegime: 'forfaitaire' | 'plusvalues' | null =
+    fiscalScenario.bestRegime === 'equal' ? null : fiscalScenario.bestRegime;
+  const heroNet = fiscalScenario.heroNet;
   const bestRegimeName = bestGlobalRegime === 'plusvalues' ? 'plus-values' : 'forfaitaire';
 
   // Mise à jour à chaque rendu : la ref expose la fonction de tracking aux

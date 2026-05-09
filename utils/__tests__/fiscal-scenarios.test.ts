@@ -466,3 +466,269 @@ describe('computeGlobalFiscalScenario — scénarios fonctionnels', () => {
     expect(byReason.get('invalid_purchase_date')).toBe(1);
   });
 });
+
+// ── S4.3 — Parité branchement Simulation globale ───────────────────────────
+//
+// Reproduit la totalité du useMemo principal de app/fiscalite-globale.tsx
+// (computed[] format UI, excluded[] format UI, exclusionReason, hasZeroPurchaseExcluded,
+// totalSalePrice, totalCostPrice, totalForfaitaire, totalPlusValuesTax, netForfaitaire,
+// netPlusValues, delta, bestGlobalRegime, isEquality, heroNet) et compare aux
+// variables que l'écran dérive du moteur computeGlobalFiscalScenario après
+// branchement S4.3. Cette fonction legacy n'est utilisée que dans ce test
+// et reflète la logique pré-S4.3 — à conserver tant que l'écran utilise le moteur.
+
+describe('S4.3 — parité branchement Simulation globale', () => {
+  function computeFiscalLegacyForParityTest(
+    positions: Position[],
+    prices: Parameters<typeof getSpot>[1],
+    simulatedFiscalDate: Date,
+  ) {
+    type LegacyTax = {
+      forfaitaire: number;
+      plusValuesTax: number;
+      abatement: number;
+      isExempt: boolean;
+      years: number;
+      plusValue: number;
+      taxablePV: number;
+    };
+    type LegacyRow = {
+      pos: Position;
+      salePrice: number;
+      costPrice: number;
+      years: number;
+      tax: LegacyTax;
+      bestRegime: 'forfaitaire' | 'plusvalues' | null;
+    };
+    const comp: LegacyRow[] = [];
+    const excl: Position[] = [];
+    let spotMissing = 0;
+    let dateMissing = 0;
+    let dateFuture = 0;
+    let dataInvalid = 0;
+    let zeroPurchasePrice = 0;
+
+    for (const pos of positions) {
+      if (!isGainFiscalEligiblePosition(pos)) {
+        excl.push(pos);
+        dataInvalid++;
+        if (pos.purchasePrice === 0) zeroPurchasePrice++;
+        continue;
+      }
+      const spot = getSpot(pos.metal, prices);
+      const sv = computePositionValue(pos, spot);
+      if (sv === null) { excl.push(pos); spotMissing++; continue; }
+      const purchaseDateParsed = parseDate(pos.purchaseDate);
+      if (purchaseDateParsed === null) { excl.push(pos); dateMissing++; continue; }
+      if (simulatedFiscalDate.getTime() < purchaseDateParsed.getTime()) {
+        excl.push(pos); dateFuture++; continue;
+      }
+      const costPrice = computePositionCost(pos);
+      const years = calcYearsHeld(purchaseDateParsed, simulatedFiscalDate);
+      const tax = computeTax(sv, costPrice, years);
+      const taxDelta = Math.abs(tax.plusValuesTax - tax.forfaitaire);
+      const bestRegime: 'forfaitaire' | 'plusvalues' | null =
+        taxDelta < REGIME_EQUALITY_THRESHOLD
+          ? null
+          : tax.plusValuesTax < tax.forfaitaire
+            ? 'plusvalues'
+            : 'forfaitaire';
+      comp.push({ pos, salePrice: sv, costPrice, years, tax, bestRegime });
+    }
+
+    const totalSalePrice = comp.reduce((s, r) => s + r.salePrice, 0);
+    const totalCostPrice = comp.reduce((s, r) => s + r.costPrice, 0);
+    const totalForfaitaire = comp.reduce((s, r) => s + r.tax.forfaitaire, 0);
+    const totalPlusValuesTax = comp.reduce((s, r) => s + r.tax.plusValuesTax, 0);
+    const netForfaitaire = totalSalePrice - totalForfaitaire;
+    const netPlusValues = totalSalePrice - totalPlusValuesTax;
+    const delta = Math.abs(netPlusValues - netForfaitaire);
+    const isEquality = delta < REGIME_EQUALITY_THRESHOLD;
+    const bestGlobalRegime: 'forfaitaire' | 'plusvalues' | null = isEquality
+      ? null
+      : netPlusValues > netForfaitaire
+        ? 'plusvalues'
+        : 'forfaitaire';
+    const heroNet = bestGlobalRegime === 'plusvalues' ? netPlusValues : netForfaitaire;
+
+    return {
+      computed: comp,
+      excluded: excl,
+      hasZeroPurchaseExcluded: zeroPurchasePrice > 0,
+      totalSalePrice,
+      totalCostPrice,
+      totalForfaitaire,
+      totalPlusValuesTax,
+      netForfaitaire,
+      netPlusValues,
+      delta,
+      isEquality,
+      bestGlobalRegime,
+      heroNet,
+    };
+  }
+
+  // Adapter qui simule exactement ce que l'écran fera après branchement S4.3.
+  function computeFiscalUiViaMoteur(
+    positions: Position[],
+    prices: Parameters<typeof getSpot>[1],
+    simulatedFiscalDate: Date,
+  ) {
+    const scenario = computeGlobalFiscalScenario({ positions, prices, simulatedDate: simulatedFiscalDate });
+    const positionsById = new Map(positions.map(p => [p.id, p]));
+
+    type LegacyTax = {
+      forfaitaire: number;
+      plusValuesTax: number;
+      abatement: number;
+      isExempt: boolean;
+      years: number;
+      plusValue: number;
+      taxablePV: number;
+    };
+
+    const computed = scenario.computed
+      .map(r => {
+        const pos = positionsById.get(r.positionId);
+        if (!pos) return null;
+        const plusValue = r.salePrice - r.costPrice;
+        const taxablePV = Math.max(0, plusValue) * (1 - r.abatement);
+        const tax: LegacyTax = {
+          forfaitaire: r.forfaitaireTax,
+          plusValuesTax: r.plusValuesTax,
+          abatement: r.abatement,
+          isExempt: r.isExempt,
+          years: r.years,
+          plusValue,
+          taxablePV,
+        };
+        const bestRegime: 'forfaitaire' | 'plusvalues' | null =
+          r.bestRegime === 'equal' ? null : r.bestRegime;
+        return { pos, salePrice: r.salePrice, costPrice: r.costPrice, years: r.years, tax, bestRegime };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    const excluded: Position[] = [];
+    let zeroPurchasePrice = 0;
+    for (const e of scenario.excluded) {
+      const pos = positionsById.get(e.positionId);
+      if (!pos) continue;
+      excluded.push(pos);
+      if (e.reason === 'invalid_purchase_price' && pos.purchasePrice === 0) {
+        zeroPurchasePrice++;
+      }
+    }
+
+    const totalCostPrice = computed.reduce((s, r) => s + r.costPrice, 0);
+    const isEquality = scenario.bestRegime === 'equal';
+    const bestGlobalRegime: 'forfaitaire' | 'plusvalues' | null =
+      scenario.bestRegime === 'equal' ? null : scenario.bestRegime;
+
+    return {
+      computed,
+      excluded,
+      hasZeroPurchaseExcluded: zeroPurchasePrice > 0,
+      totalSalePrice: scenario.totalSalePrice,
+      totalCostPrice,
+      totalForfaitaire: scenario.totalForfaitaireTax,
+      totalPlusValuesTax: scenario.totalPlusValuesTax,
+      netForfaitaire: scenario.netForfaitaire,
+      netPlusValues: scenario.netPlusValues,
+      delta: scenario.delta,
+      isEquality,
+      bestGlobalRegime,
+      heroNet: scenario.heroNet,
+    };
+  }
+
+  test('parité complète sur portefeuille représentatif (10 positions)', () => {
+    const positions: Position[] = [
+      makePos({ id: 'p1', metal: 'or', purchasePrice: 1000, purchaseDate: '01/01/2020' }),
+      makePos({ id: 'p2', metal: 'argent', purchasePrice: 500, purchaseDate: '15/06/2018' }),
+      makePos({ id: 'p3', metal: 'platine', purchasePrice: 800, purchaseDate: '20/03/2002' }), // exonéré
+      makePos({ id: 'p4', metal: 'or', purchasePrice: 5000, purchaseDate: '10/05/2024' }),     // moins-value
+      makePos({ id: 'p5', metal: 'palladium', purchasePrice: 0, purchaseDate: '01/01/2021' }), // exclus
+      makePos({ id: 'p6', metal: 'or', purchasePrice: 1000, purchaseDate: 'invalid-date' }),   // exclus
+      makePos({ id: 'p7', metal: 'argent', purchasePrice: 100, purchaseDate: '01/01/2030' }),  // future
+      makePos({ id: 'p8', metal: 'or', weightG: 0.1, purchasePrice: 100, purchaseDate: '01/01/2002' }), // small + ancien
+      makePos({ id: 'p9', metal: 'or', purchasePrice: 800, purchaseDate: '01/06/2022' }),
+      makePos({ id: 'p10', metal: 'argent', purchasePrice: 200, purchaseDate: '01/03/2019' }),
+    ];
+    const simulatedDate = dateAt(2026, 1, 15);
+
+    const legacy = computeFiscalLegacyForParityTest(positions, PRICES_ALL_OK, simulatedDate);
+    const viaMoteur = computeFiscalUiViaMoteur(positions, PRICES_ALL_OK, simulatedDate);
+
+    // Agrégats numériques (tolérance 0.01 €)
+    expect(viaMoteur.totalSalePrice).toBeCloseTo(legacy.totalSalePrice, 2);
+    expect(viaMoteur.totalCostPrice).toBeCloseTo(legacy.totalCostPrice, 2);
+    expect(viaMoteur.totalForfaitaire).toBeCloseTo(legacy.totalForfaitaire, 2);
+    expect(viaMoteur.totalPlusValuesTax).toBeCloseTo(legacy.totalPlusValuesTax, 2);
+    expect(viaMoteur.netForfaitaire).toBeCloseTo(legacy.netForfaitaire, 2);
+    expect(viaMoteur.netPlusValues).toBeCloseTo(legacy.netPlusValues, 2);
+    expect(viaMoteur.delta).toBeCloseTo(legacy.delta, 2);
+    expect(viaMoteur.heroNet).toBeCloseTo(legacy.heroNet, 2);
+
+    // Strict
+    expect(viaMoteur.bestGlobalRegime).toBe(legacy.bestGlobalRegime);
+    expect(viaMoteur.isEquality).toBe(legacy.isEquality);
+    expect(viaMoteur.computed).toHaveLength(legacy.computed.length);
+    expect(viaMoteur.excluded).toHaveLength(legacy.excluded.length);
+    expect(viaMoteur.hasZeroPurchaseExcluded).toBe(legacy.hasZeroPurchaseExcluded);
+
+    // Ordre et identité des positions exclues : doit matcher exactement.
+    expect(viaMoteur.excluded.map(p => p.id)).toEqual(legacy.excluded.map(p => p.id));
+
+    // Ordre et contenu des positions calculées : id + valeurs fiscales lues par l'UI.
+    for (let i = 0; i < legacy.computed.length; i++) {
+      const a = viaMoteur.computed[i];
+      const b = legacy.computed[i];
+      expect(a.pos.id).toBe(b.pos.id);
+      expect(a.salePrice).toBeCloseTo(b.salePrice, 2);
+      expect(a.costPrice).toBeCloseTo(b.costPrice, 2);
+      expect(a.years).toBe(b.years);
+      expect(a.tax.forfaitaire).toBeCloseTo(b.tax.forfaitaire, 2);
+      expect(a.tax.plusValuesTax).toBeCloseTo(b.tax.plusValuesTax, 2);
+      expect(a.tax.abatement).toBeCloseTo(b.tax.abatement, 5);
+      expect(a.tax.isExempt).toBe(b.tax.isExempt);
+      expect(a.bestRegime).toBe(b.bestRegime);
+    }
+  });
+
+  test('parité — cas equality global (delta < 1 €)', () => {
+    const positions: Position[] = [
+      makePos({
+        id: 'eq',
+        metal: 'or',
+        weightG: 0.1,
+        quantity: 1,
+        purchasePrice: 100,
+        purchaseDate: '01/01/2002',
+      }),
+    ];
+    const simulatedDate = dateAt(2026, 1, 1);
+    const legacy = computeFiscalLegacyForParityTest(positions, PRICES_ALL_OK, simulatedDate);
+    const viaMoteur = computeFiscalUiViaMoteur(positions, PRICES_ALL_OK, simulatedDate);
+
+    expect(viaMoteur.isEquality).toBe(legacy.isEquality);
+    expect(viaMoteur.bestGlobalRegime).toBe(legacy.bestGlobalRegime);
+    expect(viaMoteur.heroNet).toBeCloseTo(legacy.heroNet, 2);
+  });
+
+  test('parité — aucune position éligible', () => {
+    const positions: Position[] = [
+      makePos({ id: 'a', purchasePrice: 0 }),
+      makePos({ id: 'b', purchaseDate: 'invalid' }),
+    ];
+    const simulatedDate = dateAt(2026, 1, 1);
+    const legacy = computeFiscalLegacyForParityTest(positions, PRICES_ALL_OK, simulatedDate);
+    const viaMoteur = computeFiscalUiViaMoteur(positions, PRICES_ALL_OK, simulatedDate);
+
+    expect(viaMoteur.computed).toHaveLength(0);
+    expect(viaMoteur.excluded).toHaveLength(2);
+    expect(viaMoteur.totalSalePrice).toBe(legacy.totalSalePrice);
+    expect(viaMoteur.bestGlobalRegime).toBe(legacy.bestGlobalRegime);
+    expect(viaMoteur.heroNet).toBe(legacy.heroNet);
+    expect(viaMoteur.hasZeroPurchaseExcluded).toBe(legacy.hasZeroPurchaseExcluded);
+  });
+});
