@@ -23,6 +23,8 @@ import { formatEuro, stripMetalFromName } from '@/utils/format';
 import { TaxResult, parseDate } from '@/utils/tax-helpers';
 import { PARTIAL_ESTIMATE_NOTICE, isGainFiscalEligiblePosition } from '@/utils/fiscal';
 import { computeGlobalFiscalScenario } from '@/utils/fiscal-scenarios';
+import { buildHorizonsFromPositions } from '@/utils/fiscal-horizons';
+import HorizonsFiscaux from '@/components/fiscal/HorizonsFiscaux';
 import { useSpotPrices } from '@/hooks/use-spot-prices';
 import { Position } from '@/types/position';
 import { usePositions } from '@/hooks/use-positions';
@@ -204,6 +206,15 @@ export default function FiscaliteGlobaleScreen() {
   const fiscalScenario = useMemo(
     () => computeGlobalFiscalScenario({ positions, prices, simulatedDate: simulatedFiscalDate }),
     [positions, prices, simulatedFiscalDate],
+  );
+
+  // S4.5 — Horizons fiscaux Premium. Ancré sur `horizonsToday` (jamais sur
+  // simulatedFiscalDate qui pilote le hero/comparaison/détail). Le bloc
+  // ne s'affiche que si le scénario Aujourd'hui est calculable côté adapter.
+  const horizonsToday = useMemo(() => getTodayLocalDate(), []);
+  const horizons = useMemo(
+    () => buildHorizonsFromPositions({ positions, prices, today: horizonsToday }),
+    [positions, prices, horizonsToday],
   );
 
   const { computed, excluded, exclusionReason, hasZeroPurchaseExcluded } = useMemo(() => {
@@ -561,12 +572,12 @@ export default function FiscaliteGlobaleScreen() {
                   </>
                 ) : !isPremium ? (
                   <>
-                    <Text style={st.heroSub}>Régime le plus favorable à cette date : {bestRegimeName}</Text>
+                    <Text style={st.heroSub}>Régime au net estimé le plus élevé : {bestRegimeName}</Text>
                     <Text style={st.heroPriceNote}>Au {formatDisplayDate(simulatedFiscalDate)} {'·'} Cours figés au prix du jour</Text>
                   </>
                 ) : (
                   <>
-                    <Text style={st.heroSub}>Régime le plus favorable à cette date : {bestRegimeName}</Text>
+                    <Text style={st.heroSub}>Régime au net estimé le plus élevé : {bestRegimeName}</Text>
                     <Text style={st.heroDelta}>Écart : +{formatEuro(delta)} {'\u20AC'} net</Text>
                     <Text style={st.heroPriceNote}>Au {formatDisplayDate(simulatedFiscalDate)} {'·'} Cours figés au prix du jour</Text>
                   </>
@@ -649,6 +660,19 @@ export default function FiscaliteGlobaleScreen() {
                 )}
               </View>
 
+              {/* 5b. HORIZONS FISCAUX (S4.5) — Free: teaser, Premium: 4 cartes */}
+              {horizons.length > 0 && (
+                <HorizonsFiscaux
+                  horizons={horizons}
+                  isPremium={isPremium}
+                  masked={masked}
+                  formatMoney={(v) => `${formatEuro(v)} €`}
+                  formatDate={formatDisplayDate}
+                  mask={m}
+                  onPressPaywall={showPaywall}
+                />
+              )}
+
               {/* 6. COMPARAISON DES 2 RÉGIMES — Premium uniquement */}
               {!isPremium && (
                 <PremiumTeaserBlock
@@ -666,7 +690,7 @@ export default function FiscaliteGlobaleScreen() {
                     <Text style={st.regimeColLabel}>Net estimé</Text>
                     <Text style={st.regimeColTax}>Taxe ({TAX.labels.forfaitaire}) : {m(`${formatEuro(totalForfaitaire)} \u20AC`)}</Text>
                     {!isEquality && bestGlobalRegime === 'forfaitaire' && (
-                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Régime le plus favorable à cette date</Text></View>
+                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Net estimé le plus élevé</Text></View>
                     )}
                   </View>
                   <View style={[st.regimeCol, !isEquality && bestGlobalRegime === 'plusvalues' && st.regimeColBest]}>
@@ -675,7 +699,7 @@ export default function FiscaliteGlobaleScreen() {
                     <Text style={st.regimeColLabel}>Net estimé</Text>
                     <Text style={st.regimeColTax}>Taxe ({TAX.labels.plusValue}) : {m(`${formatEuro(totalPlusValuesTax)} \u20AC`)}</Text>
                     {!isEquality && bestGlobalRegime === 'plusvalues' && (
-                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Régime le plus favorable à cette date</Text></View>
+                      <View style={st.leastTaxedBadge}><Text style={st.leastTaxedText}>Net estimé le plus élevé</Text></View>
                     )}
                   </View>
                 </View>
