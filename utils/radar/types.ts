@@ -1,6 +1,6 @@
 export type RadarSignal = 'low' | 'normal' | 'high';
 
-export type DataQuality = 'ok' | 'insufficient_history' | 'gaps' | 'missing';
+export type DataQuality = 'ok' | 'insufficient_history' | 'gaps' | 'missing' | 'stale';
 
 export type RadarMetal = 'gold' | 'silver' | 'platinum' | 'palladium';
 

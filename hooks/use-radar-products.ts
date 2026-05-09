@@ -1,13 +1,17 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+
+import { usePremium } from '@/contexts/premium-context';
 import {
-  RadarProduct,
-  UseRadarProductsResult,
-  UseRadarProductsParams,
+  RadarPrimeError,
+  fetchRadarPrimeSnapshots,
+} from '@/utils/radar/radar-query';
+import {
   RadarMetal,
+  RadarProduct,
+  UseRadarProductsParams,
+  UseRadarProductsResult,
 } from '@/utils/radar/types';
-import { fetchCurrentPrimes, fetchPrimeHistory } from '@/utils/radar/radar-query';
-import { buildRadarProducts } from '@/utils/radar/radar-selectors';
 
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -17,15 +21,14 @@ interface CacheEntry {
   fetchedAt: number;
 }
 
-// Cache unique — une seule entrée pour tous les produits (pas de filtre metal côté query)
-const cache = new Map<string, CacheEntry>();
-
-function getCacheKey(days?: number): string {
-  return `all_${days ?? 90}`;
-}
+// Cache module-level. RP1.1 ne dispose pas d'identité utilisateur côté
+// Supabase (auth non active) ; le cache reste donc par session app. Quand
+// l'auth utilisateur sera mise en place, scoper la clé sur `auth.uid()` et
+// purger sur changement d'utilisateur.
+let cache: CacheEntry | null = null;
 
 export function invalidateRadarCache(): void {
-  cache.clear();
+  cache = null;
 }
 
 export function downsample(
@@ -41,37 +44,50 @@ export function downsample(
 }
 
 /**
- * Hook batch pour le Radar Prime.
- * Agnostique au statut premium — le gating est géré côté UI.
+ * Hook Radar Prime — RP1.1.
  *
- * - 2 queries Supabase max (courante + historique)
- * - Cache module-level, TTL 15 min
- * - Merge systématique avec PRIME_CONFIG
- * - Signal et stats calculés côté client
- * - Historique toujours chargé
- * - Filtre metal appliqué post-cache (pas dans la query)
+ * Comportement :
+ * - Aucun fetch tant que `isPremium === false` côté client. La validation
+ *   finale reste serveur (Edge Function `radar-prime`).
+ * - Le client `isPremium` sert uniquement à éviter un appel inutile.
+ * - Cache module-level TTL 15 min, partagé entre les écrans de la session.
+ * - Filtre métal appliqué post-cache.
+ *
+ * Si l'Edge Function répond `403 premium_required`, on expose l'erreur au
+ * caller. La protection des données reste serveur — un client patché qui
+ * forcerait `isPremium = true` recevra un 403, donc rien.
  */
 export function useRadarProducts(
   params?: UseRadarProductsParams,
 ): UseRadarProductsResult {
   const metal = params?.metal;
-  const days = params?.days ?? 90;
+
+  const { isPremium } = usePremium();
 
   const [allProducts, setAllProducts] = useState<RadarProduct[]>([]);
   const [latestDate, setLatestDate] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState<boolean>(isPremium);
   const [error, setError] = useState<string | null>(null);
   const fetchingRef = useRef(false);
 
   const fetchData = useCallback(async (isActive: () => boolean) => {
+    if (!isPremium) {
+      // Premium client non confirmé → aucune requête vers l'Edge Function.
+      // Le serveur renverrait de toute façon 403, mais on évite l'appel.
+      if (!isActive()) return;
+      setAllProducts([]);
+      setLatestDate(null);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
     if (fetchingRef.current) return;
 
-    const key = getCacheKey(days);
-    const cached = cache.get(key);
-    if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
+    if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
       if (!isActive()) return;
-      setAllProducts(cached.products);
-      setLatestDate(cached.latestDate);
+      setAllProducts(cache.products);
+      setLatestDate(cache.latestDate);
       setIsLoading(false);
       setError(null);
       return;
@@ -81,39 +97,26 @@ export function useRadarProducts(
     setIsLoading(true);
 
     try {
-      // Query 1: valeurs courantes + latestDate (pas de filtre metal — colonne absente)
-      const { rows: currentRows, latestDate: ld } = await fetchCurrentPrimes();
+      const { products, latestDate: ld } = await fetchRadarPrimeSnapshots();
       if (!isActive()) return;
-
-      if (!ld) {
-        const emptyProducts = buildRadarProducts([], [], undefined);
-        setAllProducts(emptyProducts);
-        setLatestDate(null);
-        setIsLoading(false);
-        setError(null);
-        cache.set(key, { products: emptyProducts, latestDate: null, fetchedAt: Date.now() });
-        return;
-      }
-
-      // Query 2: historique ancré sur latestDate (pas de filtre metal)
-      const historyRows = await fetchPrimeHistory(ld, days);
-      if (!isActive()) return;
-
-      // Build ALL products — pas de filtre métal ici
-      const built = buildRadarProducts(currentRows, historyRows, undefined);
-
-      cache.set(key, { products: built, latestDate: ld, fetchedAt: Date.now() });
-      setAllProducts(built);
+      cache = { products, latestDate: ld, fetchedAt: Date.now() };
+      setAllProducts(products);
       setLatestDate(ld);
       setError(null);
     } catch (e) {
       if (!isActive()) return;
-      setError(e instanceof Error ? e.message : 'Erreur inconnue');
+      if (e instanceof RadarPrimeError) {
+        setError(e.detail.kind);
+      } else {
+        setError(e instanceof Error ? e.message : 'unknown_error');
+      }
+      setAllProducts([]);
+      setLatestDate(null);
     } finally {
       if (isActive()) setIsLoading(false);
       fetchingRef.current = false;
     }
-  }, [days]);
+  }, [isPremium]);
 
   useFocusEffect(
     useCallback(() => {
@@ -124,19 +127,13 @@ export function useRadarProducts(
   );
 
   const refetch = useCallback(() => {
-    const key = getCacheKey(days);
-    cache.delete(key);
+    cache = null;
     fetchData(() => true);
-  }, [days, fetchData]);
+  }, [fetchData]);
 
-  // TODO: latestDate est globale car prime_daily n'a pas de colonne metal.
-  // Si des produits de métaux différents sont ajoutés avec des dates différentes,
-  // latestDate devra être calculée par métal côté client.
-
-  // Filtre metal APRÈS le cache, léger useMemo
-  const products = useMemo(() => {
+  const products = useMemo<RadarProduct[]>(() => {
     if (!metal) return allProducts;
-    return allProducts.filter(p => p.metal === metal);
+    return allProducts.filter((p: RadarProduct) => p.metal === (metal as RadarMetal));
   }, [allProducts, metal]);
 
   return { products, latestDate, isLoading, error, refetch };

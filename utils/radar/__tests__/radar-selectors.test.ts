@@ -1,7 +1,12 @@
-import { buildRadarProducts, selectDashboardProducts } from '../radar-selectors';
+import { selectDashboardProducts } from '../radar-selectors';
 import { RadarProduct } from '../types';
 
-// Helper to create a minimal RadarProduct for testing
+// RP1.1 — `buildRadarProducts` a été retirée du module. Les agrégats
+// `RadarProduct` proviennent désormais de l'Edge Function `radar-prime`,
+// mappée dans `utils/radar/radar-query.ts:fetchRadarPrimeSnapshots`.
+// Les anciens tests ciblaient une signature qui consommait des lignes
+// Supabase brutes (`prime_daily`) — ils ne reflètent plus le contrat.
+
 function makeProduct(overrides: Partial<RadarProduct> & { productId: string }): RadarProduct {
   return {
     label: overrides.productId,
@@ -18,62 +23,6 @@ function makeProduct(overrides: Partial<RadarProduct> & { productId: string }): 
     ...overrides,
   };
 }
-
-describe('buildRadarProducts', () => {
-  test('product in config with no Supabase data → missing + signal null', () => {
-    const products = buildRadarProducts([], [], undefined);
-    const krug = products.find(p => p.productId === 'krugerrand_1oz');
-    expect(krug).toBeDefined();
-    expect(krug!.dataQuality).toBe('missing');
-    expect(krug!.signal).toBeNull();
-    expect(krug!.currentPrimePct).toBeNull();
-  });
-
-  test('product with valid data → stats calculated', () => {
-    const current = [{ product_id: 'krugerrand_1oz', metal: 'gold', price_date: '2025-04-05', prime_pct: 8 }];
-    const history = Array.from({ length: 10 }, (_, i) => ({
-      product_id: 'krugerrand_1oz',
-      price_date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      prime_pct: 5 + i,
-      metal: 'gold',
-    }));
-    const products = buildRadarProducts(current, history, undefined);
-    const krug = products.find(p => p.productId === 'krugerrand_1oz');
-    expect(krug!.currentPrimePct).toBe(8);
-    expect(krug!.avgPrimePct).not.toBeNull();
-    expect(krug!.dataQuality).toBe('ok');
-  });
-
-  test('product with currentPrimePct out of bounds → currentPrimePct null', () => {
-    const current = [{ product_id: 'krugerrand_1oz', metal: 'gold', price_date: '2025-04-05', prime_pct: 99 }];
-    const products = buildRadarProducts(current, [], undefined);
-    const krug = products.find(p => p.productId === 'krugerrand_1oz');
-    expect(krug!.currentPrimePct).toBeNull();
-  });
-
-  test('product with valid history but no currentPrimePct → signal null', () => {
-    const history = Array.from({ length: 10 }, (_, i) => ({
-      product_id: 'krugerrand_1oz',
-      price_date: `2025-01-${String(i + 1).padStart(2, '0')}`,
-      prime_pct: 5 + i,
-      metal: 'gold',
-    }));
-    const products = buildRadarProducts([], history, undefined);
-    const krug = products.find(p => p.productId === 'krugerrand_1oz');
-    expect(krug!.signal).toBeNull();
-  });
-
-  test('missing metal mapping → throws', () => {
-    // Temporarily inject a fake product into PRIME_CONFIG
-    const { PRIME_CONFIG } = require('@/constants/prime-config');
-    PRIME_CONFIG['fake_product_test'] = { minPrimePct: -5, maxPrimePct: 25, minSampleSize: 7, signalWindowDays: 90, calibrationDays: 30 };
-    try {
-      expect(() => buildRadarProducts([], [])).toThrow(/missing mapping/i);
-    } finally {
-      delete PRIME_CONFIG['fake_product_test'];
-    }
-  });
-});
 
 describe('selectDashboardProducts', () => {
   test('0 owned, no strong signals → fallback krugerrand + maple', () => {
