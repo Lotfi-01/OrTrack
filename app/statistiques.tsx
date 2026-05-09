@@ -268,7 +268,7 @@ export default function StatistiquesScreen() {
                     <View style={st.heroNetBlock}>
                       <View style={st.heroNetRow}>
                         <Text style={st.heroNetLabel}>Net estimé si vente aujourd{'\u2019'}hui</Text>
-                        <TouchableOpacity onPress={() => Alert.alert('Net estimé', 'Estimé selon le régime le plus favorable aujourd\u2019hui. Hors frais de revente.')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <TouchableOpacity onPress={() => Alert.alert('Net estimé', 'Estimé selon le régime au net estimé le plus élevé aujourd\u2019hui. Hors frais de revente.')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                           <Ionicons name="information-circle-outline" size={14} color={C.textDim} />
                         </TouchableOpacity>
                       </View>
@@ -276,7 +276,7 @@ export default function StatistiquesScreen() {
                       <Text style={st.heroNetFiscal}>
                         Fiscalité estimée : {m(`${formatEuro(fiscal.bestRegime === 'plusvalues' ? fiscal.totalPVTax : fiscal.totalForfaitaireTax)} ${currencySymbol}`)}
                       </Text>
-                      <Text style={st.heroMethod}>(Régime le plus favorable {'\u00B7'} hors frais)</Text>
+                      <Text style={st.heroMethod}>(Net estimé le plus élevé {'\u00B7'} hors frais)</Text>
                     </View>
                   ) : (
                     <Text style={st.heroNetUnavailable}>Net estimé indisponible {'\u00B7'} Simulation requise</Text>
@@ -387,7 +387,7 @@ export default function StatistiquesScreen() {
                                   if (!primary) return null;
                                   const prevLines = sortedRanking.slice(0, idx).map(p => p.fiscalNote || p.regimeLabel);
                                   const line = prevLines.includes(primary) ? (pos.regimeLabel && pos.regimeLabel !== primary ? pos.regimeLabel : null) : primary;
-                                  const display = line?.replace('Régime le plus favorable', 'Régime favorable');
+                                  const display = line;
                                   return display ? <Text style={st.podiumFiscalNote}>{display}</Text> : null;
                                 })()}
                               </>
@@ -403,7 +403,7 @@ export default function StatistiquesScreen() {
                             {rankMode === 'sale' && pos.netEstimate !== null && (
                               <>
                                 <Text style={st.podiumNet}>{m(`${formatEuro(pos.netEstimate)} \u20AC`)}</Text>
-                                {pos.regimeLabel && <Text style={st.podiumSecondary}>{pos.regimeLabel.replace('Régime le plus favorable', 'Régime favorable')}</Text>}
+                                {pos.regimeLabel && <Text style={st.podiumSecondary}>{pos.regimeLabel}</Text>}
                                 {pos.fiscalNote && <Text style={st.podiumFiscalNote}>{pos.fiscalNote}</Text>}
                               </>
                             )}

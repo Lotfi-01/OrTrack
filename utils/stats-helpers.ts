@@ -129,7 +129,7 @@ export function selectInsight(
     const otherName = fiscal.bestRegime === 'plusvalues' ? 'forfaitaire' : 'plus-values';
     return {
       type: 'regime',
-      title: 'RÉGIME LE PLUS FAVORABLE',
+      title: 'NET ESTIMÉ LE PLUS ÉLEVÉ',
       phrase: `Le régime ${fiscal.bestRegime === 'plusvalues' ? 'des plus-values' : 'forfaitaire'} vous laisse plus de net aujourd\u2019hui.`,
       subtext: `Écart estimé : +${fmtCompact(fiscal.delta)} \u20AC vs ${otherName}.`,
       method: 'Comparaison des régimes sur le portefeuille',
@@ -198,7 +198,7 @@ export function selectDecisionCards(
       title: 'NET SI VENTE',
       value: `${fmtCompact(fiscal.bestNet)} \u20AC`,
       subtext: 'Après fiscalité estimée',
-      method: 'Régime le plus favorable \u00B7 hors frais',
+      method: 'Net estimé le plus élevé \u00B7 hors frais',
     });
   }
 
@@ -208,7 +208,7 @@ export function selectDecisionCards(
     const other = fiscal.bestRegime === 'plusvalues' ? 'forfaitaire' : 'plus-values';
     cards.push({
       id: 'regime',
-      title: 'RÉGIME FAVORABLE',
+      title: 'NET ESTIMÉ LE PLUS ÉLEVÉ',
       value: name,
       subtext: `+${fmtCompact(fiscal.delta)} \u20AC vs ${other}`,
       method: 'Comparaison TMP vs TPV',
@@ -364,7 +364,7 @@ export function computePositionRanking(
     }
 
     const regimeDelta = Math.abs(pf.netPV - pf.netForf);
-    const regimeLabel = regimeDelta < 1 ? 'Net estimé identique sous les 2 régimes' : `Régime le plus favorable : ${bestRegime}`;
+    const regimeLabel = regimeDelta < 1 ? 'Net estimé identique sous les 2 régimes' : `Net estimé le plus élevé : ${bestRegime}`;
 
     return {
       id: pf.pos.id,
