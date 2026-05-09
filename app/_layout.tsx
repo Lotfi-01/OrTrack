@@ -15,6 +15,7 @@ import { PremiumProvider } from '@/contexts/premium-context';
 import { trackInstall } from '@/lib/trackInstall';
 import { notifyAppForegrounded, trackEvent } from '@/services/analytics';
 import { reportError } from '@/utils/error-reporting';
+import { syncRevenueCatWithSupabaseUser } from '@/utils/revenuecat/syncRevenueCatUser';
 
 // Afficher les notifications quand l'app est au premier plan
 try {
@@ -118,6 +119,19 @@ export default function RootLayout() {
     if (!ready || needsOnboarding.current) return;
     trackInstall().catch(error => {
       reportError(error, { scope: 'bootstrap', action: 'track_install' });
+    });
+  }, [ready]);
+
+  // RP1.2 — Lier l'utilisateur Supabase anonyme à RevenueCat au boot.
+  // syncRevenueCatWithSupabaseUser() est idempotent : `Purchases.logIn` n'est
+  // appelé que si `auth.uid()` diffère de l'`originalAppUserId` RevenueCat,
+  // et un garde module empêche tout appel multiple au sein du même process.
+  // Échec non bloquant : Radar Prime restera inaccessible (Edge Function 401),
+  // les autres features de l'app fonctionnent normalement.
+  useEffect(() => {
+    if (!ready || needsOnboarding.current) return;
+    syncRevenueCatWithSupabaseUser().catch(error => {
+      reportError(error, { scope: 'bootstrap', action: 'sync_revenuecat_user' });
     });
   }, [ready]);
 

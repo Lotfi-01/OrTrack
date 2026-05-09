@@ -1,26 +1,26 @@
-// RP1.1 — Edge Function radar-prime.
+// RP1.2 — Edge Function radar-prime.
 //
 // Sert les snapshots Radar Prime agrégés au mobile. Toute la sécurité repose
 // sur cette fonction :
 //   - validation du JWT utilisateur via Supabase Auth ;
-//   - vérification serveur de l'entitlement Premium ;
+//   - vérification serveur de l'entitlement Premium via RevenueCat REST API ;
+//   - cache mémoire 60s par userId pour limiter les appels RevenueCat ;
 //   - lecture des tables rp_* via service_role ;
 //   - fail-closed si l'entitlement est inconnu ou indisponible.
-//
-// IMPORTANT — Cas B (audit RP1) :
-// Aucune source serveur fiable pour l'entitlement Premium n'existe encore
-// (pas d'auth Supabase active, pas de webhook RevenueCat, pas de table
-// d'entitlements). `getServerPremiumStatus` échoue donc fermé en
-// retournant 'unknown' systématiquement → tout appel reçoit 403 jusqu'à
-// ce qu'un mapping serveur soit livré dans un lot dédié.
 //
 // Le client mobile ne peut jamais influer sur la décision Premium :
 // aucun champ du body, header ou query string n'est lu pour cela.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import {
+  createEntitlementCache,
+  ENTITLEMENT_NAME,
+  parseRevenueCatEntitlement,
+  REVENUECAT_TIMEOUT_MS,
+  type PremiumStatus,
+} from './_internal.ts'
 
 // SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont auto-injectés par Supabase.
-// Ne jamais les déclarer comme secrets manuels.
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -47,28 +47,71 @@ function logWarn(reason: string, details?: Record<string, unknown>): void {
   console.warn(`[radar-prime] ${reason}`, details ?? {})
 }
 
-// ─── Entitlement Premium — TODO: brancher mapping serveur ───────────────────
+function logInfo(reason: string, details?: Record<string, unknown>): void {
+  console.log(`[radar-prime] ${reason}`, details ?? {})
+}
 
-type PremiumStatus = 'premium' | 'free' | 'unknown'
+// ─── Entitlement Premium serveur ────────────────────────────────────────────
 
-/**
- * Vérifie l'entitlement Premium côté serveur.
- *
- * TODO RP1.x : aucune source serveur fiable n'existe (Cas B de l'audit).
- *   - pas de webhook RevenueCat ingéré
- *   - pas de table `entitlements` dans le repo
- *   - pas d'auth Supabase active (config.toml: enable_anonymous_sign_ins=false)
- * Tant qu'un mapping serveur n'est pas livré, ce helper retourne toujours
- * 'unknown' → 403 systématique. C'est le comportement attendu (fail-closed).
- *
- * Quand le mapping sera disponible (Cas A) :
- *   - lire l'entitlement depuis la table dédiée (ex. `user_entitlements`)
- *     ou l'API RevenueCat via clé secrète stockée en Supabase secret ;
- *   - retourner 'premium' uniquement si l'entitlement actif est confirmé ;
- *   - en cas d'erreur réseau / DB → retourner 'unknown', JAMAIS 'premium'.
- */
-async function getServerPremiumStatus(_userId: string): Promise<PremiumStatus> {
-  return 'unknown'
+const entitlementCache = createEntitlementCache()
+
+async function fetchRevenueCatPremiumStatus(userId: string): Promise<PremiumStatus> {
+  const apiKey = Deno.env.get('REVENUECAT_API_KEY')
+  if (!apiKey) {
+    logWarn('revenuecat_api_key_missing')
+    return 'unknown'
+  }
+
+  try {
+    const ctrl = new AbortController()
+    const t = setTimeout(() => ctrl.abort(), REVENUECAT_TIMEOUT_MS)
+    const res = await fetch(
+      `https://api.revenuecat.com/v1/subscribers/${encodeURIComponent(userId)}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: 'application/json',
+        },
+        signal: ctrl.signal,
+      },
+    )
+    clearTimeout(t)
+
+    if (!res.ok) {
+      logWarn('revenuecat_http', { status: res.status })
+      return 'unknown'
+    }
+
+    let body: unknown
+    try {
+      body = await res.json()
+    } catch (e) {
+      logWarn('revenuecat_invalid_json', {
+        message: e instanceof Error ? e.message : 'unknown',
+      })
+      return 'unknown'
+    }
+
+    return parseRevenueCatEntitlement(body, Date.now(), ENTITLEMENT_NAME)
+  } catch (e) {
+    logWarn('revenuecat_error', {
+      message: e instanceof Error ? e.message : 'unknown',
+    })
+    return 'unknown'
+  }
+}
+
+async function getServerPremiumStatus(userId: string): Promise<PremiumStatus> {
+  const now = Date.now()
+  const cached = entitlementCache.get(userId, now)
+  if (cached) return cached
+
+  const status = await fetchRevenueCatPremiumStatus(userId)
+  if (status === 'premium' || status === 'free') {
+    entitlementCache.set(userId, status, now)
+  }
+  return status
 }
 
 // ─── Handler ────────────────────────────────────────────────────────────────
@@ -100,7 +143,6 @@ Deno.serve(async (req: Request) => {
     }
 
     // 4. Validation du JWT utilisateur via client auth (anon key + JWT user).
-    //    Le service_role n'est PAS utilisé pour cette étape.
     const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
       global: { headers: { Authorization: `Bearer ${jwt}` } },
@@ -111,10 +153,12 @@ Deno.serve(async (req: Request) => {
       return jsonResponse(401, { error: 'unauthorized' })
     }
     const userId = userData.user.id
+    logInfo('auth_ok', { user_prefix: userId.slice(0, 8) })
 
-    // 5. Entitlement Premium serveur — fail-closed.
+    // 5. Entitlement Premium serveur via RevenueCat REST API + cache 60s.
     //    Le client n'a aucun moyen d'influer sur cette décision.
     const premiumStatus = await getServerPremiumStatus(userId)
+    logInfo('revenuecat_status', { status: premiumStatus })
     if (premiumStatus !== 'premium') {
       // 'free' et 'unknown' → 403. On ne distingue pas pour ne rien fuiter.
       return jsonResponse(403, { error: 'premium_required' })
@@ -125,7 +169,6 @@ Deno.serve(async (req: Request) => {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     })
 
-    // Snapshot date la plus récente disponible.
     const { data: latestRow, error: latestError } = await dataClient
       .from('rp_prime_snapshots')
       .select('snapshot_date')
@@ -147,9 +190,6 @@ Deno.serve(async (req: Request) => {
       })
     }
 
-    // Snapshots de la date la plus récente, joints au référentiel produits.
-    // dealer_name et observations brutes ne sont JAMAIS lus ici (table
-    // rp_prime_observations) ni retournés au client.
     const { data: snapshotRows, error: snapshotError } = await dataClient
       .from('rp_prime_snapshots')
       .select(
