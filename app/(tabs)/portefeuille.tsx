@@ -32,6 +32,7 @@ import PortfolioHero from '@/components/portfolio/PortfolioHero';
 import PositionCard from '@/components/portfolio/PositionCard';
 import PortfolioEmptyState from '@/components/portfolio/PortfolioEmptyState';
 import PortfolioStatsTeaser from '@/components/portfolio/PortfolioStatsTeaser';
+import SynthesePatrimonialeCard from '@/components/synthese-patrimoniale/SynthesePatrimonialeCard';
 import { usePremium } from '@/contexts/premium-context';
 import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { usePositions } from '@/hooks/use-positions';
@@ -370,6 +371,18 @@ export default function PortefeuilleScreen() {
             onClearFilter={clearFilter}
           />
         ) : null}
+
+        {/* ── 5b. SYNTHÈSE PATRIMONIALE (teaser, gating Premium) ── */}
+        <SynthesePatrimonialeCard
+          hasPositions={hasPositions}
+          onPress={() => {
+            if (!isPremium) {
+              showPaywall();
+              return;
+            }
+            router.push('/synthese-patrimoniale' as never);
+          }}
+        />
 
         {/* ── 6. TRUST FOOTER ────────────────────────────── */}
         <View style={st.trustFooter}>
