@@ -48,7 +48,7 @@ export default function PortfolioHero({
               </View>
               <View style={st.resumeNetRow}>
                 <Text style={st.resumeNetVendeur}>
-                  {'Net forfaitaire estimé : ~'}{formatEuro(summary.sellerNet)} {currencySymbol}
+                  {'Net vendeur estimé : ~'}{formatEuro(summary.sellerNet)} {currencySymbol}
                 </Text>
                 <Text style={st.resumeNetSub}>{'Estimation au régime forfaitaire'}</Text>
               </View>
