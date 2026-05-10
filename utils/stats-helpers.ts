@@ -57,6 +57,7 @@ export type PositionRanking = {
   netEstimate: number | null;
   regimeLabel: string | null;
   fiscalNote: string | null;
+  monthsToTier: number | null;
 };
 
 // ── Insights ───────────────────────────────────────────────────────────────
@@ -104,7 +105,7 @@ export function selectInsight(
             type: 'fiscal-window',
             title: 'FENÊTRE FISCALE',
             phrase: `Attendre ${monthsToTier} mois sur 1 position pourrait améliorer votre net estimé.`,
-            subtext: `${stripMetalFromName(pf.pos.product)} approche d\u2019un palier fiscal.`,
+            subtext: `${stripMetalFromName(pf.pos.product)} approche d\u2019un avantage fiscal.`,
             method: `Économie potentielle estimée : ~${fmtCompact(savings)} \u20AC \u00B7 base cours actuel`,
             action: { label: 'Voir la simulation \u2192', route: '/fiscalite', params: { positionId: pf.pos.id } },
           };
@@ -114,10 +115,10 @@ export function selectInsight(
       if (monthsToTier > STATS.FISCAL_WINDOW_MONTHS && monthsToTier <= STATS.FISCAL_WATCH_MONTHS) {
         return {
           type: 'fiscal-watch',
-          title: 'POSITION À SURVEILLER',
-          phrase: `${stripMetalFromName(pf.pos.product)} \u00B7 palier fiscal dans ${monthsToTier} mois.`,
+          title: 'PROCHAIN AVANTAGE FISCAL',
+          phrase: `${stripMetalFromName(pf.pos.product)} \u00B7 avantage fiscal dans ${monthsToTier} mois.`,
           subtext: 'Ce palier peut améliorer votre net.',
-          method: 'Abattement progressif \u00B7 art. 150 VI CGI',
+          method: 'Durée de détention prise en compte \u00B7 art. 150 VI CGI',
         };
       }
     }
@@ -129,11 +130,11 @@ export function selectInsight(
     const otherName = fiscal.bestRegime === 'plusvalues' ? 'forfaitaire' : 'plus-values';
     return {
       type: 'regime',
-      title: 'NET ESTIMÉ LE PLUS ÉLEVÉ',
-      phrase: `Le régime ${fiscal.bestRegime === 'plusvalues' ? 'des plus-values' : 'forfaitaire'} vous laisse plus de net aujourd\u2019hui.`,
-      subtext: `Écart estimé : +${fmtCompact(fiscal.delta)} \u20AC vs ${otherName}.`,
+      title: 'RÉGIME LE PLUS FAVORABLE ESTIMÉ',
+      phrase: `Le régime ${fiscal.bestRegime === 'plusvalues' ? 'des plus-values' : 'forfaitaire'} donne le net le plus \u00e9lev\u00e9 aujourd\u2019hui.`,
+      subtext: `Écart net estimé : +${fmtCompact(fiscal.delta)} \u20AC face au ${otherName}.`,
       method: 'Comparaison des régimes sur le portefeuille',
-      action: { label: 'Comparer mes régimes \u2192', route: '/fiscalite-globale' },
+      action: { label: 'Comparer les régimes fiscaux →', route: '/fiscalite-globale' },
     };
   }
 
@@ -208,7 +209,7 @@ export function selectDecisionCards(
     const other = fiscal.bestRegime === 'plusvalues' ? 'forfaitaire' : 'plus-values';
     cards.push({
       id: 'regime',
-      title: 'NET ESTIMÉ LE PLUS ÉLEVÉ',
+      title: 'RÉGIME LE PLUS FAVORABLE ESTIMÉ',
       value: name,
       subtext: `+${fmtCompact(fiscal.delta)} \u20AC vs ${other}`,
       method: 'Comparaison TMP vs TPV',
@@ -238,7 +239,7 @@ export function selectDecisionCards(
             title: 'FENÊTRE FISCALE',
             value: `Dans ${monthsToTier} mois`,
             subtext: `${stripMetalFromName(pf.pos.product)} \u00B7 économie estimée : ~${fmtCompact(savings)} \u20AC`,
-            method: 'Base cours actuel \u00B7 abattement progressif',
+            method: 'Base cours actuel \u00B7 durée de détention prise en compte',
           });
           break;
         }
@@ -342,6 +343,7 @@ export function computePositionRanking(
     const bestRegime = pf.netPV >= pf.netForf ? 'Plus-values' : 'Forfaitaire';
 
     let fiscalNote: string | null = null;
+    let monthsToTierExposed: number | null = null;
     if (pf.isExempt) {
       fiscalNote = 'Position exonérée de plus-values';
     } else {
@@ -356,7 +358,8 @@ export function computePositionRanking(
             tierDate.setFullYear(tierDate.getFullYear() + nextTierYear);
             const monthsToTier = Math.max(0, Math.ceil((tierDate.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24 * 30.44)));
             if (monthsToTier <= STATS.FISCAL_WATCH_MONTHS) {
-              fiscalNote = `Palier fiscal dans ${monthsToTier} mois`;
+              fiscalNote = `Avantage fiscal dans ${monthsToTier} mois`;
+              monthsToTierExposed = monthsToTier;
             }
           }
         }
@@ -375,6 +378,7 @@ export function computePositionRanking(
       netEstimate: bestNet,
       regimeLabel,
       fiscalNote,
+      monthsToTier: monthsToTierExposed,
     };
   });
 }

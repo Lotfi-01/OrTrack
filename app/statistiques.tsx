@@ -182,6 +182,25 @@ export default function StatistiquesScreen() {
   const useTabsMode = ranking.length > STATS.MAX_VISIBLE_POSITIONS;
   const dominantMetal = metalBreakdown.length > 0 ? metalBreakdown[0] : null;
 
+  // Prochaine échéance fiscale : position avec monthsToTier le plus proche.
+  // Égalité → plus grand netEstimate ; égalité → ordre original.
+  const nextFiscalWatch = useMemo(() => {
+    const candidates = ranking
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => r.monthsToTier !== null);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => {
+      const ma = a.r.monthsToTier as number;
+      const mb = b.r.monthsToTier as number;
+      if (ma !== mb) return ma - mb;
+      const va = a.r.netEstimate ?? -Infinity;
+      const vb = b.r.netEstimate ?? -Infinity;
+      if (va !== vb) return vb - va;
+      return a.idx - b.idx;
+    });
+    return candidates[0].r;
+  }, [ranking]);
+
   // ─── Rendu ──────────────────────────────────────────────────────────────
 
   if (!isPremium) {
@@ -192,10 +211,10 @@ export default function StatistiquesScreen() {
             <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
               <Text style={st.backText}>{'\u2190'} Retour</Text>
             </TouchableOpacity>
-            <Text style={st.headerTitle}>Analyses</Text>
+            <Text style={st.headerTitle}>Analyse</Text>
           </View>
 
-          <Text style={st.sectionTitle}>Analyses {'\u00B7'} Réservé Premium</Text>
+          <Text style={st.sectionTitle}>Analyse {'\u00B7'} Réservé Premium</Text>
           <View style={st.card}>
             {PREMIUM_FEATURES.map((item, i) => (
               <View key={item.title} style={[st.premiumRow, i < PREMIUM_FEATURES.length - 1 && { borderBottomWidth: 1, borderBottomColor: C.border }]}>
@@ -224,7 +243,7 @@ export default function StatistiquesScreen() {
           <TouchableOpacity onPress={() => router.back()} style={st.backBtn}>
             <Text style={st.backText}>{'\u2190'} Retour</Text>
           </TouchableOpacity>
-          <Text style={st.headerTitle}>Analyses</Text>
+          <Text style={st.headerTitle}>Analyse</Text>
         </View>
 
         {!hasPositions ? (
@@ -236,7 +255,7 @@ export default function StatistiquesScreen() {
           <>
             {/* ── BLOC 1 — HERO PERFORMANCE ── */}
             <View style={st.heroCard}>
-              <Text style={st.sectionLabel}>PERFORMANCE GLOBALE</Text>
+              <Text style={st.sectionLabel}>VOTRE PORTEFEUILLE AUJOURD’HUI</Text>
               {pricesReady ? (
                 <>
                   <Text style={[st.heroValue, totalGain >= 0 ? st.positive : st.negative]}>
@@ -267,7 +286,7 @@ export default function StatistiquesScreen() {
                   {fiscal ? (
                     <View style={st.heroNetBlock}>
                       <View style={st.heroNetRow}>
-                        <Text style={st.heroNetLabel}>Net estimé si vente aujourd{'\u2019'}hui</Text>
+                        <Text style={st.heroNetLabel}>Net vendeur estimé aujourd{'\u2019'}hui</Text>
                         <TouchableOpacity onPress={() => Alert.alert('Net estimé', 'Estimé selon le régime au net estimé le plus élevé aujourd\u2019hui. Hors frais de revente.')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                           <Ionicons name="information-circle-outline" size={14} color={C.textDim} />
                         </TouchableOpacity>
@@ -276,14 +295,15 @@ export default function StatistiquesScreen() {
                       <Text style={st.heroNetFiscal}>
                         Fiscalité estimée : {m(`${formatEuro(fiscal.bestRegime === 'plusvalues' ? fiscal.totalPVTax : fiscal.totalForfaitaireTax)} ${currencySymbol}`)}
                       </Text>
-                      <Text style={st.heroMethod}>(Net estimé le plus élevé {'\u00B7'} hors frais)</Text>
+                      <Text style={st.heroMethod}>Hors frais de revente</Text>
+                      <Text style={st.heroMethod}>Estimation indicative selon les données saisies</Text>
                     </View>
                   ) : (
                     <Text style={st.heroNetUnavailable}>Net estimé indisponible {'\u00B7'} Simulation requise</Text>
                   )}
 
                   <TouchableOpacity onPress={() => router.push('/fiscalite-globale' as never)} style={st.heroBridge} activeOpacity={0.7}>
-                    <Text style={st.heroBridgeText}>{'Estimer mon net après impôt \u2192'}</Text>
+                    <Text style={st.heroBridgeText}>{'Comparer les régimes fiscaux \u2192'}</Text>
                   </TouchableOpacity>
                 </>
               ) : spotError ? (
@@ -303,7 +323,7 @@ export default function StatistiquesScreen() {
             {/* ── BLOC 2 — INSIGHT PREMIUM ── */}
             {insight.type !== 'fallback' && (
               <>
-                <Text style={st.sectionTitle}>INSIGHT ORTRACK</Text>
+                <Text style={st.sectionTitle}>À RETENIR AUJOURD’HUI</Text>
                 <View style={st.insightCard}>
                   <Text style={st.insightTitle}>{insight.title}</Text>
                   <Text style={st.insightPhrase}>{insight.phrase}</Text>
@@ -349,9 +369,7 @@ export default function StatistiquesScreen() {
             {/* Position ranking (premium) */}
             {ranking.length > 1 && (
               <>
-                <Text style={st.sectionTitle}>
-                  {rankMode === 'eur' ? 'VOS POSITIONS (par gain \u20AC)' : rankMode === 'pct' ? 'VOS POSITIONS (par performance %)' : 'VOS POSITIONS (par net estimé)'}
-                </Text>
+                <Text style={st.sectionTitle}>POSITIONS À SUIVRE</Text>
                 <View style={st.toggleRow}>
                   {(useTabsMode ? (['eur', 'pct', 'sale'] as const) : (['eur', 'pct'] as const)).map(mode => (
                     <TouchableOpacity key={mode} style={[st.toggleBtn, rankMode === mode && st.toggleBtnActive]} onPress={() => setRankMode(mode)}>
@@ -421,10 +439,10 @@ export default function StatistiquesScreen() {
               </>
             )}
 
-            {/* ── BLOC 4 — AIDE À LA DÉCISION (premium) ── */}
+            {/* ── BLOC 4 — À SURVEILLER (premium) ── */}
             {isPremium && (
               <>
-                <Text style={st.sectionTitle}>AIDE À LA DÉCISION</Text>
+                <Text style={st.sectionTitle}>À SURVEILLER</Text>
                 {decisionCards.length >= 3 ? (
                   <View style={st.decisionGrid}>
                     {decisionCards.slice(0, 4).map(card => (
@@ -436,10 +454,15 @@ export default function StatistiquesScreen() {
                       </View>
                     ))}
                   </View>
+                ) : nextFiscalWatch && nextFiscalWatch.monthsToTier !== null ? (
+                  <View style={st.card}>
+                    <Text style={st.decisionTitle}>PROCHAIN AVANTAGE FISCAL</Text>
+                    <Text style={st.decisionSub}>{`${nextFiscalWatch.product} dans ${nextFiscalWatch.monthsToTier} mois.`}</Text>
+                  </View>
                 ) : (
                   <View style={st.card}>
-                    <Text style={st.decisionTitle}>AUCUNE ACTION FISCALE PRIORITAIRE</Text>
-                    <Text style={st.decisionSub}>Pas d{'\u2019'}optimisation majeure immédiate identifiée.</Text>
+                    <Text style={st.decisionTitle}>AUCUNE ÉCHÉANCE FISCALE PROCHE</Text>
+                    <Text style={st.decisionSub}>Aucune échéance fiscale proche selon les données saisies.</Text>
                   </View>
                 )}
               </>
@@ -493,7 +516,12 @@ export default function StatistiquesScreen() {
             )}
 
             {/* Timestamp */}
-            {timeStr && <Text style={st.timestamp}>Cours du jour à {timeStr}</Text>}
+            {timeStr && (
+              <View style={st.footerBlock}>
+                <Text style={st.timestamp}>Cours spot mis à jour à {timeStr}</Text>
+                <Text style={st.footerSub}>{`Estimation indicative · Hors frais`}</Text>
+              </View>
+            )}
           </>
         )}
       </ScrollView>
@@ -534,7 +562,7 @@ const st = StyleSheet.create({
   heroNetRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   heroNetLabel: { fontSize: 12, color: C.textDim },
   heroNetValue: { fontSize: 20, fontWeight: '700', color: C.gold, marginBottom: 2 },
-  heroNetFiscal: { fontSize: 12, color: C.subtext, marginBottom: 2 },
+  heroNetFiscal: { fontSize: 12, color: C.textDim, marginBottom: 2 },
   heroMethod: { fontSize: 10, color: C.textDim },
   heroNetUnavailable: { fontSize: 12, color: C.textDim, marginTop: 12, fontStyle: 'italic' },
   heroBridge: { marginTop: 12, alignItems: 'center' },
@@ -545,8 +573,8 @@ const st = StyleSheet.create({
   insightTitle: { fontSize: 10, fontWeight: '700', color: C.gold, letterSpacing: 1, marginBottom: 6, textTransform: 'uppercase' },
   insightPhrase: { fontSize: 13, color: C.white, lineHeight: 20, marginBottom: 4 },
   insightSub: { fontSize: 12, color: C.textDim, marginBottom: 4 },
-  insightMethod: { fontSize: 10, color: C.textDim, fontStyle: 'italic', marginTop: 4 },
-  insightAction: { marginTop: 8 },
+  insightMethod: { fontSize: 10, color: C.textDim, marginTop: 4 },
+  insightAction: { marginTop: 10 },
   insightActionText: { fontSize: 13, color: C.gold, fontWeight: '600' },
 
   // Card
@@ -584,7 +612,7 @@ const st = StyleSheet.create({
   podiumMetal: { fontSize: 11, color: C.subtext, marginTop: 1 },
   podiumSecondary: { fontSize: 11, color: C.textDim, marginTop: 1 },
   podiumNet: { fontSize: 14, fontWeight: '600', color: C.gold },
-  podiumFiscalNote: { fontSize: 10, color: C.textDim, marginTop: 2, fontStyle: 'italic' },
+  podiumFiscalNote: { fontSize: 10, color: C.textDim, marginTop: 2 },
   showAllBtn: { alignItems: 'center', paddingVertical: 8 },
   showAllText: { fontSize: 13, color: C.gold, fontWeight: '600' },
 
@@ -593,8 +621,8 @@ const st = StyleSheet.create({
   decisionCard: { width: '47%', backgroundColor: C.card, borderRadius: 12, padding: 14, borderWidth: 1, borderColor: C.border, minHeight: 100 },
   decisionTitle: { fontSize: 9, fontWeight: '700', color: C.gold, textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6 },
   decisionValue: { fontSize: 16, fontWeight: '700', color: C.white, marginBottom: 4 },
-  decisionSub: { fontSize: 11, color: C.subtext, marginBottom: 4 },
-  decisionMethod: { fontSize: 10, color: C.textDim, fontStyle: 'italic' },
+  decisionSub: { fontSize: 11, color: C.textDim, marginBottom: 4 },
+  decisionMethod: { fontSize: 10, color: C.textDim },
 
   // Details accordion
   detailsToggle: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderTopWidth: 1, borderTopColor: C.border, marginTop: 8 },
@@ -614,7 +642,9 @@ const st = StyleSheet.create({
   premiumCta: { backgroundColor: C.gold, borderRadius: 12, paddingVertical: 14, alignItems: 'center', marginTop: 8 },
   premiumCtaText: { color: C.background, fontSize: 15, fontWeight: '700' },
 
-  timestamp: { fontSize: 11, color: C.textDim, textAlign: 'center', marginTop: 16 },
+  timestamp: { fontSize: 11, color: C.textDim, textAlign: 'center' },
+  footerBlock: { marginTop: 16, alignItems: 'center', gap: 2 },
+  footerSub: { fontSize: 10, color: C.textDim, textAlign: 'center' },
 
   positive: { color: '#4CAF50' },
   negative: { color: '#E07070' },
