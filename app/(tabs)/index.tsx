@@ -43,6 +43,14 @@ import type { MetalType } from '@/constants/metals';
 
 const C = OrTrackColors;
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+function formatChange24hLabel(ch: number | null | undefined): string {
+  if (ch == null || !Number.isFinite(ch)) return '24h : —';
+  if (ch === 0) return '24h : 0,00 %';
+  const sign = ch > 0 ? '+' : '';
+  return `24h : ${sign}${formatPct(ch, 2)}`;
+}
+
 const CARD_WIDTH = 138;
 const SNAP_INTERVAL = CARD_WIDTH + 10;
 
@@ -496,10 +504,9 @@ export default function AccueilScreen() {
           <Text style={st.secTitle}>COURS {METAL_CONFIG[selectedMetal.key]?.name?.toUpperCase() ?? 'OR'} ({selectedMetal.symbol})</Text>
           {(() => {
             const ch = change24h[selectedMetal.spotKey];
-            if (ch != null && ch !== 0) {
-              return <Text style={{ color: ch > 0 ? C.green : C.red, fontSize: 11 }}>Variation séance : {ch > 0 ? '+' : ''}{formatPct(ch, 2)}</Text>;
-            }
-            return <Text style={{ color: C.textDim, fontSize: 11 }}>Inchangé</Text>;
+            const hasMove = ch != null && Number.isFinite(ch) && ch !== 0;
+            const color = hasMove ? (ch > 0 ? C.green : C.red) : C.textDim;
+            return <Text style={{ color, fontSize: 11 }}>{formatChange24hLabel(ch)}</Text>;
           })()}
         </View>
 
@@ -691,13 +698,15 @@ export default function AccueilScreen() {
                   </Text>
                   <Text style={st.mktUnitInline} numberOfLines={1}>{mm.unit}</Text>
                 </View>
-                {ch != null && ch !== 0 ? (
-                  <Text style={{ color: ch > 0 ? C.green : C.red, fontSize: 11, marginTop: 4 }}>
-                    {ch > 0 ? '▲' : '▼'} {ch > 0 ? '+' : ''}{formatPct(ch, 2)}
-                  </Text>
-                ) : (
-                  <Text style={{ color: C.textMuted, fontSize: 11, marginTop: 4 }}>Inchangé</Text>
-                )}
+                {(() => {
+                  const hasMove = ch != null && Number.isFinite(ch) && ch !== 0;
+                  const color = hasMove ? (ch > 0 ? C.green : C.red) : C.textMuted;
+                  return (
+                    <Text style={{ color, fontSize: 11, marginTop: 4 }}>
+                      {formatChange24hLabel(ch)}
+                    </Text>
+                  );
+                })()}
               </TouchableOpacity>
             );
           })}
