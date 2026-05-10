@@ -39,13 +39,19 @@ export default function SynthesePatrimonialeCard({
         {`Vue datée · Positions détaillées · Partage natif`}
       </Text>
 
-      <View style={st.preview}>
-        <View style={st.skeletonLine} />
-        <View style={[st.skeletonLine, { width: '70%' }]} />
-        <View style={st.placeholderRow}>
-          <View style={[st.skeletonLine, { width: '40%' }]} />
-          <Text style={st.placeholder}>{'••••••'}</Text>
+      <View style={st.docPreview}>
+        <View style={st.docHeaderRow}>
+          <View style={st.docAccent} />
+          <View style={st.docBadge}>
+            <Text style={st.docBadgeText}>PDF</Text>
+          </View>
         </View>
+        <View style={st.docModulesRow}>
+          <View style={st.docModule} />
+          <View style={st.docModule} />
+          <View style={st.docModule} />
+        </View>
+        <Text style={st.docFooter}>Document indicatif</Text>
       </View>
 
       {!hasPositions ? (
@@ -80,27 +86,60 @@ const st = StyleSheet.create({
   badgeText: { color: C.gold, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
   subtitle: { color: C.textDim, fontSize: 11, lineHeight: 16, marginTop: 1 },
   benefits: { color: C.trustSecondary, fontSize: 10, marginTop: 1 },
-  preview: {
-    marginTop: 6,
-    padding: 8,
-    borderRadius: 8,
+  docPreview: {
+    marginTop: 7,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: C.divider,
-    gap: 5,
+    backgroundColor: C.background,
   },
-  skeletonLine: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: C.border,
-    width: '100%',
-  },
-  placeholderRow: {
+  docHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 2,
   },
-  placeholder: { color: C.textMuted, fontSize: 11, letterSpacing: 1 },
+  docAccent: {
+    width: 36,
+    height: 2,
+    backgroundColor: C.gold,
+    borderRadius: 1,
+  },
+  docBadge: {
+    backgroundColor: C.goldBadge,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.openBorder,
+  },
+  docBadgeText: {
+    color: C.gold,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.4,
+  },
+  docModulesRow: {
+    flexDirection: 'row',
+    gap: 6,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  docModule: {
+    width: 28,
+    height: 10,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: C.divider,
+    backgroundColor: 'transparent',
+  },
+  docFooter: {
+    color: C.textMuted,
+    fontSize: 10,
+    marginTop: 8,
+    letterSpacing: 0.3,
+  },
   empty: { color: C.textDim, fontSize: 10, marginTop: 4, fontStyle: 'italic' },
   cta: { color: C.gold, fontSize: 12, fontWeight: '700', marginTop: 6, alignSelf: 'flex-start' },
 });
