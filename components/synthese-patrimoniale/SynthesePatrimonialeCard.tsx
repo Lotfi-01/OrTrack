@@ -36,7 +36,7 @@ export default function SynthesePatrimonialeCard({
       </Text>
 
       <Text style={st.benefits}>
-        {`Vue d’ensemble datée · Détail des positions · Partage natif`}
+        {`Vue datée · Positions détaillées · Partage natif`}
       </Text>
 
       <View style={st.preview}>
@@ -52,7 +52,7 @@ export default function SynthesePatrimonialeCard({
         <Text style={st.empty}>{`Ajoutez d’abord vos positions.`}</Text>
       ) : null}
 
-      <Text style={st.cta}>Générer ma synthèse</Text>
+      <Text style={st.cta}>{'Générer ma synthèse →'}</Text>
     </TouchableOpacity>
   );
 }
@@ -63,9 +63,9 @@ const st = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: C.border,
-    padding: 16,
+    padding: 14,
     marginTop: 16,
-    gap: 6,
+    gap: 4,
   },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   title: { color: C.white, fontSize: 13, fontWeight: '600', flex: 1 },
@@ -78,15 +78,15 @@ const st = StyleSheet.create({
     borderColor: C.openBorder,
   },
   badgeText: { color: C.gold, fontSize: 10, fontWeight: '700', letterSpacing: 0.4 },
-  subtitle: { color: C.textDim, fontSize: 11, lineHeight: 16, marginTop: 2 },
-  benefits: { color: C.trustSecondary, fontSize: 10, marginTop: 2 },
+  subtitle: { color: C.textDim, fontSize: 11, lineHeight: 16, marginTop: 1 },
+  benefits: { color: C.trustSecondary, fontSize: 10, marginTop: 1 },
   preview: {
-    marginTop: 8,
-    padding: 10,
+    marginTop: 6,
+    padding: 8,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: C.divider,
-    gap: 6,
+    gap: 5,
   },
   skeletonLine: {
     height: 6,
@@ -98,9 +98,9 @@ const st = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
+    marginTop: 2,
   },
   placeholder: { color: C.textMuted, fontSize: 11, letterSpacing: 1 },
-  empty: { color: C.textDim, fontSize: 10, marginTop: 6, fontStyle: 'italic' },
-  cta: { color: C.gold, fontSize: 12, fontWeight: '700', marginTop: 8, alignSelf: 'flex-start' },
+  empty: { color: C.textDim, fontSize: 10, marginTop: 4, fontStyle: 'italic' },
+  cta: { color: C.gold, fontSize: 12, fontWeight: '700', marginTop: 6, alignSelf: 'flex-start' },
 });

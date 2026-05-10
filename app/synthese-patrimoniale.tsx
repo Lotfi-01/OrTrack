@@ -18,7 +18,7 @@ import SynthesePrivacyChoice, {
 import { STORAGE_KEYS } from '@/constants/storage-keys';
 import { OrTrackColors } from '@/constants/theme';
 import { usePremium } from '@/contexts/premium-context';
-import { useSharedSpotPrices } from '@/contexts/spot-prices-context';
+import { SpotPricesProvider, useSharedSpotPrices } from '@/contexts/spot-prices-context';
 import { usePositions } from '@/hooks/use-positions';
 import { computePortfolioFiscalSummary } from '@/utils/fiscal';
 import {
@@ -37,6 +37,14 @@ function regimeLabelOf(
 }
 
 export default function SynthesePatrimonialeScreen() {
+  return (
+    <SpotPricesProvider>
+      <SynthesePatrimonialeContent />
+    </SpotPricesProvider>
+  );
+}
+
+function SynthesePatrimonialeContent() {
   const { isPremium, isLoading: premiumLoading, showPaywall } = usePremium();
   const { positions, loading: positionsLoading } = usePositions();
   const {
@@ -123,7 +131,9 @@ export default function SynthesePatrimonialeScreen() {
       });
 
       if (result.status === 'shared') {
-        Alert.alert('Synthèse partagée.');
+        // expo-sharing ne permet pas de distinguer succès réel et annulation
+        // sur Android : on reste silencieux pour ne pas afficher un message
+        // de succès trompeur après une annulation utilisateur.
         return;
       }
       if (result.status === 'unavailable') {

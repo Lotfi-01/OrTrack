@@ -276,18 +276,6 @@ export default function PortefeuilleScreen() {
           </View>
         )}
 
-        {/* ── 4b. SYNTHÈSE PATRIMONIALE (teaser, gating Premium) ── */}
-        <SynthesePatrimonialeCard
-          hasPositions={hasPositions}
-          onPress={() => {
-            if (!isPremium) {
-              showPaywall();
-              return;
-            }
-            router.push('/synthese-patrimoniale' as never);
-          }}
-        />
-
         {/* ── 5. POSITIONS ───────────────────────────────── */}
         <View style={st.posHeader}>
           <Text style={st.posHeaderTitle}>POSITIONS ({filteredPositions.length})</Text>
@@ -383,6 +371,18 @@ export default function PortefeuilleScreen() {
             onClearFilter={clearFilter}
           />
         ) : null}
+
+        {/* ── 5b. SYNTHÈSE PATRIMONIALE (teaser, gating Premium) ── */}
+        <SynthesePatrimonialeCard
+          hasPositions={hasPositions}
+          onPress={() => {
+            if (!isPremium) {
+              showPaywall();
+              return;
+            }
+            router.push('/synthese-patrimoniale' as never);
+          }}
+        />
 
         {/* ── 6. TRUST FOOTER ────────────────────────────── */}
         <View style={st.trustFooter}>
