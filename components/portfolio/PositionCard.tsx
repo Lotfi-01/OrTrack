@@ -1,12 +1,16 @@
+import { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { type MetalType, METAL_CONFIG } from '@/constants/metals';
 import { getSilverMvpProductById } from '@/constants/silver-products';
 import { TAX } from '@/constants/tax';
 import { OrTrackColors } from '@/constants/theme';
+import { trackEvent } from '@/services/analytics';
 import { formatEuro, formatQty, formatPctSigned, formatGain, getDisplayPositionName } from '@/utils/format';
+import { calculerPointMortSpot } from '@/utils/point-mort-spot';
 import { PositionViewModel } from '@/utils/portfolio';
 import { computeSilverBreakdown } from '@/utils/silver-breakdown';
+import PointMortSpotBlock from '@/components/portfolio/PointMortSpotBlock';
 
 const C = OrTrackColors;
 
@@ -17,6 +21,7 @@ type PositionCardProps = {
   masked: boolean;
   currencySymbol: string;
   isPremium: boolean;
+  positionCount: number;
   timeStr: string | null;
   onToggle: () => void;
   onExpandL2: () => void;
@@ -34,6 +39,8 @@ export default function PositionCard({
   isLevel2,
   masked,
   currencySymbol,
+  isPremium,
+  positionCount,
   timeStr,
   onToggle,
   onExpandL2,
@@ -46,6 +53,45 @@ export default function PositionCard({
   const pos = viewModel.position;
   const { currentValue, totalCost, gainLoss, gainPct, fiscal, sellerNetForfaitaire: posSellerNet } = viewModel.metrics;
   const cfg = METAL_CONFIG[pos.metal as MetalType];
+
+  // Convention OrTrack : purchasePrice et weightG sont unitaires.
+  // Fallback quantity = 1 si valeur non finie ou <= 0 (cohérent avec computePositionCost/Value).
+  const quantitySafe = Number.isFinite(pos.quantity) && pos.quantity > 0 ? pos.quantity : 1;
+  const prixAchatTotal = pos.purchasePrice * quantitySafe;
+  const poidsFinGrammes = pos.weightG * quantitySafe;
+  const spotEurPerGram = currentValue !== null && poidsFinGrammes > 0
+    ? currentValue / poidsFinGrammes
+    : null;
+  const pointMort = useMemo(
+    () => calculerPointMortSpot({
+      prixAchatTotal,
+      poidsFinGrammes,
+      spotActuel: spotEurPerGram,
+    }),
+    [prixAchatTotal, poidsFinGrammes, spotEurPerGram],
+  );
+
+  // Un seul `point_mort_viewed` par ouverture L1 (resetable au refermage).
+  const viewedThisOpenRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen || masked) {
+      viewedThisOpenRef.current = false;
+      return;
+    }
+    if (viewedThisOpenRef.current) return;
+    if (pointMort === null) return;
+    viewedThisOpenRef.current = true;
+    void trackEvent('point_mort_viewed', {
+      metal: cfg.spotKey,
+      state: pointMort.state,
+      gapPercent: pointMort.ecartPointMort === null
+        ? null
+        : Math.round(pointMort.ecartPointMort * 1000) / 10,
+      isPremium,
+      positionCount,
+      hasSpotActuel: pointMort.hasSpotActuel,
+    });
+  }, [isOpen, masked, pointMort, cfg.spotKey, isPremium, positionCount]);
   const displayName = getDisplayPositionName(pos);
   const silverProduct = pos.metal === 'argent' ? getSilverMvpProductById(pos.productId) : null;
   const silverBreakdown = silverProduct && pos.purchasePrice > 0 && pos.quantity > 0
@@ -111,6 +157,15 @@ export default function PositionCard({
       {/* ── L1 — FISCAL ── */}
       {isOpen && !masked && (
         <View style={st.l1}>
+          {pointMort !== null && (
+            <View style={st.pointMortWrap}>
+              <PointMortSpotBlock
+                result={pointMort}
+                spotActuel={spotEurPerGram}
+                currencySymbol={currencySymbol}
+              />
+            </View>
+          )}
           <Text style={st.l1Title}>{'Net vendeur estimé'}</Text>
           <View style={st.l1Row}>
             <Text style={st.l1Regime}>{'Régime forfaitaire ('}{TAX.labels.forfaitaire}{')'}</Text>
@@ -249,6 +304,7 @@ const st = StyleSheet.create({
   cardValue: { color: C.white, fontSize: 14, fontWeight: '600', flexShrink: 0, marginRight: 8, textAlign: 'right' },
   chev: { color: C.textDim, opacity: 0.75, fontSize: 18 },
   l1: { borderTopWidth: 1, borderTopColor: C.divider, paddingHorizontal: 16, paddingBottom: 14 },
+  pointMortWrap: { marginTop: 12 },
   l1Title: { color: C.gold, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginTop: 12, marginBottom: 8, textTransform: 'uppercase' },
   l1Row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   l1Regime: { color: C.textDim, fontSize: 12 },

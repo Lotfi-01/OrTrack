@@ -302,6 +302,7 @@ export default function PortefeuilleScreen() {
               masked={masked}
               currencySymbol={currencySymbol}
               isPremium={isPremium}
+              positionCount={positions.length}
               timeStr={timeStr}
               onToggle={() => toggleCard(vm.position.id)}
               onExpandL2={() => setLevel2Id(vm.position.id)}

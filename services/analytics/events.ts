@@ -22,7 +22,8 @@ export type AnalyticsEventName =
   | 'purchase_failed'
   | 'restore_started'
   | 'restore_success'
-  | 'restore_failed';
+  | 'restore_failed'
+  | 'point_mort_viewed';
 
 export const ANALYTICS_EVENT_NAMES: readonly AnalyticsEventName[] = [
   'app_opened',
@@ -49,6 +50,7 @@ export const ANALYTICS_EVENT_NAMES: readonly AnalyticsEventName[] = [
   'restore_started',
   'restore_success',
   'restore_failed',
+  'point_mort_viewed',
 ] as const;
 
 export type AnalyticsProperties = Record<string, string | number | boolean | null>;
